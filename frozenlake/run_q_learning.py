@@ -44,6 +44,7 @@ if __name__ == "__main__":
     Q[s, :] = 0.0
 
   gamma = 0.99
+  policy_evaluation_frequency = 10
 
   ### Q-learning
   # We use this to warm start iterative policy evaluation.
@@ -60,7 +61,7 @@ if __name__ == "__main__":
         # meta_policy=epsilon_greedy_annealed(epsilon=1.0),
     )
 
-    if episode_num % 100 == 0:
+    if episode_num % policy_evaluation_frequency == 0:
       # See https://stackoverflow.com/questions/29831489/convert-array-of-indices-to-1-hot-encoded-numpy-array
       policy = np.zeros((env.num_states, frozenlake.NUM_ACTIONS))
       policy[np.arange(env.num_states), np.argmax(Q, axis=-1)] = 1.0
@@ -80,7 +81,8 @@ if __name__ == "__main__":
     #   plt.show()
 
   plt.figure()
-  plt.plot(100 * np.arange(len(policy_rewards)), policy_rewards)
+  plt.plot(policy_evaluation_frequency * np.arange(len(policy_rewards)),
+           policy_rewards)
   plt.axhline(optimal_policy_reward(env), color="grey", linestyle="--")
   plt.legend(["Q-learning", "Optimal policy"])
   plt.xlabel("Episode")
