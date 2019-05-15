@@ -5,22 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import frozenlake
-
-def plot_heatmap(lake_map, heat2d):
-  im = plt.imshow(heat2d)
-
-  # Add lake tile labels.
-  lake_width, lake_height = lake_map.shape
-  for i in range(lake_width):
-    for j in range(lake_height):
-      tile = lake_map[i, j]
-      if tile != "F":
-        im.axes.text(j, i, tile, {
-            "horizontalalignment": "center",
-            "verticalalignment": "center"
-        })
-
-  return im
+import viz
 
 if __name__ == "__main__":
   lake_map = frozenlake.MAP_8x8
@@ -40,8 +25,7 @@ if __name__ == "__main__":
 
   # Show value function map.
   plt.figure()
-  states_values2d = env.states_reshape(state_values)
-  plot_heatmap(lake_map, states_values2d)
+  viz.plot_heatmap(env, state_values)
   plt.title("Complete map")
   plt.savefig("frozenlake_figs/complete_map.pdf")
 
@@ -50,15 +34,14 @@ if __name__ == "__main__":
       [env.transitions[i, policy[i], :] for i in range(env.num_states)])
   hp, esta = frozenlake.markov_chain_stats(env, policy_transitions)
   hp2d = env.states_reshape(hp)
-  esta2d = env.states_reshape(esta)
 
   plt.figure()
-  plot_heatmap(lake_map, hp2d)
+  viz.plot_heatmap(env, hp)
   plt.title("Hitting probabilities")
   plt.savefig("frozenlake_figs/hitting_probabilities.pdf")
 
   plt.figure()
-  plot_heatmap(lake_map, esta2d)
+  viz.plot_heatmap(env, esta)
   plt.title("Expected number of states to completion")
 
   # Show optimal policy on top of hitting probabilities.
@@ -107,7 +90,7 @@ if __name__ == "__main__":
 
   # Show value function map.
   plt.figure()
-  plot_heatmap(estop_map, estop_env.states_reshape(estop_state_values))
+  viz.plot_heatmap(env, estop_state_values)
   plt.title(f"E-stop map ({percentile}% of states removed)")
   plt.savefig("frozenlake_figs/estop_map.pdf")
 

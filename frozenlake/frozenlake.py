@@ -29,8 +29,9 @@ MAP_8x8 = np.array([["S", "F", "F", "F", "F", "F", "F", "F"],
                     ["F", "F", "F", "H", "F", "F", "F", "G"]])
 
 class FrozenLakeEnv(object):
-  def __init__(self, lake_map):
+  def __init__(self, lake_map, infinite_time: bool):
     self.lake_map = lake_map
+    self.infinite_time = infinite_time
 
     self.lake_width, self.lake_height = self.lake_map.shape
     self.num_states = self.lake_width * self.lake_height
@@ -53,8 +54,11 @@ class FrozenLakeEnv(object):
         si for si, (i, j) in enumerate(self._ij_states)
         if self.lake_map[i, j] == "F"
     ]
-    self.terminal_states = self.goal_states + self.hole_states
-    self.nonterminal_states = self.start_states + self.frozen_states
+    self.terminal_states = (self.goal_states + self.hole_states
+                            if not self.infinite_time else [])
+    self.nonterminal_states = [
+        i for i in range(self.num_states) if i not in self.terminal_states
+    ]
 
     self.transitions = self._build_transitions()
     self.rewards = self._build_rewards()
@@ -109,6 +113,10 @@ class FrozenLakeEnv(object):
     for s in self.goal_states:
       rewards[:, :, s] = 1.0
 
+      if not self.infinite_time:
+        # Staying in a goal state means no reward.
+        rewards[s, :, s] = 0.0
+
     return rewards
 
 def expected_rewards(env: FrozenLakeEnv):
@@ -116,15 +124,17 @@ def expected_rewards(env: FrozenLakeEnv):
   # expected_rewards2 = np.sum(transitions * rewards, axis=-1)
   # assert np.allclose(expected_rewards, expected_rewards2)
 
-def value_iteration(env: FrozenLakeEnv, gamma: float, epsilon: float):
+def value_iteration(env: FrozenLakeEnv, gamma: float, tolerance: float):
   """See Sutton & Barto page 83."""
   V = np.zeros((env.num_states, ))
   Q = np.zeros((env.num_states, NUM_ACTIONS))
 
   # Seed the values of the goal states with the geometric sum, since we know
-  # that's the answer analytically.
-  for s in env.goal_states:
-    V[s] = 1.0 / (1.0 - gamma)
+  # that's the answer analytically. This only makes sense when we allow
+  # ourselves to pick up rewards staying in the goal state forever.
+  if env.infinite_time:
+    for s in env.goal_states:
+      V[s] = 1.0 / (1.0 - gamma)
 
   expected_r = expected_rewards(env)
 
@@ -141,20 +151,27 @@ def value_iteration(env: FrozenLakeEnv, gamma: float, epsilon: float):
     V = new_state_values
     policy_rewards_per_iter.append(policy_reward)
 
-    if delta <= epsilon: break
+    if delta <= tolerance: break
 
   return Q, policy_rewards_per_iter
 
-def iterative_policy_evaluation(env: FrozenLakeEnv, gamma: float, policy,
-                                epsilon: float):
+def iterative_policy_evaluation(env: FrozenLakeEnv,
+                                gamma: float,
+                                policy,
+                                tolerance: float,
+                                init_V=None):
   """See Sutton & Barto page 75."""
-  V = np.zeros((env.num_states, ))
-  Q = np.zeros((env.num_states, NUM_ACTIONS))
+  if init_V is None:
+    V = np.zeros((env.num_states, ))
 
-  # Seed the values of the goal states with the geometric sum, since we know
-  # that's the answer analytically.
-  for s in env.goal_states:
-    V[s] = 1.0 / (1.0 - gamma)
+    # Seed the values of the goal states with the geometric sum, since we know
+    # that's the answer analytically. This only makes sense when we allow
+    # ourselves to pick up rewards staying in the goal state forever.
+    if env.infinite_time:
+      for s in env.goal_states:
+        V[s] = 1.0 / (1.0 - gamma)
+  else:
+    V = init_V
 
   expected_r = expected_rewards(env)
 
@@ -167,9 +184,9 @@ def iterative_policy_evaluation(env: FrozenLakeEnv, gamma: float, policy,
     V = new_state_values
     policy_rewards_per_iter.append(policy_reward)
 
-    if delta <= epsilon: break
+    if delta <= tolerance: break
 
-  return Q, policy_rewards_per_iter
+  return V, policy_rewards_per_iter
 
 def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
   assert policy_transitions.shape == (env.num_states, env.num_states)
@@ -203,15 +220,20 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
 def estimate_hitting_probabilities(lake_map, states, policy_transitions):
   pass
 
-def q_learning_episode(env: FrozenLakeEnv, gamma, alpha, Q, meta_policy):
+def q_learning_episode(env: FrozenLakeEnv,
+                       gamma,
+                       alpha,
+                       Q,
+                       meta_policy,
+                       max_episode_length: int = 500):
   # Start off by sampling an initial state from the initial_state distribution.
   current_state = np.random.choice(
       env.num_states, p=env.initial_state_distribution)
   episode = []
 
-  for t in range(500):
-    policy = meta_policy(Q, t)
-    action = np.random.choice(NUM_ACTIONS, p=policy[current_state])
+  for t in range(max_episode_length):
+    action = np.random.choice(
+        NUM_ACTIONS, p=meta_policy(Q[current_state, :], t))
     next_state = np.random.choice(
         env.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
@@ -224,10 +246,9 @@ def q_learning_episode(env: FrozenLakeEnv, gamma, alpha, Q, meta_policy):
 
     if current_state in env.terminal_states: break
 
+  # `current_state` is now the final state. Reporting it is necessary in order
+  # to tell which state the episode actually ended on.
   return Q, episode, current_state
-
-def run_q_learning():
-  pass
 
 def num_mdp_states(lake_map):
   num_starts = (lake_map == "S").sum()
