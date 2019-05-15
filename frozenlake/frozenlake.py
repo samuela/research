@@ -232,8 +232,12 @@ def q_learning_episode(env: FrozenLakeEnv,
   episode = []
 
   for t in range(max_episode_length):
-    action = np.random.choice(
-        NUM_ACTIONS, p=meta_policy(Q[current_state, :], t))
+    # Assert that action_probs is not None in order to avoid a pernicious set of
+    # bugs where the meta_policy forgets a return statement.
+    action_probs = meta_policy(Q[current_state, :], t)
+    assert action_probs is not None
+
+    action = np.random.choice(NUM_ACTIONS, p=action_probs)
     next_state = np.random.choice(
         env.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]

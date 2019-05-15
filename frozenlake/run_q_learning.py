@@ -8,11 +8,23 @@ import frozenlake
 import viz
 
 def epsilon_greedy(epsilon: float):
-  def h(action_probs, t: int):
+  def h(action_values, t: int):
     # With prob. epsilon we pick a non-greedy action uniformly at random. There
     # are NUM_ACTIONS - 1 non-greedy actions.
-    p = epsilon / (frozenlake.NUM_ACTIONS - 1) * np.ones(action_probs.shape)
-    p[np.argmax(action_probs)] = 1 - epsilon
+    p = epsilon / (frozenlake.NUM_ACTIONS - 1) * np.ones(action_values.shape)
+    p[np.argmax(action_values)] = 1 - epsilon
+    return p
+
+  return h
+
+def epsilon_greedy_annealed(epsilon: float):
+  def h(action_values, t: int):
+    # With prob. epsilon we pick a non-greedy action uniformly at random. There
+    # are NUM_ACTIONS - 1 non-greedy actions.
+    p = epsilon / (t + 1) / (frozenlake.NUM_ACTIONS - 1) * np.ones(
+        action_values.shape)
+    p[np.argmax(action_values)] = 1 - epsilon / (t + 1)
+    return p
 
   return h
 
@@ -27,7 +39,9 @@ if __name__ == "__main__":
 
   lake_map = frozenlake.MAP_8x8
   env = frozenlake.FrozenLakeEnv(lake_map, infinite_time=False)
-  Q = np.zeros((env.num_states, frozenlake.NUM_ACTIONS))
+  Q = 1e-2 * np.random.randn(env.num_states, frozenlake.NUM_ACTIONS)
+  for s in env.terminal_states:
+    Q[s, :] = 0.0
 
   gamma = 0.99
 
@@ -36,13 +50,14 @@ if __name__ == "__main__":
   V = None
 
   policy_rewards = []
-  for episode_num in range(100000):
+  for episode_num in range(5000):
     Q, episode, final_state = frozenlake.q_learning_episode(
         env,
         gamma,
         alpha=0.1,
         Q=Q,
         meta_policy=epsilon_greedy(epsilon=0.1),
+        # meta_policy=epsilon_greedy_annealed(epsilon=1.0),
     )
 
     if episode_num % 100 == 0:
