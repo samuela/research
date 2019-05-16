@@ -95,16 +95,16 @@ class FrozenLakeEnv(object):
         raise Exception("bad action")
 
     transitions = np.zeros((self.num_states, NUM_ACTIONS, self.num_states))
-    for si, (i, j) in enumerate(self._ij_states):
-      if self.lake_map[i, j] in ["H", "G"]:
-        transitions[si, :, si] = 1.0
+    for s in range(self.num_states):
+      if s in self.terminal_states:
+        transitions[s, :, s] = 1.0
       else:
         for a in [LEFT, DOWN, RIGHT, UP]:
           # Use += instead of = in the weird situation in which two moves
           # collide.
-          transitions[si, a, move(si, (a - 1) % NUM_ACTIONS)] += 1.0 / 3.0
-          transitions[si, a, move(si, a)] += 1.0 / 3.0
-          transitions[si, a, move(si, (a + 1) % NUM_ACTIONS)] += 1.0 / 3.0
+          transitions[s, a, move(s, (a - 1) % NUM_ACTIONS)] += 1.0 / 3.0
+          transitions[s, a, move(s, a)] += 1.0 / 3.0
+          transitions[s, a, move(s, (a + 1) % NUM_ACTIONS)] += 1.0 / 3.0
 
     return transitions
 
@@ -217,8 +217,42 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
 
   return hitting_prob, esta
 
-def estimate_hitting_probabilities(lake_map, states, policy_transitions):
-  pass
+def rollout(env: FrozenLakeEnv, policy, max_episode_length: int = 500):
+  # Start off by sampling an initial state from the initial_state distribution.
+  current_state = np.random.choice(
+      env.num_states, p=env.initial_state_distribution)
+  episode = []
+
+  for _ in range(max_episode_length):
+    action = np.random.choice(NUM_ACTIONS, p=policy[current_state, :])
+    next_state = np.random.choice(
+        env.num_states, p=env.transitions[current_state, action, :])
+    reward = env.rewards[current_state, action, next_state]
+
+    episode.append((current_state, action, reward))
+    current_state = next_state
+
+    if current_state in env.terminal_states: break
+
+  # `current_state` is now the final state. Reporting it is necessary in order
+  # to tell which state the episode actually ended on.
+  return episode, current_state
+
+def estimate_hitting_probabilities(env: FrozenLakeEnv, policy,
+                                   num_rollouts: int):
+  def rollout_states():
+    episode, final_state = rollout(env, policy)
+    # We skip the starting state in order to match what the analytic solution
+    # computes.
+    # return [s for s, _, _ in episode[1:]] + [final_state]
+
+    return [s for s, _, _ in episode] + [final_state]
+
+  rollouts = [rollout_states() for _ in range(num_rollouts)]
+  return np.array([
+      sum((s in rollout) for rollout in rollouts) / num_rollouts
+      for s in range(env.num_states)
+  ])
 
 def q_learning_episode(env: FrozenLakeEnv,
                        gamma,
@@ -261,3 +295,10 @@ def num_mdp_states(lake_map):
   num_goals = (lake_map == "G").sum()
   # We can reduce all holes to a single MDP state.
   return num_starts + num_frozen + (num_holes > 0) + num_goals
+
+def deterministic_policy(env: FrozenLakeEnv, actions):
+  """Convert a vector mapping states to actions to a policy array."""
+  # See https://stackoverflow.com/questions/29831489/convert-array-of-indices-to-1-hot-encoded-numpy-array
+  policy = np.zeros((env.num_states, NUM_ACTIONS))
+  policy[np.arange(env.num_states), actions] = 1.0
+  return policy

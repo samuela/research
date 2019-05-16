@@ -9,6 +9,8 @@ import viz
 
 if __name__ == "__main__":
   lake_map = frozenlake.MAP_8x8
+  infinite_time = False
+
   lake_width, lake_height = lake_map.shape
 
   # Assuming that the start is the first state!
@@ -17,28 +19,38 @@ if __name__ == "__main__":
 
   gamma = 0.99
 
-  env = frozenlake.FrozenLakeEnv(lake_map)
+  env = frozenlake.FrozenLakeEnv(lake_map, infinite_time)
   state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(
       env, gamma, 1e-4)
-  policy = np.argmax(state_action_values, axis=-1)
+  policy_actions = np.argmax(state_action_values, axis=-1)
   state_values = np.max(state_action_values, axis=-1)
 
   # Show value function map.
   plt.figure()
   viz.plot_heatmap(env, state_values)
   plt.title("Complete map")
-  plt.savefig("frozenlake_figs/complete_map.pdf")
+  plt.savefig("figs/complete_map.pdf")
 
   # Show hitting probability map.
-  policy_transitions = np.array(
-      [env.transitions[i, policy[i], :] for i in range(env.num_states)])
+  policy_transitions = np.array([
+      env.transitions[i, policy_actions[i], :] for i in range(env.num_states)
+  ])
   hp, esta = frozenlake.markov_chain_stats(env, policy_transitions)
   hp2d = env.states_reshape(hp)
 
   plt.figure()
   viz.plot_heatmap(env, hp)
   plt.title("Hitting probabilities")
-  plt.savefig("frozenlake_figs/hitting_probabilities.pdf")
+  plt.savefig("figs/hitting_probabilities.pdf")
+
+  # Show estimated hitting probability map.
+  estimated_hp = frozenlake.estimate_hitting_probabilities(
+      env,
+      frozenlake.deterministic_policy(env, policy_actions),
+      num_rollouts=1000)
+  plt.figure()
+  viz.plot_heatmap(env, estimated_hp)
+  plt.title("Estimated hitting probabilities")
 
   plt.figure()
   viz.plot_heatmap(env, esta)
@@ -47,7 +59,7 @@ if __name__ == "__main__":
   # Show optimal policy on top of hitting probabilities.
   plt.figure()
   im = plt.imshow(hp2d)
-  for s, a in zip(env._ij_states, policy):
+  for s, a in zip(env._ij_states, policy_actions):
     i, j = s
     if a == 0:
       arrow = "←"
@@ -65,7 +77,7 @@ if __name__ == "__main__":
         "verticalalignment": "center"
     })
   plt.title("Optimal policy overlayed on hitting probabilities")
-  plt.savefig("frozenlake_figs/optimal_policy.pdf")
+  plt.savefig("figs/optimal_policy.pdf")
 
   # Show value CDF.
   plt.figure()
@@ -73,7 +85,7 @@ if __name__ == "__main__":
   plt.xlabel("V(s)")
   plt.ylabel(f"Number of states (out of {lake_width * lake_height})")
   plt.title("CDF of state values")
-  plt.savefig("frozenlake_figs/value_function_cdf.pdf")
+  plt.savefig("figs/value_function_cdf.pdf")
 
   #######
 
@@ -83,7 +95,7 @@ if __name__ == "__main__":
   threshold = np.percentile(hp, percentile)
   estop_map[hp2d < threshold] = "H"
 
-  estop_env = frozenlake.FrozenLakeEnv(estop_map)
+  estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time)
   estop_state_action_values, estop_policy_rewards_per_iter = frozenlake.value_iteration(
       estop_env, gamma, 1e-4)
   estop_state_values = np.max(estop_state_action_values, axis=-1)
@@ -92,7 +104,7 @@ if __name__ == "__main__":
   plt.figure()
   viz.plot_heatmap(env, estop_state_values)
   plt.title(f"E-stop map ({percentile}% of states removed)")
-  plt.savefig("frozenlake_figs/estop_map.pdf")
+  plt.savefig("figs/estop_map.pdf")
 
   # Show policy rewards per iter
   # There are 4 S * A * S FLOPS in each iteration:
@@ -113,7 +125,7 @@ if __name__ == "__main__":
   plt.ylabel("Policy reward")
   plt.legend(["Full MDP", "E-stop MDP"])
   plt.title("Convergence comparison")
-  plt.savefig("frozenlake_figs/convergence_comparison.pdf")
+  plt.savefig("figs/convergence_comparison.pdf")
 
   print(f"Exact solution, policy value: {np.dot(initial_state, state_values)}")
   print(
