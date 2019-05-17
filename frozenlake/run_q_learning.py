@@ -33,7 +33,7 @@ def run_q_learning(env: frozenlake.FrozenLakeEnv,
                    policy_evaluation_frequency: int = 10):
   # Initializing to random values is necessary to break ties, preventing the
   # agent from always picking the same action and never getting anywhere.
-  Q = 1e-2 * np.random.randn(env.num_states, frozenlake.NUM_ACTIONS)
+  Q = np.random.rand(env.num_states, frozenlake.NUM_ACTIONS)
 
   # This is crucial! There is no positive or negative reward for taking any
   # action in a terminal state. See Sutton & Barto page 131.
@@ -80,10 +80,11 @@ if __name__ == "__main__":
   np.random.seed(0)
 
   lake_map = frozenlake.MAP_8x8
+  infinite_time = True
   policy_evaluation_frequency = 10
   gamma = 0.99
 
-  env = frozenlake.FrozenLakeEnv(lake_map, infinite_time=False)
+  env = frozenlake.FrozenLakeEnv(lake_map, infinite_time=infinite_time)
   state_action_values, _ = frozenlake.value_iteration(
       env, gamma, tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
@@ -99,9 +100,9 @@ if __name__ == "__main__":
   estop_map = np.copy(lake_map)
   percentile = 50
   threshold = np.percentile(estimated_hp, percentile)
-  estop_map[estimated_hp2d < threshold] = "H"
+  estop_map[estimated_hp2d < threshold] = "E"
 
-  estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time=False)
+  estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time=infinite_time)
   estop_states_seen, estop_policy_rewards = run_q_learning(
       estop_env,
       gamma,

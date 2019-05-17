@@ -93,7 +93,7 @@ if __name__ == "__main__":
   estop_map = np.copy(lake_map)
   percentile = 50
   threshold = np.percentile(hp, percentile)
-  estop_map[hp2d < threshold] = "H"
+  estop_map[hp2d < threshold] = "E"
 
   estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time)
   estop_state_action_values, estop_policy_rewards_per_iter = frozenlake.value_iteration(

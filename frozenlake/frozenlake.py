@@ -6,6 +6,7 @@ from typing import Dict, Tuple, List, Callable
 import numpy as np
 import scipy.optimize
 
+State = int
 Action = int
 
 # Order is important here because the state transitions rely on +/- 1 mod 4 to
@@ -38,6 +39,10 @@ class FrozenLakeEnv(object):
     self._ij_states = [(i, j) for i in range(self.lake_width)
                        for j in range(self.lake_height)]
 
+    self.estop_states = [
+        si for si, (i, j) in enumerate(self._ij_states)
+        if self.lake_map[i, j] == "E"
+    ]
     self.goal_states = [
         si for si, (i, j) in enumerate(self._ij_states)
         if self.lake_map[i, j] == "G"
@@ -54,8 +59,10 @@ class FrozenLakeEnv(object):
         si for si, (i, j) in enumerate(self._ij_states)
         if self.lake_map[i, j] == "F"
     ]
-    self.terminal_states = (self.goal_states + self.hole_states
-                            if not self.infinite_time else [])
+    # E-stop states are always terminal. The hole and goal states are terminal
+    # iff the environment is finite-time.
+    self.terminal_states = self.estop_states + (
+        self.goal_states + self.hole_states if not self.infinite_time else [])
     self.nonterminal_states = [
         i for i in range(self.num_states) if i not in self.terminal_states
     ]
@@ -76,12 +83,12 @@ class FrozenLakeEnv(object):
     return stuff2d
 
   def _build_transitions(self):
-    def clip(pseudo_state: Tuple[int, int]) -> int:
+    def clip(pseudo_state: Tuple[int, int]) -> State:
       i, j = pseudo_state
       return self._ij_states.index((np.clip(i, 0, self.lake_width - 1),
                                     np.clip(j, 0, self.lake_height - 1)))
 
-    def move(state: int, action: Action) -> int:
+    def move(state: State, action: Action) -> State:
       i, j = self._ij_states[state]
       if action == LEFT:
         return clip((i, j - 1))
@@ -96,7 +103,7 @@ class FrozenLakeEnv(object):
 
     transitions = np.zeros((self.num_states, NUM_ACTIONS, self.num_states))
     for s in range(self.num_states):
-      if s in self.terminal_states:
+      if self.lake_map[self._ij_states[s]] in ["E", "H", "G"]:
         transitions[s, :, s] = 1.0
       else:
         for a in [LEFT, DOWN, RIGHT, UP]:
