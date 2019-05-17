@@ -33,7 +33,7 @@ def run_q_learning(env: frozenlake.FrozenLakeEnv,
                    policy_evaluation_frequency: int = 10):
   # Initializing to random values is necessary to break ties, preventing the
   # agent from always picking the same action and never getting anywhere.
-  Q = np.random.rand(env.num_states, frozenlake.NUM_ACTIONS)
+  Q = np.random.rand(env.lake.num_states, frozenlake.NUM_ACTIONS)
 
   # This is crucial! There is no positive or negative reward for taking any
   # action in a terminal state. See Sutton & Barto page 131.
@@ -79,12 +79,13 @@ def run_q_learning(env: frozenlake.FrozenLakeEnv,
 if __name__ == "__main__":
   np.random.seed(0)
 
-  lake_map = frozenlake.MAP_8x8
+  lake_map = frozenlake.XMAP_9x9
   infinite_time = True
   policy_evaluation_frequency = 10
   gamma = 0.99
 
-  env = frozenlake.FrozenLakeEnv(lake_map, infinite_time=infinite_time)
+  lake = frozenlake.Lake(lake_map)
+  env = frozenlake.FrozenLakeEnv(lake, infinite_time=infinite_time)
   state_action_values, _ = frozenlake.value_iteration(
       env, gamma, tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
@@ -95,14 +96,21 @@ if __name__ == "__main__":
       env, np.argmax(state_action_values, axis=-1))
   estimated_hp = frozenlake.estimate_hitting_probabilities(
       env, optimal_policy, num_rollouts=1000)
-  estimated_hp2d = env.states_reshape(estimated_hp)
+  estimated_hp2d = lake.reshape(estimated_hp)
 
   estop_map = np.copy(lake_map)
   percentile = 50
   threshold = np.percentile(estimated_hp, percentile)
-  estop_map[estimated_hp2d < threshold] = "E"
+  estop_map[estimated_hp2d <= threshold] = "E"
 
-  estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time=infinite_time)
+  estop_lake = frozenlake.Lake(estop_map)
+
+  plt.figure()
+  viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
+  plt.title("E-stop map")
+  plt.show()
+
+  estop_env = frozenlake.FrozenLakeEnv(estop_lake, infinite_time=infinite_time)
   estop_states_seen, estop_policy_rewards = run_q_learning(
       estop_env,
       gamma,
@@ -113,10 +121,6 @@ if __name__ == "__main__":
       env, gamma, policy_evaluation_frequency=policy_evaluation_frequency)
 
   ### Plotting
-  plt.figure()
-  viz.plot_heatmap(estop_env, np.zeros(estop_env.num_states))
-  plt.title("E-stop map")
-
   plt.figure()
   plt.plot(
       policy_evaluation_frequency * np.arange(len(full_map_policy_rewards)),

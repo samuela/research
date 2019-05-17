@@ -39,68 +39,77 @@ XMAP_9x9 = np.array([["H", "F", "F", "F", "F", "F", "F", "F", "H"],
                      ["F", "H", "F", "F", "F", "F", "F", "H", "F"],
                      ["H", "F", "F", "F", "F", "F", "F", "F", "H"]])
 
-class FrozenLakeEnv(object):
-  def __init__(self, lake_map, infinite_time: bool):
+class Lake(object):
+  def __init__(self, lake_map):
     self.lake_map = lake_map
-    self.infinite_time = infinite_time
 
-    self.lake_width, self.lake_height = self.lake_map.shape
-    self.num_states = self.lake_width * self.lake_height
-    self._ij_states = [(i, j) for i in range(self.lake_width)
-                       for j in range(self.lake_height)]
+    self.width, self.height = self.lake_map.shape
+    self.num_states = self.width * self.height
+    self.ij_states = [(i, j) for i in range(self.width)
+                      for j in range(self.height)]
 
     self.estop_states = [
-        si for si, (i, j) in enumerate(self._ij_states)
+        si for si, (i, j) in enumerate(self.ij_states)
         if self.lake_map[i, j] == "E"
     ]
     self.goal_states = [
-        si for si, (i, j) in enumerate(self._ij_states)
+        si for si, (i, j) in enumerate(self.ij_states)
         if self.lake_map[i, j] == "G"
     ]
     self.hole_states = [
-        si for si, (i, j) in enumerate(self._ij_states)
+        si for si, (i, j) in enumerate(self.ij_states)
         if self.lake_map[i, j] == "H"
     ]
     self.frozen_states = [
-        si for si, (i, j) in enumerate(self._ij_states)
+        si for si, (i, j) in enumerate(self.ij_states)
         if self.lake_map[i, j] == "F"
     ]
 
     ss = [
-        si for si, (i, j) in enumerate(self._ij_states)
+        si for si, (i, j) in enumerate(self.ij_states)
         if self.lake_map[i, j] == "S"
     ]
     assert len(ss) == 1
     self.start_state = ss[0]
 
-    self.initial_state_distribution = np.zeros((self.num_states, ))
-    self.initial_state_distribution[self.start_state] = 1.0
-
-    # E-stop states are always terminal. The hole and goal states are terminal
-    # iff the environment is finite-time.
-    self.terminal_states = self.estop_states + (
-        self.goal_states + self.hole_states if not self.infinite_time else [])
-    self.nonterminal_states = [
-        i for i in range(self.num_states) if i not in self.terminal_states
-    ]
-
-    self.transitions = self._build_transitions()
-    self.rewards = self._build_rewards()
-
-  def states_reshape(self, stuff1d):
-    stuff2d = np.zeros(self.lake_map.shape)
-    for s, v in zip(self._ij_states, stuff1d):
+  def reshape(self, stuff1d):
+    stuff2d = np.zeros((self.width, self.height))
+    for s, v in zip(self.ij_states, stuff1d):
       stuff2d[s] = v
     return stuff2d
 
-  def _build_transitions(self):
+class FrozenLakeEnv(object):
+  lake: Lake
+  infinite_time: bool
+
+  def __init__(self, lake: Lake, infinite_time: bool):
+    self.lake = lake
+    self.infinite_time = infinite_time
+
+    self.initial_state_distribution = np.zeros((self.lake.num_states, ))
+    self.initial_state_distribution[self.lake.start_state] = 1.0
+
+    # E-stop states are always terminal. The hole and goal states are terminal
+    # iff the environment is finite-time.
+    self.terminal_states = self.lake.estop_states + (
+        self.lake.goal_states + self.lake.hole_states
+        if not self.infinite_time else [])
+    self.nonterminal_states = [
+        i for i in range(self.lake.num_states) if i not in self.terminal_states
+    ]
+
+    self.transitions = FrozenLakeEnv._build_transitions(self.lake)
+    self.rewards = FrozenLakeEnv._build_rewards(self.lake, self.infinite_time)
+
+  @staticmethod
+  def _build_transitions(lake: Lake):
     def clip(pseudo_state: Tuple[int, int]) -> State:
       i, j = pseudo_state
-      return self._ij_states.index((np.clip(i, 0, self.lake_width - 1),
-                                    np.clip(j, 0, self.lake_height - 1)))
+      return lake.ij_states.index((np.clip(i, 0, lake.width - 1),
+                                   np.clip(j, 0, lake.height - 1)))
 
     def move(state: State, action: Action) -> State:
-      i, j = self._ij_states[state]
+      i, j = lake.ij_states[state]
       if action == LEFT:
         return clip((i, j - 1))
       elif action == DOWN:
@@ -112,9 +121,9 @@ class FrozenLakeEnv(object):
       else:
         raise Exception("bad action")
 
-    transitions = np.zeros((self.num_states, NUM_ACTIONS, self.num_states))
-    for s in range(self.num_states):
-      if self.lake_map[self._ij_states[s]] in ["E", "H", "G"]:
+    transitions = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
+    for s in range(lake.num_states):
+      if lake.lake_map[lake.ij_states[s]] in ["E", "H", "G"]:
         transitions[s, :, s] = 1.0
       else:
         for a in [LEFT, DOWN, RIGHT, UP]:
@@ -126,16 +135,26 @@ class FrozenLakeEnv(object):
 
     return transitions
 
-  def _build_rewards(self):
-    rewards = np.zeros((self.num_states, NUM_ACTIONS, self.num_states))
-    for s in self.goal_states:
+  @staticmethod
+  def _build_rewards(lake: Lake, infinite_time: bool):
+    rewards = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
+    for s in lake.goal_states:
       rewards[:, :, s] = 1.0
 
-      if not self.infinite_time:
+      if not infinite_time:
         # Staying in a goal state means no reward.
         rewards[s, :, s] = 0.0
 
     return rewards
+
+# class FrozenLakeWithEscapingEnv(object):
+#   def __init__(self, lake_map):
+#     self.lake_map = lake_map
+
+#     self.lake_width, self.lake_height = self.lake_map.shape
+#     self.num_states = self.lake_width * self.lake_height
+#     self._ij_states = [(i, j) for i in range(self.lake_width)
+#                        for j in range(self.lake_height)]
 
 def expected_rewards(env: FrozenLakeEnv):
   return np.einsum("ijk,ijk->ij", env.transitions, env.rewards)
@@ -144,14 +163,14 @@ def expected_rewards(env: FrozenLakeEnv):
 
 def value_iteration(env: FrozenLakeEnv, gamma: float, tolerance: float):
   """See Sutton & Barto page 83."""
-  V = np.zeros((env.num_states, ))
-  Q = np.zeros((env.num_states, NUM_ACTIONS))
+  V = np.zeros((env.lake.num_states, ))
+  Q = np.zeros((env.lake.num_states, NUM_ACTIONS))
 
   # Seed the values of the goal states with the geometric sum, since we know
   # that's the answer analytically. This only makes sense when we allow
   # ourselves to pick up rewards staying in the goal state forever.
   if env.infinite_time:
-    for s in env.goal_states:
+    for s in env.lake.goal_states:
       V[s] = 1.0 / (1.0 - gamma)
 
   expected_r = expected_rewards(env)
@@ -180,13 +199,13 @@ def iterative_policy_evaluation(env: FrozenLakeEnv,
                                 init_V=None):
   """See Sutton & Barto page 75."""
   if init_V is None:
-    V = np.zeros((env.num_states, ))
+    V = np.zeros((env.lake.num_states, ))
 
     # Seed the values of the goal states with the geometric sum, since we know
     # that's the answer analytically. This only makes sense when we allow
     # ourselves to pick up rewards staying in the goal state forever.
     if env.infinite_time:
-      for s in env.goal_states:
+      for s in env.lake.goal_states:
         V[s] = 1.0 / (1.0 - gamma)
   else:
     V = init_V
@@ -207,7 +226,7 @@ def iterative_policy_evaluation(env: FrozenLakeEnv,
   return V, policy_rewards_per_iter
 
 def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
-  assert policy_transitions.shape == (env.num_states, env.num_states)
+  assert policy_transitions.shape == (env.lake.num_states, env.lake.num_states)
 
   # See https://en.wikipedia.org/wiki/Absorbing_Markov_chain.
   absorbing_states = env.terminal_states
@@ -224,13 +243,13 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
   transient_hp = (N - np.eye(t)) * np.power(np.diag(N), -1)[np.newaxis, :]
   absorbing_hp = np.linalg.solve(Ninv, R)
 
-  hitting_prob = np.zeros(env.num_states)
-  start_ix = transient_states.index(env.start_state)
+  hitting_prob = np.zeros(env.lake.num_states)
+  start_ix = transient_states.index(env.lake.start_state)
   hitting_prob[transient_states] = transient_hp[start_ix, :]
   hitting_prob[absorbing_states] = absorbing_hp[start_ix, :]
 
   # Calculate the expected number of steps to absorption.
-  esta = np.zeros(env.num_states)
+  esta = np.zeros(env.lake.num_states)
   esta[transient_states] = np.sum(N, axis=1)
 
   return hitting_prob, esta
@@ -238,13 +257,13 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
 def rollout(env: FrozenLakeEnv, policy, max_episode_length: int = 500):
   # Start off by sampling an initial state from the initial_state distribution.
   current_state = np.random.choice(
-      env.num_states, p=env.initial_state_distribution)
+      env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
   for _ in range(max_episode_length):
     action = np.random.choice(NUM_ACTIONS, p=policy[current_state, :])
     next_state = np.random.choice(
-        env.num_states, p=env.transitions[current_state, action, :])
+        env.lake.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     episode.append((current_state, action, reward))
@@ -269,7 +288,7 @@ def estimate_hitting_probabilities(env: FrozenLakeEnv, policy,
   rollouts = [rollout_states() for _ in range(num_rollouts)]
   return np.array([
       sum((s in rollout) for rollout in rollouts) / num_rollouts
-      for s in range(env.num_states)
+      for s in range(env.lake.num_states)
   ])
 
 def q_learning_episode(env: FrozenLakeEnv,
@@ -280,7 +299,7 @@ def q_learning_episode(env: FrozenLakeEnv,
                        max_episode_length: int = 500):
   # Start off by sampling an initial state from the initial_state distribution.
   current_state = np.random.choice(
-      env.num_states, p=env.initial_state_distribution)
+      env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
   for t in range(max_episode_length):
@@ -291,7 +310,7 @@ def q_learning_episode(env: FrozenLakeEnv,
 
     action = np.random.choice(NUM_ACTIONS, p=action_probs)
     next_state = np.random.choice(
-        env.num_states, p=env.transitions[current_state, action, :])
+        env.lake.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     Q[current_state, action] += alpha * (
@@ -317,6 +336,6 @@ def num_mdp_states(lake_map):
 def deterministic_policy(env: FrozenLakeEnv, actions):
   """Convert a vector mapping states to actions to a policy array."""
   # See https://stackoverflow.com/questions/29831489/convert-array-of-indices-to-1-hot-encoded-numpy-array
-  policy = np.zeros((env.num_states, NUM_ACTIONS))
-  policy[np.arange(env.num_states), actions] = 1.0
+  policy = np.zeros((env.lake.num_states, NUM_ACTIONS))
+  policy[np.arange(env.lake.num_states), actions] = 1.0
   return policy

@@ -13,7 +13,8 @@ if __name__ == "__main__":
 
   gamma = 0.99
 
-  env = frozenlake.FrozenLakeEnv(lake_map, infinite_time)
+  lake = frozenlake.Lake(lake_map)
+  env = frozenlake.FrozenLakeEnv(lake, infinite_time)
   state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(
       env, gamma, tolerance=1e-6)
   policy_actions = np.argmax(state_action_values, axis=-1)
@@ -21,19 +22,19 @@ if __name__ == "__main__":
 
   # Show value function map.
   plt.figure()
-  viz.plot_heatmap(env, state_values)
+  viz.plot_heatmap(lake, state_values)
   plt.title("Value function on the full environment")
   plt.savefig("figs/value_function_full_env.pdf")
 
   # Show hitting probability map.
   policy_transitions = np.array([
-      env.transitions[i, policy_actions[i], :] for i in range(env.num_states)
+      env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)
   ])
   hp, esta = frozenlake.markov_chain_stats(env, policy_transitions)
-  hp2d = env.states_reshape(hp)
+  hp2d = lake.reshape(hp)
 
   plt.figure()
-  viz.plot_heatmap(env, hp)
+  viz.plot_heatmap(lake, hp)
   plt.title("Hitting probabilities")
   plt.savefig("figs/hitting_probabilities.pdf")
 
@@ -43,17 +44,17 @@ if __name__ == "__main__":
       frozenlake.deterministic_policy(env, policy_actions),
       num_rollouts=1000)
   plt.figure()
-  viz.plot_heatmap(env, estimated_hp)
+  viz.plot_heatmap(lake, estimated_hp)
   plt.title("Estimated hitting probabilities")
 
   plt.figure()
-  viz.plot_heatmap(env, esta)
+  viz.plot_heatmap(lake, esta)
   plt.title("Expected number of states to completion")
 
   # Show optimal policy on top of hitting probabilities.
   plt.figure()
   im = plt.imshow(hp2d)
-  for s, a in zip(env._ij_states, policy_actions):
+  for s, a in zip(lake.ij_states, policy_actions):
     i, j = s
     if a == 0:
       arrow = "←"
@@ -77,7 +78,7 @@ if __name__ == "__main__":
   plt.figure()
   plt.hist(state_values, bins=100, histtype="step", cumulative=True)
   plt.xlabel("V(s)")
-  plt.ylabel(f"Number of states (out of {env.lake_width * env.lake_height})")
+  plt.ylabel(f"Number of states (out of {lake.num_states})")
   plt.title("CDF of state values")
   plt.savefig("figs/value_function_cdf.pdf")
 
@@ -89,16 +90,17 @@ if __name__ == "__main__":
   threshold = np.percentile(estimated_hp, percentile)
   # Use less than or equal because the estimated hitting probabilities can be
   # zero and the threshold can be zero, so nothing on the map changes.
-  estop_map[env.states_reshape(estimated_hp) <= threshold] = "E"
+  estop_map[lake.reshape(estimated_hp) <= threshold] = "E"
 
-  estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time)
+  estop_lake = frozenlake.Lake(estop_map)
+  estop_env = frozenlake.FrozenLakeEnv(estop_lake, infinite_time)
   estop_state_action_values, estop_policy_rewards_per_iter = frozenlake.value_iteration(
       estop_env, gamma, tolerance=1e-6)
   estop_state_values = np.max(estop_state_action_values, axis=-1)
 
   # Show value function map.
   plt.figure()
-  viz.plot_heatmap(estop_env, estop_state_values)
+  viz.plot_heatmap(estop_lake, estop_state_values)
   plt.title(f"E-stop map ({percentile}% of states removed)")
   plt.savefig("figs/estop_map.pdf")
 
