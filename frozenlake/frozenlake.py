@@ -29,6 +29,16 @@ MAP_8x8 = np.array([["S", "F", "F", "F", "F", "F", "F", "F"],
                     ["F", "H", "F", "F", "H", "F", "H", "F"],
                     ["F", "F", "F", "H", "F", "F", "F", "G"]])
 
+XMAP_9x9 = np.array([["H", "F", "F", "F", "F", "F", "F", "F", "H"],
+                     ["F", "H", "F", "F", "F", "F", "F", "H", "F"],
+                     ["F", "F", "H", "F", "F", "F", "H", "F", "F"],
+                     ["F", "F", "F", "H", "F", "H", "F", "F", "F"],
+                     ["F", "F", "F", "F", "S", "F", "F", "F", "G"],
+                     ["F", "F", "F", "H", "F", "H", "F", "F", "F"],
+                     ["F", "F", "H", "F", "F", "F", "H", "F", "F"],
+                     ["F", "H", "F", "F", "F", "F", "F", "H", "F"],
+                     ["H", "F", "F", "F", "F", "F", "F", "F", "H"]])
+
 class FrozenLakeEnv(object):
   def __init__(self, lake_map, infinite_time: bool):
     self.lake_map = lake_map
@@ -51,14 +61,21 @@ class FrozenLakeEnv(object):
         si for si, (i, j) in enumerate(self._ij_states)
         if self.lake_map[i, j] == "H"
     ]
-    self.start_states = [
-        si for si, (i, j) in enumerate(self._ij_states)
-        if self.lake_map[i, j] == "S"
-    ]
     self.frozen_states = [
         si for si, (i, j) in enumerate(self._ij_states)
         if self.lake_map[i, j] == "F"
     ]
+
+    ss = [
+        si for si, (i, j) in enumerate(self._ij_states)
+        if self.lake_map[i, j] == "S"
+    ]
+    assert len(ss) == 1
+    self.start_state = ss[0]
+
+    self.initial_state_distribution = np.zeros((self.num_states, ))
+    self.initial_state_distribution[self.start_state] = 1.0
+
     # E-stop states are always terminal. The hole and goal states are terminal
     # iff the environment is finite-time.
     self.terminal_states = self.estop_states + (
@@ -69,12 +86,6 @@ class FrozenLakeEnv(object):
 
     self.transitions = self._build_transitions()
     self.rewards = self._build_rewards()
-
-    # Start at any start state uniformly at random.
-    ss = self.start_states
-    assert len(ss) > 0
-    self.initial_state_distribution = np.zeros((self.num_states, ))
-    self.initial_state_distribution[ss] = 1.0 / len(ss)
 
   def states_reshape(self, stuff1d):
     stuff2d = np.zeros(self.lake_map.shape)
@@ -213,10 +224,10 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
   transient_hp = (N - np.eye(t)) * np.power(np.diag(N), -1)[np.newaxis, :]
   absorbing_hp = np.linalg.solve(Ninv, R)
 
-  # Assuming that the S is the first transient state!
   hitting_prob = np.zeros(env.num_states)
-  hitting_prob[transient_states] = transient_hp[0, :]
-  hitting_prob[absorbing_states] = absorbing_hp[0, :]
+  start_ix = transient_states.index(env.start_state)
+  hitting_prob[transient_states] = transient_hp[start_ix, :]
+  hitting_prob[absorbing_states] = absorbing_hp[start_ix, :]
 
   # Calculate the expected number of steps to absorption.
   esta = np.zeros(env.num_states)

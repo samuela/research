@@ -8,28 +8,22 @@ import frozenlake
 import viz
 
 if __name__ == "__main__":
-  lake_map = frozenlake.MAP_8x8
+  lake_map = frozenlake.XMAP_9x9
   infinite_time = False
-
-  lake_width, lake_height = lake_map.shape
-
-  # Assuming that the start is the first state!
-  initial_state = np.zeros((lake_width * lake_height, ))
-  initial_state[0] = 1.0
 
   gamma = 0.99
 
   env = frozenlake.FrozenLakeEnv(lake_map, infinite_time)
   state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(
-      env, gamma, 1e-4)
+      env, gamma, tolerance=1e-6)
   policy_actions = np.argmax(state_action_values, axis=-1)
   state_values = np.max(state_action_values, axis=-1)
 
   # Show value function map.
   plt.figure()
   viz.plot_heatmap(env, state_values)
-  plt.title("Complete map")
-  plt.savefig("figs/complete_map.pdf")
+  plt.title("Value function on the full environment")
+  plt.savefig("figs/value_function_full_env.pdf")
 
   # Show hitting probability map.
   policy_transitions = np.array([
@@ -83,7 +77,7 @@ if __name__ == "__main__":
   plt.figure()
   plt.hist(state_values, bins=100, histtype="step", cumulative=True)
   plt.xlabel("V(s)")
-  plt.ylabel(f"Number of states (out of {lake_width * lake_height})")
+  plt.ylabel(f"Number of states (out of {env.lake_width * env.lake_height})")
   plt.title("CDF of state values")
   plt.savefig("figs/value_function_cdf.pdf")
 
@@ -92,17 +86,19 @@ if __name__ == "__main__":
   # New map has hole everywhere with bad prob.
   estop_map = np.copy(lake_map)
   percentile = 50
-  threshold = np.percentile(hp, percentile)
-  estop_map[hp2d < threshold] = "E"
+  threshold = np.percentile(estimated_hp, percentile)
+  # Use less than or equal because the estimated hitting probabilities can be
+  # zero and the threshold can be zero, so nothing on the map changes.
+  estop_map[env.states_reshape(estimated_hp) <= threshold] = "E"
 
   estop_env = frozenlake.FrozenLakeEnv(estop_map, infinite_time)
   estop_state_action_values, estop_policy_rewards_per_iter = frozenlake.value_iteration(
-      estop_env, gamma, 1e-4)
+      estop_env, gamma, tolerance=1e-6)
   estop_state_values = np.max(estop_state_action_values, axis=-1)
 
   # Show value function map.
   plt.figure()
-  viz.plot_heatmap(env, estop_state_values)
+  viz.plot_heatmap(estop_env, estop_state_values)
   plt.title(f"E-stop map ({percentile}% of states removed)")
   plt.savefig("figs/estop_map.pdf")
 
@@ -127,9 +123,11 @@ if __name__ == "__main__":
   plt.title("Convergence comparison")
   plt.savefig("figs/convergence_comparison.pdf")
 
-  print(f"Exact solution, policy value: {np.dot(initial_state, state_values)}")
   print(
-      f"E-stop solution, policy value: {np.dot(initial_state, estop_state_values)}"
+      f"Exact solution, policy value: {np.dot(env.initial_state_distribution, state_values)}"
+  )
+  print(
+      f"E-stop solution, policy value: {np.dot(env.initial_state_distribution, estop_state_values)}"
   )
 
   plt.show()
