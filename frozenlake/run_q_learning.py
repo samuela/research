@@ -54,7 +54,7 @@ def run_q_learning(env: frozenlake.FrozenLakeEnv,
         Q=Q,
         meta_policy=epsilon_greedy(epsilon=0.1),
         # meta_policy=epsilon_greedy_annealed(epsilon=1.0),
-    )
+        max_episode_length=None)
     states_seen += len(episode)
 
     if episode_num % policy_evaluation_frequency == 0:
@@ -79,13 +79,17 @@ def run_q_learning(env: frozenlake.FrozenLakeEnv,
 if __name__ == "__main__":
   np.random.seed(0)
 
-  lake_map = frozenlake.XMAP_9x9
-  infinite_time = True
+  def build_env(lake: frozenlake.Lake):
+    # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)
+    return frozenlake.FrozenLakeWithEscapingEnv(
+        lake, hole_retention_probability=0.99)
+
+  lake_map = frozenlake.MAP_8x8
   policy_evaluation_frequency = 10
   gamma = 0.99
 
   lake = frozenlake.Lake(lake_map)
-  env = frozenlake.FrozenLakeEnv(lake, infinite_time=infinite_time)
+  env = build_env(lake)
   state_action_values, _ = frozenlake.value_iteration(
       env, gamma, tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
@@ -110,7 +114,7 @@ if __name__ == "__main__":
   plt.title("E-stop map")
   plt.show()
 
-  estop_env = frozenlake.FrozenLakeEnv(estop_lake, infinite_time=infinite_time)
+  estop_env = build_env(estop_lake)
   estop_states_seen, estop_policy_rewards = run_q_learning(
       estop_env,
       gamma,

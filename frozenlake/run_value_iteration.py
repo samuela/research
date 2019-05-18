@@ -8,13 +8,17 @@ import frozenlake
 import viz
 
 if __name__ == "__main__":
-  lake_map = frozenlake.XMAP_9x9
-  infinite_time = False
+  lake_map = frozenlake.MAP_8x8
+
+  def build_env(lake: frozenlake.Lake):
+    # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
+    return frozenlake.FrozenLakeWithEscapingEnv(
+        lake, hole_retention_probability=0.99)
 
   gamma = 0.99
 
   lake = frozenlake.Lake(lake_map)
-  env = frozenlake.FrozenLakeEnv(lake, infinite_time)
+  env = build_env(lake)
   state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(
       env, gamma, tolerance=1e-6)
   policy_actions = np.argmax(state_action_values, axis=-1)
@@ -93,7 +97,7 @@ if __name__ == "__main__":
   estop_map[lake.reshape(estimated_hp) <= threshold] = "E"
 
   estop_lake = frozenlake.Lake(estop_map)
-  estop_env = frozenlake.FrozenLakeEnv(estop_lake, infinite_time)
+  estop_env = build_env(estop_lake)
   estop_state_action_values, estop_policy_rewards_per_iter = frozenlake.value_iteration(
       estop_env, gamma, tolerance=1e-6)
   estop_state_values = np.max(estop_state_action_values, axis=-1)

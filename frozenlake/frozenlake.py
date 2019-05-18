@@ -1,7 +1,7 @@
 # See https://github.com/openai/gym/blob/master/gym/envs/toy_text/frozen_lake.py
 
 import math
-from typing import Dict, Tuple, List, Callable
+from typing import Dict, Tuple, List, Callable, Optional
 
 import numpy as np
 import scipy.optimize
@@ -78,6 +78,24 @@ class Lake(object):
       stuff2d[s] = v
     return stuff2d
 
+  def _clip(self, pseudo_state: Tuple[int, int]) -> State:
+    i, j = pseudo_state
+    return self.ij_states.index((np.clip(i, 0, self.width - 1),
+                                 np.clip(j, 0, self.height - 1)))
+
+  def move(self, state: State, action: Action) -> State:
+    i, j = self.ij_states[state]
+    if action == LEFT:
+      return self._clip((i, j - 1))
+    elif action == DOWN:
+      return self._clip((i + 1, j))
+    elif action == RIGHT:
+      return self._clip((i, j + 1))
+    elif action == UP:
+      return self._clip((i - 1, j))
+    else:
+      raise Exception("bad action")
+
 class FrozenLakeEnv(object):
   lake: Lake
   infinite_time: bool
@@ -103,24 +121,6 @@ class FrozenLakeEnv(object):
 
   @staticmethod
   def _build_transitions(lake: Lake):
-    def clip(pseudo_state: Tuple[int, int]) -> State:
-      i, j = pseudo_state
-      return lake.ij_states.index((np.clip(i, 0, lake.width - 1),
-                                   np.clip(j, 0, lake.height - 1)))
-
-    def move(state: State, action: Action) -> State:
-      i, j = lake.ij_states[state]
-      if action == LEFT:
-        return clip((i, j - 1))
-      elif action == DOWN:
-        return clip((i + 1, j))
-      elif action == RIGHT:
-        return clip((i, j + 1))
-      elif action == UP:
-        return clip((i - 1, j))
-      else:
-        raise Exception("bad action")
-
     transitions = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
     for s in range(lake.num_states):
       if lake.lake_map[lake.ij_states[s]] in ["E", "H", "G"]:
@@ -129,9 +129,9 @@ class FrozenLakeEnv(object):
         for a in [LEFT, DOWN, RIGHT, UP]:
           # Use += instead of = in the weird situation in which two moves
           # collide.
-          transitions[s, a, move(s, (a - 1) % NUM_ACTIONS)] += 1.0 / 3.0
-          transitions[s, a, move(s, a)] += 1.0 / 3.0
-          transitions[s, a, move(s, (a + 1) % NUM_ACTIONS)] += 1.0 / 3.0
+          transitions[s, a, lake.move(s, (a - 1) % NUM_ACTIONS)] += 1.0 / 3.0
+          transitions[s, a, lake.move(s, a)] += 1.0 / 3.0
+          transitions[s, a, lake.move(s, (a + 1) % NUM_ACTIONS)] += 1.0 / 3.0
 
     return transitions
 
@@ -147,14 +147,55 @@ class FrozenLakeEnv(object):
 
     return rewards
 
-# class FrozenLakeWithEscapingEnv(object):
-#   def __init__(self, lake_map):
-#     self.lake_map = lake_map
+class FrozenLakeWithEscapingEnv(object):
+  lake: Lake
 
-#     self.lake_width, self.lake_height = self.lake_map.shape
-#     self.num_states = self.lake_width * self.lake_height
-#     self._ij_states = [(i, j) for i in range(self.lake_width)
-#                        for j in range(self.lake_height)]
+  def __init__(self, lake: Lake, hole_retention_probability: float):
+    self.lake = lake
+    self.hole_retention_probability = hole_retention_probability
+
+    # The goal state is considered terminal.
+    self.infinite_time = False
+
+    self.initial_state_distribution = np.zeros((self.lake.num_states, ))
+    self.initial_state_distribution[self.lake.start_state] = 1.0
+
+    # E-stop and goal states are terminal. Hole states can be escaped.
+    self.terminal_states = self.lake.estop_states + self.lake.goal_states
+    self.nonterminal_states = [
+        i for i in range(self.lake.num_states) if i not in self.terminal_states
+    ]
+
+    self.transitions = FrozenLakeWithEscapingEnv._build_transitions(
+        self.lake, self.hole_retention_probability)
+    self.rewards = FrozenLakeEnv._build_rewards(self.lake, infinite_time=False)
+
+  @staticmethod
+  def _build_transitions(lake: Lake, hole_retention_probability: float):
+    transitions = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
+    for s in range(lake.num_states):
+      if lake.lake_map[lake.ij_states[s]] in ["E", "G"]:
+        transitions[s, :, s] = 1.0
+      elif lake.lake_map[lake.ij_states[s]] == "H":
+        for a in [LEFT, DOWN, RIGHT, UP]:
+          leave_prob = 1.0 / 3.0 * (1 - hole_retention_probability)
+
+          # Stay in the same hole with probability hole_retention_probability.
+          transitions[s, a, s] = hole_retention_probability
+
+          # Otherwise we leave stochastically.
+          transitions[s, a, lake.move(s, (a - 1) % NUM_ACTIONS)] += leave_prob
+          transitions[s, a, lake.move(s, a)] += leave_prob
+          transitions[s, a, lake.move(s, (a + 1) % NUM_ACTIONS)] += leave_prob
+      else:
+        for a in [LEFT, DOWN, RIGHT, UP]:
+          # Use += instead of = in the weird situation in which two moves
+          # collide.
+          transitions[s, a, lake.move(s, (a - 1) % NUM_ACTIONS)] += 1.0 / 3.0
+          transitions[s, a, lake.move(s, a)] += 1.0 / 3.0
+          transitions[s, a, lake.move(s, (a + 1) % NUM_ACTIONS)] += 1.0 / 3.0
+
+    return transitions
 
 def expected_rewards(env: FrozenLakeEnv):
   return np.einsum("ijk,ijk->ij", env.transitions, env.rewards)
@@ -212,16 +253,15 @@ def iterative_policy_evaluation(env: FrozenLakeEnv,
 
   expected_r = expected_rewards(env)
 
+  delta = np.inf
   policy_rewards_per_iter = []
-  while True:
+  while delta > tolerance:
     Q = expected_r + gamma * np.einsum("ijk,k->ij", env.transitions, V)
     new_state_values = np.einsum("ij,ij->i", Q, policy)
     delta = np.abs(V - new_state_values).max()
     policy_reward = np.dot(new_state_values, env.initial_state_distribution)
     V = new_state_values
     policy_rewards_per_iter.append(policy_reward)
-
-    if delta <= tolerance: break
 
   return V, policy_rewards_per_iter
 
@@ -296,13 +336,16 @@ def q_learning_episode(env: FrozenLakeEnv,
                        alpha,
                        Q,
                        meta_policy,
-                       max_episode_length: int = 500):
+                       max_episode_length: Optional[int] = None):
   # Start off by sampling an initial state from the initial_state distribution.
   current_state = np.random.choice(
       env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
-  for t in range(max_episode_length):
+  # for t in range(max_episode_length):
+  t = 0
+  while (max_episode_length is None) or (max_episode_length is not None
+                                         and t < max_episode_length):
     # Assert that action_probs is not None in order to avoid a pernicious set of
     # bugs where the meta_policy forgets a return statement.
     action_probs = meta_policy(Q[current_state, :], t)
@@ -318,6 +361,7 @@ def q_learning_episode(env: FrozenLakeEnv,
 
     episode.append((current_state, action, reward))
     current_state = next_state
+    t += 1
 
     if current_state in env.terminal_states: break
 
