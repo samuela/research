@@ -1,3 +1,9 @@
+# Limit ourselves to single-threaded numpy operations to avoid thrashing. See
+# https://stackoverflow.com/questions/17053671/python-how-do-you-stop-numpy-from-multithreading
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -69,8 +75,11 @@ def run_q_learning(
 
     if episode_num % policy_evaluation_frequency == 0:
       policy = frozenlake.deterministic_policy(env, np.argmax(Q, axis=-1))
-      V, _ = frozenlake.iterative_policy_evaluation(
-          env, gamma, policy, tolerance=1e-6, init_V=V)
+      V, _ = frozenlake.iterative_policy_evaluation(env,
+                                                    gamma,
+                                                    policy,
+                                                    tolerance=1e-6,
+                                                    init_V=V)
       policy_reward = np.dot(V, env.initial_state_distribution)
 
       if verbose:
@@ -96,7 +105,7 @@ def q_learning_job(random_seed: int, env, gamma: float,
       env,
       gamma,
       policy_evaluation_frequency=policy_evaluation_frequency,
-      num_episodes=10,
+      num_episodes=50000,
       verbose=False)
 
   with (folder / f"seed={random_seed}.pkl").open(mode="wb") as f:
@@ -104,8 +113,6 @@ def q_learning_job(random_seed: int, env, gamma: float,
         "states_seen": states_seen,
         "policy_rewards": policy_rewards
     }, f)
-
-  # print(f"Finished job for random seed {random_seed}.")
 
 def main():
   np.random.seed(0)
@@ -133,16 +140,18 @@ def main():
   # policy.
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
-  state_action_values, _ = frozenlake.value_iteration(
-      env, gamma, tolerance=1e-6)
+  state_action_values, _ = frozenlake.value_iteration(env,
+                                                      gamma,
+                                                      tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
   optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
 
   # Estimate hitting probabilities.
   optimal_policy = frozenlake.deterministic_policy(
       env, np.argmax(state_action_values, axis=-1))
-  estimated_hp = frozenlake.estimate_hitting_probabilities(
-      env, optimal_policy, num_rollouts=1000)
+  estimated_hp = frozenlake.estimate_hitting_probabilities(env,
+                                                           optimal_policy,
+                                                           num_rollouts=1000)
   estimated_hp2d = lake.reshape(estimated_hp)
 
   # Build e-stop environment.
@@ -155,25 +164,26 @@ def main():
   estop_env = build_env(estop_lake)
 
   # pickle dump the environemnt setup/metadata...
-  pickle.dump({
-      "lake_map": lake_map,
-      "policy_evaluation_frequency": policy_evaluation_frequency,
-      "gamma": gamma,
-      "num_random_seeds": num_random_seeds,
-      "lake": lake,
-      "env": env,
-      "state_action_values": state_action_values,
-      "state_values": state_values,
-      "optimal_policy_reward": optimal_policy_reward,
-      "optimal_policy": optimal_policy,
-      "estimated_hp": estimated_hp,
-      "estimated_hp2d": estimated_hp2d,
-      "estop_map": estop_map,
-      "percentile": percentile,
-      "threshold": threshold,
-      "estop_lake": estop_lake,
-      "estop_env": estop_env,
-  }, (results_dir / "metadata.pkl").open(mode="wb"))
+  pickle.dump(
+      {
+          "lake_map": lake_map,
+          "policy_evaluation_frequency": policy_evaluation_frequency,
+          "gamma": gamma,
+          "num_random_seeds": num_random_seeds,
+          "lake": lake,
+          "env": env,
+          "state_action_values": state_action_values,
+          "state_values": state_values,
+          "optimal_policy_reward": optimal_policy_reward,
+          "optimal_policy": optimal_policy,
+          "estimated_hp": estimated_hp,
+          "estimated_hp2d": estimated_hp2d,
+          "estop_map": estop_map,
+          "percentile": percentile,
+          "threshold": threshold,
+          "estop_lake": estop_lake,
+          "estop_env": estop_env,
+      }, (results_dir / "metadata.pkl").open(mode="wb"))
 
   # plt.figure()
   # viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
@@ -181,31 +191,29 @@ def main():
   # plt.show()
 
   # Run Q-learning on the full environment.
-  for _ in tqdm.tqdm(
-      pool.imap_unordered(
-          functools.partial(
-              q_learning_job,
-              env=env,
-              gamma=gamma,
-              policy_evaluation_frequency=policy_evaluation_frequency,
-              folder=estop_results_dir,
-          ), range(num_random_seeds)),
-      desc="full",
-      total=num_random_seeds):
+  for _ in tqdm.tqdm(pool.imap_unordered(
+      functools.partial(
+          q_learning_job,
+          env=env,
+          gamma=gamma,
+          policy_evaluation_frequency=policy_evaluation_frequency,
+          folder=full_results_dir,
+      ), range(num_random_seeds)),
+                     desc="full",
+                     total=num_random_seeds):
     pass
 
   # Run Q-learning on the e-stop environment.
-  for _ in tqdm.tqdm(
-      pool.imap_unordered(
-          functools.partial(
-              q_learning_job,
-              env=estop_env,
-              gamma=gamma,
-              policy_evaluation_frequency=policy_evaluation_frequency,
-              folder=estop_results_dir,
-          ), range(num_random_seeds)),
-      desc="estop",
-      total=num_random_seeds):
+  for _ in tqdm.tqdm(pool.imap_unordered(
+      functools.partial(
+          q_learning_job,
+          env=estop_env,
+          gamma=gamma,
+          policy_evaluation_frequency=policy_evaluation_frequency,
+          folder=estop_results_dir,
+      ), range(num_random_seeds)),
+                     desc="estop",
+                     total=num_random_seeds):
     pass
 
   ### Plotting
