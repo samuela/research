@@ -4,9 +4,9 @@ import os
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
-import matplotlib
-matplotlib.use("TkAgg")
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use("TkAgg")
+# import matplotlib.pyplot as plt
 
 import functools
 from multiprocessing import Pool
@@ -127,7 +127,7 @@ def main():
   gamma = 0.99
   num_random_seeds = 100
 
-  results_dir = Path("qlearning_pkls")
+  results_dir = Path("results/qlearning_pkls")
   estop_results_dir = results_dir / "estop"
   full_results_dir = results_dir / "full"
   results_dir.mkdir()
@@ -215,31 +215,6 @@ def main():
                      desc="estop",
                      total=num_random_seeds):
     pass
-
-  ### Plotting
-  # plt.figure()
-  # plt.plot(
-  #     policy_evaluation_frequency * np.arange(len(full_map_policy_rewards)),
-  #     full_map_policy_rewards)
-  # plt.plot(policy_evaluation_frequency * np.arange(len(estop_policy_rewards)),
-  #          estop_policy_rewards)
-  # plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
-  # plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
-  # plt.xlabel("Episode")
-  # plt.ylabel("Policy reward")
-  # plt.savefig("figs/q_learning_per_episode.pdf")
-
-  # plt.figure()
-  # plt.plot(full_map_states_seen, full_map_policy_rewards)
-  # plt.plot(estop_states_seen, estop_policy_rewards)
-  # plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
-  # plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
-  # plt.xlabel("Number of states seen")
-  # plt.ylabel("Policy reward")
-  # # plt.title("Q-learning on the complete environment")
-  # plt.savefig("figs/q_learning_per_states_seen.pdf")
-
-  # plt.show()
 
 if __name__ == "__main__":
   progress_bar = None
