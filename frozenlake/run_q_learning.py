@@ -217,5 +217,4 @@ def main():
     pass
 
 if __name__ == "__main__":
-  progress_bar = None
   main()
