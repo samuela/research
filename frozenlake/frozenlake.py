@@ -331,44 +331,6 @@ def estimate_hitting_probabilities(env: FrozenLakeEnv, policy,
       for s in range(env.lake.num_states)
   ])
 
-def q_learning_episode(env: FrozenLakeEnv,
-                       gamma,
-                       alpha,
-                       Q,
-                       meta_policy,
-                       max_episode_length: Optional[int] = None):
-  # Start off by sampling an initial state from the initial_state distribution.
-  current_state = np.random.choice(
-      env.lake.num_states, p=env.initial_state_distribution)
-  episode = []
-
-  # for t in range(max_episode_length):
-  t = 0
-  while (max_episode_length is None) or (max_episode_length is not None
-                                         and t < max_episode_length):
-    # Assert that action_probs is not None in order to avoid a pernicious set of
-    # bugs where the meta_policy forgets a return statement.
-    action_probs = meta_policy(Q[current_state, :], t)
-    assert action_probs is not None
-
-    action = np.random.choice(NUM_ACTIONS, p=action_probs)
-    next_state = np.random.choice(
-        env.lake.num_states, p=env.transitions[current_state, action, :])
-    reward = env.rewards[current_state, action, next_state]
-
-    Q[current_state, action] += alpha * (
-        reward + gamma * Q[next_state, :].max() - Q[current_state, action])
-
-    episode.append((current_state, action, reward))
-    current_state = next_state
-    t += 1
-
-    if current_state in env.terminal_states: break
-
-  # `current_state` is now the final state. Reporting it is necessary in order
-  # to tell which state the episode actually ended on.
-  return Q, episode, current_state
-
 def num_mdp_states(lake_map):
   num_starts = (lake_map == "S").sum()
   num_frozen = (lake_map == "F").sum()
