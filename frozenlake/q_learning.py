@@ -25,9 +25,9 @@ def epsilon_greedy_annealed(epsilon: float):
 
   return h
 
-def q_learning_episode(env: frozenlake.FrozenLakeEnv,
-                       gamma,
-                       alpha,
+def q_learning_episode(env,
+                       gamma: float,
+                       alpha: float,
                        Q,
                        meta_policy,
                        max_episode_length: Optional[int] = None):
@@ -36,7 +36,6 @@ def q_learning_episode(env: frozenlake.FrozenLakeEnv,
                                    p=env.initial_state_distribution)
   episode = []
 
-  # for t in range(max_episode_length):
   t = 0
   while (max_episode_length is None) or (max_episode_length is not None
                                          and t < max_episode_length):

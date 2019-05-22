@@ -18,6 +18,8 @@ UP = 3
 
 NUM_ACTIONS = 4
 
+MAP_CORRIDOR_3x1 = np.array([["S", "F", "G"]])
+MAP_CORRIDOR_4x1 = np.array([["S", "F", "F", "G"]])
 MAP_4x4 = np.array([["S", "F", "F", "F"], ["F", "H", "F", "H"],
                     ["F", "F", "F", "H"], ["H", "F", "F", "G"]])
 MAP_8x8 = np.array([["S", "F", "F", "F", "F", "F", "F", "F"],
@@ -80,8 +82,10 @@ class Lake(object):
 
   def _clip(self, pseudo_state: Tuple[int, int]) -> State:
     i, j = pseudo_state
-    return self.ij_states.index((np.clip(i, 0, self.width - 1),
-                                 np.clip(j, 0, self.height - 1)))
+    return self.ij_states.index((
+        np.clip(i, 0, self.width - 1),
+        np.clip(j, 0, self.height - 1),
+    ))
 
   def move(self, state: State, action: Action) -> State:
     i, j = self.ij_states[state]
@@ -110,8 +114,8 @@ class FrozenLakeEnv(object):
     # E-stop states are always terminal. The hole and goal states are terminal
     # iff the environment is finite-time.
     self.terminal_states = self.lake.estop_states + (
-        self.lake.goal_states + self.lake.hole_states
-        if not self.infinite_time else [])
+        self.lake.goal_states +
+        self.lake.hole_states if not self.infinite_time else [])
     self.nonterminal_states = [
         i for i in range(self.lake.num_states) if i not in self.terminal_states
     ]
@@ -202,7 +206,10 @@ def expected_rewards(env: FrozenLakeEnv):
   # expected_rewards2 = np.sum(transitions * rewards, axis=-1)
   # assert np.allclose(expected_rewards, expected_rewards2)
 
-def value_iteration(env: FrozenLakeEnv, gamma: float, tolerance: float):
+def value_iteration(env: FrozenLakeEnv,
+                    gamma: float,
+                    tolerance: Optional[float] = None,
+                    max_iterations: Optional[int] = None):
   """See Sutton & Barto page 83."""
   V = np.zeros((env.lake.num_states, ))
   Q = np.zeros((env.lake.num_states, NUM_ACTIONS))
@@ -216,6 +223,7 @@ def value_iteration(env: FrozenLakeEnv, gamma: float, tolerance: float):
 
   expected_r = expected_rewards(env)
 
+  num_iterations = 0
   policy_rewards_per_iter = []
   while True:
     Q = expected_r + gamma * np.einsum("ijk,k->ij", env.transitions, V)
@@ -228,8 +236,10 @@ def value_iteration(env: FrozenLakeEnv, gamma: float, tolerance: float):
     # )
     V = new_state_values
     policy_rewards_per_iter.append(policy_reward)
+    num_iterations += 1
 
-    if delta <= tolerance: break
+    if tolerance is not None and delta <= tolerance: break
+    if max_iterations is not None and num_iterations >= max_iterations: break
 
   return Q, policy_rewards_per_iter
 
@@ -294,20 +304,23 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
 
   return hitting_prob, esta
 
-def rollout(env: FrozenLakeEnv, policy, max_episode_length: int = 500):
+def rollout(env, policy, max_episode_length: Optional[int] = None):
   # Start off by sampling an initial state from the initial_state distribution.
-  current_state = np.random.choice(
-      env.lake.num_states, p=env.initial_state_distribution)
+  current_state = np.random.choice(env.lake.num_states,
+                                   p=env.initial_state_distribution)
   episode = []
 
-  for _ in range(max_episode_length):
+  t = 0
+  while (max_episode_length is None) or (max_episode_length is not None
+                                         and t < max_episode_length):
     action = np.random.choice(NUM_ACTIONS, p=policy[current_state, :])
-    next_state = np.random.choice(
-        env.lake.num_states, p=env.transitions[current_state, action, :])
+    next_state = np.random.choice(env.lake.num_states,
+                                  p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     episode.append((current_state, action, reward))
     current_state = next_state
+    t += 1
 
     if current_state in env.terminal_states: break
 
