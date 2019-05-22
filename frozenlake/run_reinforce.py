@@ -8,14 +8,6 @@ import frozenlake
 import reinforce
 import viz
 
-def optimal_policy_reward(env, gamma: float):
-  state_action_values, _ = frozenlake.value_iteration(env,
-                                                      gamma,
-                                                      tolerance=1e-6)
-  state_values = np.max(state_action_values, axis=-1)
-  optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
-  return optimal_policy_reward
-
 if __name__ == "__main__":
   np.random.seed(0)
 
@@ -32,7 +24,7 @@ if __name__ == "__main__":
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
   print(
-      f"Optimal policy reward on full env: {optimal_policy_reward(env, gamma)}"
+      f"Optimal policy reward on full env: {frozenlake.optimal_policy_reward(env, gamma)}"
   )
 
   # Estimate hitting probabilities.
@@ -59,7 +51,7 @@ if __name__ == "__main__":
   estop_lake = frozenlake.Lake(estop_map)
   estop_env = build_env(estop_lake)
   print(
-      f"Optimal policy reward on e-stop: {optimal_policy_reward(estop_env, gamma)}"
+      f"Optimal policy reward on e-stop: {frozenlake.optimal_policy_reward(estop_env, gamma)}"
   )
 
   plt.figure()
@@ -90,7 +82,11 @@ if __name__ == "__main__":
 
     plt.plot(states_seen, policy_rewards)
 
-  plt.axhline(optimal_policy_reward(env, gamma), color="grey", linestyle="--")
-  plt.axhline(optimal_policy_reward(estop_env, gamma), color="grey", linestyle="--")
+  plt.axhline(frozenlake.optimal_policy_reward(env, gamma),
+              color="grey",
+              linestyle="--")
+  plt.axhline(frozenlake.optimal_policy_reward(estop_env, gamma),
+              color="grey",
+              linestyle="--")
   plt.title(f"Learning rate={optimizer.learning_rate}")
   plt.show()

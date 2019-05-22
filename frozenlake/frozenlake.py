@@ -75,7 +75,7 @@ class Lake(object):
     self.start_state = ss[0]
 
   def reshape(self, stuff1d):
-    stuff2d = np.zeros((self.width, self.height))
+    stuff2d = np.zeros((self.width, self.height), dtype=stuff1d.dtype)
     for s, v in zip(self.ij_states, stuff1d):
       stuff2d[s] = v
     return stuff2d
@@ -358,3 +358,9 @@ def deterministic_policy(env: FrozenLakeEnv, actions):
   policy = np.zeros((env.lake.num_states, NUM_ACTIONS))
   policy[np.arange(env.lake.num_states), actions] = 1.0
   return policy
+
+def optimal_policy_reward(env, gamma: float) -> float:
+  state_action_values, _ = value_iteration(env, gamma, tolerance=1e-6)
+  state_values = np.max(state_action_values, axis=-1)
+  optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
+  return optimal_policy_reward

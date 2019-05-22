@@ -8,13 +8,14 @@ import frozenlake
 import viz
 
 if __name__ == "__main__":
-  lake_map = frozenlake.MAP_8x8
+  np.random.seed(0)
 
   def build_env(lake: frozenlake.Lake):
     # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
     return frozenlake.FrozenLakeWithEscapingEnv(
         lake, hole_retention_probability=0.99)
 
+  lake_map = frozenlake.MAP_8x8
   gamma = 0.99
 
   lake = frozenlake.Lake(lake_map)
@@ -120,8 +121,9 @@ if __name__ == "__main__":
       4 * (frozenlake.NUM_ACTIONS * (frozenlake.num_mdp_states(lake_map)**2)) *
       np.arange(len(policy_rewards_per_iter)), policy_rewards_per_iter)
   plt.plot(
-      4 * (frozenlake.NUM_ACTIONS * (frozenlake.num_mdp_states(estop_map)**2))
-      * np.arange(len(estop_policy_rewards_per_iter)),
+      4 * (frozenlake.NUM_ACTIONS *
+           (frozenlake.num_mdp_states(estop_map)**2)) *
+      np.arange(len(estop_policy_rewards_per_iter)),
       estop_policy_rewards_per_iter)
   plt.xlabel("FLOPS")
   plt.ylabel("Policy reward")
