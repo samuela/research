@@ -57,6 +57,7 @@ if __name__ == "__main__":
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
   plt.xlabel("Episode")
   plt.ylabel("Policy reward")
+  plt.tight_layout()
   plt.savefig("figs/q_learning_per_episode.pdf")
 
   ### Plot per states seen.
@@ -87,6 +88,7 @@ if __name__ == "__main__":
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
   plt.xlabel("Number of states seen")
   plt.ylabel("Policy reward")
+  plt.tight_layout()
   plt.savefig("figs/q_learning_per_states_seen.pdf")
 
   plt.show()
