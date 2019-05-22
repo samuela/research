@@ -12,7 +12,8 @@ def plot_heatmap(lake: frozenlake.Lake, heat1d):
       if tile != "F":
         im.axes.text(j, i, tile, {
             "horizontalalignment": "center",
-            "verticalalignment": "center"
+            "verticalalignment": "center",
+            "color": "white"
         })
 
   return im

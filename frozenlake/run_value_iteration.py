@@ -28,7 +28,20 @@ if __name__ == "__main__":
   # Show value function map.
   plt.figure()
   viz.plot_heatmap(lake, state_values)
-  plt.title("Value function on the full environment")
+  plt.title("FrozenLake-v0 environment")
+  plt.tick_params(
+      axis="both",
+      which="both",
+      bottom=False,
+      top=False,
+      left=False,
+      right=False,
+      labelbottom=False,
+      labeltop=False,
+      labelleft=False,
+      labelright=False,
+  )
+  plt.tight_layout()
   plt.savefig("figs/value_function_full_env.pdf")
 
   # Show hitting probability map.
