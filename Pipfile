@@ -13,6 +13,8 @@ numpy = "*"
 matplotlib = "*"
 scipy = "*"
 tqdm = "*"
+jax = "*"
+jaxlib = "*"
 
 [requires]
 python_version = "3.7"
