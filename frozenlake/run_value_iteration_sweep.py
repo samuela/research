@@ -96,9 +96,8 @@ if __name__ == "__main__":
       i for i, res in enumerate(results) if res is not None and res[1][-1] > 0
   ]
 
-  cmap = plt.get_cmap("YlOrRd")
-
   plt.rcParams.update({"font.size": 16})
+  cmap = plt.get_cmap("YlOrRd")
 
   plt.figure()
   for i, ix in enumerate(noncrappy_results):
@@ -108,13 +107,14 @@ if __name__ == "__main__":
 
   plt.xlim(0, 5e3)
   plt.xlabel("FLOPs (thousands)")
-  plt.ylabel("Policy reward")
-  plt.colorbar(
+  plt.ylabel("Cumulative policy reward")
+  colorbar = plt.colorbar(
       matplotlib.cm.ScalarMappable(
           cmap=cmap,
           norm=matplotlib.colors.Normalize(vmin=0,
-                                           vmax=max(noncrappy_results) /
+                                           vmax=100 * max(noncrappy_results) /
                                            lake.num_states)))
+  colorbar.set_label("E-stop states (%)", rotation=270, labelpad=25)
   plt.tight_layout()
   plt.savefig("figs/value_iteration_sweep.pdf")
 
@@ -122,6 +122,6 @@ if __name__ == "__main__":
   plt.plot(100 * np.array(noncrappy_results) / lake.num_states,
            [results[i][1][-1] for i in noncrappy_results])
   plt.xlabel("States removed (%)")
-  plt.ylabel("Optimal policy reward")
+  plt.ylabel("Optimal policy cumulative reward")
   plt.tight_layout()
   plt.savefig("figs/num_removed_vs_policy_reward.pdf")

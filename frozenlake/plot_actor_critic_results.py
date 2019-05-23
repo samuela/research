@@ -45,7 +45,7 @@ if __name__ == "__main__":
   plt.legend(
       ["Full env. Actor-Critic", "E-stop Actor-Critic", "Optimal policy"])
   plt.xlabel("Episode")
-  plt.ylabel("Policy reward")
+  plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/actor_critic_per_episode.pdf")
 
@@ -78,6 +78,6 @@ if __name__ == "__main__":
       ["Full env. Actor-Critic", "E-stop Actor-Critic", "Optimal policy"],
       loc="lower right")
   plt.xlabel("Number of states seen (thousands)")
-  plt.ylabel("Policy reward")
+  plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/actor_critic_per_states_seen.pdf")
