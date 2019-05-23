@@ -49,6 +49,8 @@ if __name__ == "__main__":
   num_episodes_to_plot = 2500
   num_points_to_plot = int(num_episodes_to_plot / policy_evaluation_frequency)
 
+  plt.rcParams.update({"font.size": 16})
+
   plt.figure()
   x = policy_evaluation_frequency * np.arange(num_points_to_plot)
   plot_errorfill(x, full_policy_rewards[:, :num_points_to_plot], "slategrey")
@@ -82,11 +84,11 @@ if __name__ == "__main__":
   ])
 
   plt.figure()
-  plot_errorfill(x, full_policy_rewards_interp, "slategrey")
-  plot_errorfill(x, estop_policy_rewards_interp, "crimson")
+  plot_errorfill(x / 1000, full_policy_rewards_interp, "slategrey")
+  plot_errorfill(x / 1000, estop_policy_rewards_interp, "crimson")
   plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
-  plt.xlabel("Number of states seen")
+  plt.xlabel("Number of states seen (thousands)")
   plt.ylabel("Policy reward")
   plt.tight_layout()
   plt.savefig("figs/q_learning_per_states_seen.pdf")

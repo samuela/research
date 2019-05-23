@@ -98,14 +98,16 @@ if __name__ == "__main__":
 
   cmap = plt.get_cmap("YlOrRd")
 
+  plt.rcParams.update({"font.size": 16})
+
   plt.figure()
   for i, ix in enumerate(noncrappy_results):
-    plt.plot(results[ix][0],
+    plt.plot(results[ix][0] / 1000.0,
              results[ix][1],
              color=cmap(i / len(noncrappy_results)))
 
-  plt.xlim(0, 5e6)
-  plt.xlabel("FLOPS")
+  plt.xlim(0, 5e3)
+  plt.xlabel("FLOPs (thousands)")
   plt.ylabel("Policy reward")
   plt.colorbar(
       matplotlib.cm.ScalarMappable(
