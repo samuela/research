@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import frozenlake
+import optimizers
 import reinforce
 import viz
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
 
     x0 = 1e-2 * np.random.randn(estop_env.lake.num_states,
                                 frozenlake.NUM_ACTIONS)
-    optimizer = reinforce.Adam(x0, learning_rate=1e-3)
+    optimizer = optimizers.Adam(x0, learning_rate=1e-3)
     # optimizer = reinforce.Momentum(x0, learning_rate=1e-2, mass=0.0)
     states_seen, policy_rewards = reinforce.run_reinforce(
         estop_env,

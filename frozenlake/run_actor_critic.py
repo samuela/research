@@ -16,19 +16,28 @@ import pickle
 import numpy as np
 import tqdm
 
+import actor_critic
 import frozenlake
-import q_learning
+import optimizers
 import viz
 
-def q_learning_job(random_seed: int, env, gamma: float,
-                   policy_evaluation_frequency: int, folder: Path):
+def actor_critic_job(random_seed: int, env, gamma: float,
+                     policy_evaluation_frequency: int, folder: Path):
   np.random.seed(random_seed)
 
-  states_seen, policy_rewards = q_learning.run_q_learning(
+  actor_optimizer = optimizers.Adam(
+      x0=1e-2 * np.random.randn(env.lake.num_states, frozenlake.NUM_ACTIONS),
+      learning_rate=1e-3)
+  critic_optimizer = optimizers.Adam(x0=np.zeros(env.lake.num_states),
+                                     learning_rate=1e-3)
+  # optimizer = reinforce.Momentum(x0, learning_rate=1e-2, mass=0.0)
+  states_seen, policy_rewards = actor_critic.run_actor_critic(
       env,
       gamma,
-      policy_evaluation_frequency=policy_evaluation_frequency,
+      actor_optimizer,
+      critic_optimizer,
       num_episodes=50000,
+      policy_evaluation_frequency=policy_evaluation_frequency,
       verbose=False)
 
   with (folder / f"seed={random_seed}.pkl").open(mode="wb") as f:
@@ -50,15 +59,14 @@ def main():
   gamma = 0.99
   num_random_seeds = 100
 
-  results_dir = Path("results/qlearning_pkls")
+  # Create necessary directory structure.
+  results_dir = Path("results/actor_critic_pkls")
   estop_results_dir = results_dir / "estop"
   full_results_dir = results_dir / "full"
   results_dir.mkdir()
   estop_results_dir.mkdir()
   full_results_dir.mkdir()
 
-  # Build the full environment and run value iteration to calculate the optimal
-  # policy.
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
   state_action_values, _ = frozenlake.value_iteration(env,
@@ -68,11 +76,18 @@ def main():
   optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
 
   # Estimate hitting probabilities.
+  state_action_values, _ = frozenlake.value_iteration(
+      env,
+      gamma,
+      tolerance=1e-6,
+  )
   optimal_policy = frozenlake.deterministic_policy(
       env, np.argmax(state_action_values, axis=-1))
-  estimated_hp = frozenlake.estimate_hitting_probabilities(env,
-                                                           optimal_policy,
-                                                           num_rollouts=1000)
+  estimated_hp = frozenlake.estimate_hitting_probabilities(
+      env,
+      optimal_policy,
+      num_rollouts=1000,
+  )
   estimated_hp2d = lake.reshape(estimated_hp)
 
   # Build e-stop environment.
@@ -83,6 +98,16 @@ def main():
 
   estop_lake = frozenlake.Lake(estop_map)
   estop_env = build_env(estop_lake)
+
+  # plt.figure()
+  # viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
+  # plt.title("E-stop map")
+
+  # plt.figure()
+  # viz.plot_heatmap(lake, np.zeros(lake.num_states))
+  # plt.title("Full map")
+
+  # plt.show()
 
   # pickle dump the environemnt setup/metadata...
   pickle.dump(
@@ -106,17 +131,12 @@ def main():
           "estop_env": estop_env,
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
-  # plt.figure()
-  # viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
-  # plt.title("E-stop map")
-  # plt.show()
-
   pool = Pool()
 
-  # Run Q-learning on the full environment.
+  # Run on the full environment.
   for _ in tqdm.tqdm(pool.imap_unordered(
       functools.partial(
-          q_learning_job,
+          actor_critic_job,
           env=env,
           gamma=gamma,
           policy_evaluation_frequency=policy_evaluation_frequency,
@@ -126,10 +146,10 @@ def main():
                      total=num_random_seeds):
     pass
 
-  # Run Q-learning on the e-stop environment.
+  # Run on the e-stop environment.
   for _ in tqdm.tqdm(pool.imap_unordered(
       functools.partial(
-          q_learning_job,
+          actor_critic_job,
           env=estop_env,
           gamma=gamma,
           policy_evaluation_frequency=policy_evaluation_frequency,
