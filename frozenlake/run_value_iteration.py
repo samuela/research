@@ -28,7 +28,7 @@ if __name__ == "__main__":
   # Show value function map.
   plt.figure()
   viz.plot_heatmap(lake, state_values)
-  plt.title("FrozenLake-v0 environment")
+  # plt.title("FrozenLake-v0 environment")
   plt.tick_params(
       axis="both",
       which="both",
