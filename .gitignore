@@ -3,3 +3,10 @@ __pycache__
 .DS_Store
 ._*
 .ionide/
+
+*.swp
+*.pyc
+*.pkl
+*.py~
+.pytest_cache
+.idea
