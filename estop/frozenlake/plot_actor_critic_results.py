@@ -1,10 +1,7 @@
-import matplotlib
-matplotlib.use("TkAgg")
-import matplotlib.pyplot as plt
-
 from pathlib import Path
 import pickle
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import viz

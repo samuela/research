@@ -49,7 +49,8 @@ def actor_critic_episode(env,
     current_state = next_state
     t += 1
 
-    if current_state in env.terminal_states: break
+    if current_state in env.terminal_states:
+      break
 
   return episode, current_state
 

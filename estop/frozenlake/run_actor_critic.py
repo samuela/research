@@ -4,10 +4,7 @@ import os
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
-# import matplotlib
-# matplotlib.use("TkAgg")
-# import matplotlib.pyplot as plt
-
+# pylint: disable=wrong-import-position
 import functools
 from multiprocessing import Pool
 from pathlib import Path
@@ -19,7 +16,7 @@ import tqdm
 import actor_critic
 import frozenlake
 import optimizers
-import viz
+# pylint: enable=wrong-import-position
 
 def actor_critic_job(random_seed: int, env, gamma: float,
                      policy_evaluation_frequency: int, folder: Path):

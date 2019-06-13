@@ -1,10 +1,8 @@
 # See https://github.com/openai/gym/blob/master/gym/envs/toy_text/frozen_lake.py
 
-import math
-from typing import Dict, Tuple, List, Callable, Optional
+from typing import Tuple, Optional
 
 import numpy as np
-import scipy.optimize
 
 State = int
 Action = int
@@ -41,7 +39,7 @@ XMAP_9x9 = np.array([["H", "F", "F", "F", "F", "F", "F", "F", "H"],
                      ["F", "H", "F", "F", "F", "F", "F", "H", "F"],
                      ["H", "F", "F", "F", "F", "F", "F", "F", "H"]])
 
-class Lake(object):
+class Lake:
   def __init__(self, lake_map):
     self.lake_map = lake_map
 
@@ -100,7 +98,7 @@ class Lake(object):
     else:
       raise Exception("bad action")
 
-class FrozenLakeEnv(object):
+class FrozenLakeEnv:
   lake: Lake
   infinite_time: bool
 
@@ -120,11 +118,11 @@ class FrozenLakeEnv(object):
         i for i in range(self.lake.num_states) if i not in self.terminal_states
     ]
 
-    self.transitions = FrozenLakeEnv._build_transitions(self.lake)
-    self.rewards = FrozenLakeEnv._build_rewards(self.lake, self.infinite_time)
+    self.transitions = FrozenLakeEnv.build_transitions(self.lake)
+    self.rewards = FrozenLakeEnv.build_rewards(self.lake, self.infinite_time)
 
   @staticmethod
-  def _build_transitions(lake: Lake):
+  def build_transitions(lake: Lake):
     transitions = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
     for s in range(lake.num_states):
       if lake.lake_map[lake.ij_states[s]] in ["E", "H", "G"]:
@@ -140,7 +138,7 @@ class FrozenLakeEnv(object):
     return transitions
 
   @staticmethod
-  def _build_rewards(lake: Lake, infinite_time: bool):
+  def build_rewards(lake: Lake, infinite_time: bool):
     rewards = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
     for s in lake.goal_states:
       rewards[:, :, s] = 1.0
@@ -151,8 +149,11 @@ class FrozenLakeEnv(object):
 
     return rewards
 
-class FrozenLakeWithEscapingEnv(object):
+class FrozenLakeWithEscapingEnv:
+  # pylint: disable=too-few-public-methods
+
   lake: Lake
+  hole_retention_probability: float
 
   def __init__(self, lake: Lake, hole_retention_probability: float):
     self.lake = lake
@@ -170,12 +171,12 @@ class FrozenLakeWithEscapingEnv(object):
         i for i in range(self.lake.num_states) if i not in self.terminal_states
     ]
 
-    self.transitions = FrozenLakeWithEscapingEnv._build_transitions(
+    self.transitions = FrozenLakeWithEscapingEnv.build_transitions(
         self.lake, self.hole_retention_probability)
-    self.rewards = FrozenLakeEnv._build_rewards(self.lake, infinite_time=False)
+    self.rewards = FrozenLakeEnv.build_rewards(self.lake, infinite_time=False)
 
   @staticmethod
-  def _build_transitions(lake: Lake, hole_retention_probability: float):
+  def build_transitions(lake: Lake, hole_retention_probability: float):
     transitions = np.zeros((lake.num_states, NUM_ACTIONS, lake.num_states))
     for s in range(lake.num_states):
       if lake.lake_map[lake.ij_states[s]] in ["E", "G"]:
@@ -238,8 +239,10 @@ def value_iteration(env: FrozenLakeEnv,
     policy_rewards_per_iter.append(policy_reward)
     num_iterations += 1
 
-    if tolerance is not None and delta <= tolerance: break
-    if max_iterations is not None and num_iterations >= max_iterations: break
+    if tolerance is not None and delta <= tolerance:
+      break
+    if max_iterations is not None and num_iterations >= max_iterations:
+      break
 
   return Q, policy_rewards_per_iter
 
@@ -322,7 +325,8 @@ def rollout(env, policy, max_episode_length: Optional[int] = None):
     current_state = next_state
     t += 1
 
-    if current_state in env.terminal_states: break
+    if current_state in env.terminal_states:
+      break
 
   # `current_state` is now the final state. Reporting it is necessary in order
   # to tell which state the episode actually ended on.
@@ -354,6 +358,7 @@ def num_mdp_states(lake_map):
 
 def deterministic_policy(env: FrozenLakeEnv, actions):
   """Convert a vector mapping states to actions to a policy array."""
+  # pylint: disable=line-too-long
   # See https://stackoverflow.com/questions/29831489/convert-array-of-indices-to-1-hot-encoded-numpy-array
   policy = np.zeros((env.lake.num_states, NUM_ACTIONS))
   policy[np.arange(env.lake.num_states), actions] = 1.0
@@ -362,5 +367,4 @@ def deterministic_policy(env: FrozenLakeEnv, actions):
 def optimal_policy_reward(env, gamma: float) -> float:
   state_action_values, _ = value_iteration(env, gamma, tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
-  optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
-  return optimal_policy_reward
+  return np.dot(state_values, env.initial_state_distribution)

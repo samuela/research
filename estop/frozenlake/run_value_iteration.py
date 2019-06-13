@@ -1,19 +1,17 @@
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-
 import numpy as np
 
 import frozenlake
 import viz
 
-if __name__ == "__main__":
-  np.random.seed(0)
+def build_env(lake: frozenlake.Lake):
+  # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake,
+                                              hole_retention_probability=0.99)
 
-  def build_env(lake: frozenlake.Lake):
-    # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
-    return frozenlake.FrozenLakeWithEscapingEnv(
-        lake, hole_retention_probability=0.99)
+def main():
+  # pylint: disable=too-many-statements
+  np.random.seed(0)
 
   lake_map = frozenlake.MAP_8x8
   gamma = 0.99
@@ -152,3 +150,6 @@ if __name__ == "__main__":
   )
 
   plt.show()
+
+if __name__ == "__main__":
+  main()

@@ -1,8 +1,7 @@
-from jax import jit
 from jax.experimental import optimizers
 import numpy as np
 
-class JaxAdam(object):
+class JaxAdam:
   def __init__(self, x0, learning_rate):
     self.opt_init, self.opt_update, self.get_params = optimizers.adam(
         step_size=learning_rate)
@@ -17,7 +16,7 @@ class JaxAdam(object):
   def get(self):
     return self.get_params(self.opt_state)
 
-class Adam(object):
+class Adam:
   def __init__(self, x0, learning_rate, b1=0.9, b2=0.999, eps=1e-8):
     self.x = x0
     self.learning_rate = learning_rate
@@ -46,7 +45,7 @@ class Adam(object):
   def get(self):
     return self.x
 
-class Momentum(object):
+class Momentum:
   def __init__(self, x0, learning_rate, mass=0.9):
     self.x = x0
     self.learning_rate = learning_rate
