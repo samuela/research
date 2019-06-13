@@ -21,3 +21,6 @@ jobs:
             - ".venv"
             - "/usr/local/bin"
             - "/usr/local/lib/python3.7/site-packages"
+      - run:
+          name: yapf
+          command: pipenv run yapf --diff **/*.py
