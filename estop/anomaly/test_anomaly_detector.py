@@ -9,8 +9,23 @@ def testNearestNeighbor(metric='mahalanobis'):
 		np.random.randn(20, 2) * 8 - 20,
 		np.random.randn(20, 2) * 8 + 20))
 	test_data = np.random.randn(10000, 2) * 40
-	detector.record(train_data)
-	test_distance = detector.getDistance(test_data)
+	detector.fit(train_data)
+	test_distance = detector.get_score(test_data)
+	test = plt.scatter(test_data[:,0], test_data[:,1], c=test_distance, cmap='inferno')
+	train = plt.scatter(train_data[:,0], train_data[:,1], color='black')
+	plt.colorbar(test)
+	plt.gca().set_aspect('equal', adjustable='box')
+	plt.show()
+
+def testLOF(metric='minkowski'):
+	from anomaly_detector import LocalOutlierFactor
+	detector = LocalOutlierFactor(metric=metric, k=5)
+	train_data = np.concatenate((
+		np.random.randn(20, 2) * 8 - 20,
+		np.random.randn(20, 2) * 8 + 20))
+	test_data = np.random.randn(10000, 2) * 40
+	detector.fit(train_data)
+	test_distance = detector.get_score(test_data)
 	test = plt.scatter(test_data[:,0], test_data[:,1], c=test_distance, cmap='inferno')
 	train = plt.scatter(train_data[:,0], train_data[:,1], color='black')
 	plt.colorbar(test)
@@ -19,3 +34,4 @@ def testNearestNeighbor(metric='mahalanobis'):
 
 if __name__ == '__main__':
 	testNearestNeighbor()
+	testLOF()
