@@ -8,6 +8,7 @@ ipython = "*"
 yapf = "*"
 pylint = "*"
 rope = "*"
+pylint-runner = "*"
 
 [packages]
 numpy = "*"
@@ -15,7 +16,7 @@ matplotlib = "*"
 scipy = "*"
 tqdm = "*"
 jax = "*"
-jaxlib = "*"
+jaxlib = "==0.1.18"
 
 [requires]
 python_version = "3.7"

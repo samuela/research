@@ -1,10 +1,7 @@
-import matplotlib
-matplotlib.use("TkAgg")
-import matplotlib.pyplot as plt
-
 from pathlib import Path
 import pickle
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import viz
@@ -42,8 +39,10 @@ if __name__ == "__main__":
 
   plt.figure()
   x = policy_evaluation_frequency * np.arange(num_points_to_plot)
-  viz.plot_errorfill(x, full_policy_rewards[:, :num_points_to_plot], "slategrey")
-  viz.plot_errorfill(x, estop_policy_rewards[:, :num_points_to_plot], "crimson")
+  viz.plot_errorfill(x, full_policy_rewards[:, :num_points_to_plot],
+                     "slategrey")
+  viz.plot_errorfill(x, estop_policy_rewards[:, :num_points_to_plot],
+                     "crimson")
   plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
   plt.xlabel("Episode")

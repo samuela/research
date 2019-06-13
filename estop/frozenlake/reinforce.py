@@ -15,6 +15,8 @@ def reinforce_episode(env,
   episode, final_state = frozenlake.rollout(
       env, policy=raw_policy, max_episode_length=max_episode_length)
   weighted_rewards = [(gamma**t) * r for t, (_, _, r) in enumerate(episode)]
+
+  # pylint: disable=line-too-long
   # See https://stackoverflow.com/questions/16541618/perform-a-reverse-cumulative-sum-on-a-numpy-array.
   Gs = np.cumsum(weighted_rewards[::-1])[::-1]
 
@@ -36,8 +38,7 @@ def run_reinforce(env,
                   optimizer,
                   num_episodes: int,
                   policy_evaluation_frequency: int = 10,
-                  verbose: bool = True,
-                  deleteme_opt_policy=None):
+                  verbose: bool = True):
   # We use this to warm start iterative policy evaluation.
   V = None
 

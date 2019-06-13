@@ -5,7 +5,7 @@ import numpy as np
 import frozenlake
 
 def epsilon_greedy(epsilon: float):
-  def h(action_values, t: int):
+  def h(action_values, _):
     # With prob. epsilon we pick a non-greedy action uniformly at random. There
     # are NUM_ACTIONS - 1 non-greedy actions.
     p = epsilon / (frozenlake.NUM_ACTIONS - 1) * np.ones(action_values.shape)
@@ -56,7 +56,8 @@ def q_learning_episode(env,
     current_state = next_state
     t += 1
 
-    if current_state in env.terminal_states: break
+    if current_state in env.terminal_states:
+      break
 
   # `current_state` is now the final state. Reporting it is necessary in order
   # to tell which state the episode actually ended on.

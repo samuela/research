@@ -1,20 +1,17 @@
 import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-
 import numpy as np
 import tqdm
 
 import frozenlake
-import viz
 
-if __name__ == "__main__":
+def build_env(lake: frozenlake.Lake):
+  # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake,
+                                              hole_retention_probability=0.99)
+
+def main():
   np.random.seed(0)
-
-  def build_env(lake: frozenlake.Lake):
-    # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
-    return frozenlake.FrozenLakeWithEscapingEnv(
-        lake, hole_retention_probability=0.99)
 
   lake_map = frozenlake.MAP_8x8
   gamma = 0.99
@@ -63,7 +60,8 @@ if __name__ == "__main__":
     # print(estop_map)
 
     # Check that we haven't gotten rid of the start state yet.
-    if (estop_map == "S").sum() == 0: return None
+    if (estop_map == "S").sum() == 0:
+      return None
 
     estop_env = build_env(frozenlake.Lake(estop_map))
     _, policy_rewards_per_iter = frozenlake.value_iteration(
@@ -125,3 +123,6 @@ if __name__ == "__main__":
   plt.ylabel("Optimal policy cumulative reward")
   plt.tight_layout()
   plt.savefig("figs/num_removed_vs_policy_reward.pdf")
+
+if __name__ == "__main__":
+  main()

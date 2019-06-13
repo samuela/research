@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "48aa121222f44adb14253973ffddb1d78fc935d00f7e35768be7a88c4843e6db"
+            "sha256": "3ccb4f6a823de67e730b11bc11a0ebedca173ae2bfcb11aa6965270447b43641"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -31,10 +31,10 @@
         },
         "jax": {
             "hashes": [
-                "sha256:533947de005beeb862fc6eaefa5f82a4a723708f13c724e233882a511853a7be"
+                "sha256:b75609f3291384ee4146a0bbca24cd51056314d3a6fa309f29684246cf18e9f1"
             ],
             "index": "pypi",
-            "version": "==0.1.36"
+            "version": "==0.1.37"
         },
         "jaxlib": {
             "hashes": [
@@ -231,6 +231,13 @@
             ],
             "version": "==0.1.0"
         },
+        "colorama": {
+            "hashes": [
+                "sha256:05eed71e2e327246ad6b38c540c4a3117230b19679b875190486ddd2d721422d",
+                "sha256:f8ac84de7840f5b9c4e3347b3c1eaa50f7e49c2b07596221daec5edaabbd7c48"
+            ],
+            "version": "==0.4.1"
+        },
         "decorator": {
             "hashes": [
                 "sha256:86156361c50488b84a3f148056ea716ca587df2f0de1d34750d35c21312725de",
@@ -348,6 +355,14 @@
             ],
             "index": "pypi",
             "version": "==2.3.1"
+        },
+        "pylint-runner": {
+            "hashes": [
+                "sha256:9e04d72471a9225db6734334ec578ac37b47130625553df149ca6a20ecd565a9",
+                "sha256:bc44a39ad93ffa865f282dff26632ac78b60ce53c417d4b1de82b52842d1e6e8"
+            ],
+            "index": "pypi",
+            "version": "==0.5.4"
         },
         "rope": {
             "hashes": [

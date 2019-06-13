@@ -1,7 +1,4 @@
-import matplotlib
-matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-
 import numpy as np
 
 import frozenlake
@@ -9,13 +6,13 @@ import optimizers
 import reinforce
 import viz
 
-if __name__ == "__main__":
-  np.random.seed(0)
+def build_env(lake: frozenlake.Lake):
+  # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake,
+                                              hole_retention_probability=0.99)
 
-  def build_env(lake: frozenlake.Lake):
-    # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)
-    return frozenlake.FrozenLakeWithEscapingEnv(
-        lake, hole_retention_probability=0.99)
+def main():
+  np.random.seed(0)
 
   # lake_map = frozenlake.MAP_CORRIDOR_4x1
   lake_map = frozenlake.MAP_8x8
@@ -78,8 +75,7 @@ if __name__ == "__main__":
         gamma,
         optimizer,
         num_episodes=50000,
-        policy_evaluation_frequency=policy_evaluation_frequency,
-        deleteme_opt_policy=np.argmax(state_action_values, axis=-1))
+        policy_evaluation_frequency=policy_evaluation_frequency)
 
     plt.plot(states_seen, policy_rewards)
 
@@ -91,3 +87,6 @@ if __name__ == "__main__":
               linestyle="--")
   plt.title(f"Learning rate={optimizer.learning_rate}")
   plt.show()
+
+if __name__ == "__main__":
+  main()
