@@ -24,3 +24,6 @@ jobs:
       - run:
           name: yapf
           command: pipenv run yapf --diff --recursive .
+      - run:
+          name: pylint
+          command: pipenv run pylint_runner
