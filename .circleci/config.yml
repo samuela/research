@@ -23,4 +23,4 @@ jobs:
             - "/usr/local/lib/python3.7/site-packages"
       - run:
           name: yapf
-          command: pipenv run yapf --diff **/*.py
+          command: pipenv run yapf --diff --recursive .
