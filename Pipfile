@@ -8,7 +8,6 @@ ipython = "*"
 yapf = "*"
 pylint = "*"
 rope = "*"
-pylint-runner = "*"
 
 [packages]
 numpy = "*"

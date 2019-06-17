@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 
 import frozenlake
-import utils
+from research.estop.frozenlake import utils
 
 def reinforce_episode(env,
                       gamma: float,
