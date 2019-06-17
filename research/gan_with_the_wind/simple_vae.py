@@ -7,8 +7,8 @@ from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, FanOut, Softplus
 import matplotlib.pyplot as plt
 
-from dists import DiagMVN, Dist, MVN
-from utils import Dampen, normal_kl
+from .dists import DiagMVN, Dist, MVN
+from .utils import Dampen, normal_kl
 
 theta = 0.5
 # eigenvectors are column vectors stacked.

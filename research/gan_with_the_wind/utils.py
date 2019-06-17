@@ -1,6 +1,6 @@
 import jax.numpy as jp
 
-from dists import DiagMVN
+from .dists import DiagMVN
 
 def normal_kl(dist: DiagMVN):
   """KL(dist || standard normal)"""
