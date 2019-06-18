@@ -8,6 +8,7 @@ ipython = "*"
 yapf = "*"
 pylint = "*"
 rope = "*"
+pyre-check = "*"
 
 [packages]
 numpy = "*"

@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-import frozenlake
-import viz
+from research.estop.frozenlake import frozenlake
+from research.estop.frozenlake import viz
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)

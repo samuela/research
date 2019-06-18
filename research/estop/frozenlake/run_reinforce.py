@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-import frozenlake
-import optimizers
-import reinforce
-import viz
+from research.estop.frozenlake import frozenlake
+from research.estop.frozenlake import optimizers
+from research.estop.frozenlake import reinforce
+from research.estop.frozenlake import viz
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)

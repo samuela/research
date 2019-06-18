@@ -10,12 +10,12 @@ from multiprocessing import Pool
 from pathlib import Path
 import pickle
 
-import numpy as np
 import tqdm
+import numpy as np
 
-import actor_critic
-import frozenlake
-import optimizers
+from research.estop.frozenlake import actor_critic
+from research.estop.frozenlake import frozenlake
+from research.estop.frozenlake import optimizers
 # pylint: enable=wrong-import-position
 
 def actor_critic_job(random_seed: int, env, gamma: float,

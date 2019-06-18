@@ -1,9 +1,9 @@
 import matplotlib
 import matplotlib.pyplot as plt
-import numpy as np
 import tqdm
+import numpy as np
 
-import frozenlake
+from research.estop.frozenlake import frozenlake
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
