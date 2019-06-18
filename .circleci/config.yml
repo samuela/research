@@ -23,7 +23,7 @@ jobs:
             - "/usr/local/lib/python3.7/site-packages"
       - run:
           name: pyre
-          command: pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/
+          command: pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/ check
       - run:
           name: pylint
           command: pipenv run pylint research
