@@ -16,7 +16,7 @@ matplotlib = "*"
 scipy = "*"
 tqdm = "*"
 jax = "*"
-jaxlib = "==0.1.18"
+jaxlib = "*"
 
 [requires]
 python_version = "3.7"
