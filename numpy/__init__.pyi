@@ -1,4 +1,8 @@
-"""See https://github.com/facebook/pyre-check/issues/47."""
+"""See
+
+* https://github.com/facebook/pyre-check/issues/47
+* https://github.com/numpy/numpy-stubs
+"""
 
 from typing import Any, Optional
 
