@@ -2,7 +2,7 @@ from typing import Optional
 
 import numpy as np
 
-import frozenlake
+from research.estop.frozenlake import frozenlake
 
 def epsilon_greedy(epsilon: float):
   def h(action_values, _):

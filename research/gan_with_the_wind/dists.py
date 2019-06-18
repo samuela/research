@@ -119,7 +119,7 @@ class MVN(Distribution):
     print(dists)
     return d * NEG_HALF_LOG_TWO_PI - logdet - dists
 
-def Dist(dist: Distribution):
+def Dist(dist):
   def init_fn(_rng, input_shape):
     return input_shape, None
 

@@ -1,9 +1,10 @@
 import jax.numpy as jp
 
-from .dists import DiagMVN
+from .dists import Normal
 
-def normal_kl(dist: DiagMVN):
-  """KL(dist || standard normal)"""
+def normal_kl(dist: Normal):
+  """KL(dist || standard normal). This just assumes that the last batch
+  dimension is really the "event" dimension and it gets summed over."""
   mu, sigma = dist
   return 0.5 * jp.sum(mu**2.0 + sigma**2.0 - 2 * jp.log(sigma) - 1, axis=-1)
 

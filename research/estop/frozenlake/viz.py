@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-import frozenlake
+from research.estop.frozenlake.frozenlake import Lake
 
-def plot_heatmap(lake: frozenlake.Lake, heat1d):
+def plot_heatmap(lake: Lake, heat1d):
   im = plt.imshow(lake.reshape(heat1d))
 
   # Add lake tile labels.

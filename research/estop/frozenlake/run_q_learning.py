@@ -10,11 +10,11 @@ from multiprocessing import Pool
 from pathlib import Path
 import pickle
 
-import numpy as np
 import tqdm
+import numpy as np
 
-import frozenlake
-import q_learning
+from research.estop.frozenlake import frozenlake
+from research.estop.frozenlake import q_learning
 # pylint: enable=wrong-import-position
 
 def q_learning_job(random_seed: int, env, gamma: float,

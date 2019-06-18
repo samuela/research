@@ -4,7 +4,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 
-import viz
+from research.estop.frozenlake import viz
 
 if __name__ == "__main__":
   results_dir = Path("results/qlearning_pkls_444a731")
