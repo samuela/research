@@ -22,8 +22,11 @@ jobs:
             - "/usr/local/bin"
             - "/usr/local/lib/python3.7/site-packages"
       - run:
-          name: yapf
-          command: pipenv run yapf --diff --recursive .
+          name: pyre
+          command: pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/
       - run:
           name: pylint
           command: pipenv run pylint research
+      - run:
+          name: yapf
+          command: pipenv run yapf --diff --recursive .
