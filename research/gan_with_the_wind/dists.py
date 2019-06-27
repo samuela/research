@@ -19,7 +19,7 @@ class Normal(Distribution):
   def batch_shape(self):
     return lax.broadcast_shapes(self.loc.shape, self.scale.shape)
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.array:
     return self.loc + self.scale * random.normal(
         rng, shape=sample_shape + self.batch_shape)
 
@@ -29,6 +29,53 @@ class Normal(Distribution):
 
   def entropy(self):
     return 0.5 - NEG_HALF_LOG_TWO_PI + jp.log(self.scale)
+
+class Uniform(Distribution):
+  minval: jp.array
+  maxval: jp.array
+
+  @property
+  def event_shape(self):
+    return ()
+
+  @property
+  def batch_shape(self):
+    return lax.broadcast_shapes(self.minval.shape, self.maxval.shape)
+
+  def sample(self, rng, sample_shape=()) -> jp.array:
+    return self.minval + (self.maxval - self.minval) * random.uniform(
+        rng, shape=sample_shape + self.batch_shape)
+
+  def log_prob(self, x):
+    return jp.where(
+        self.minval <= x <= self.maxval,
+        -jp.log(self.maxval - self.minval),
+        jp.log(0),
+    )
+
+  def entropy(self):
+    return jp.log(self.maxval - self.minval)
+
+class Deterministic(Distribution):
+  loc: jp.array
+  eps: float = 0.0
+
+  @property
+  def event_shape(self):
+    return ()
+
+  @property
+  def batch_shape(self):
+    return self.loc.shape
+
+  def sample(self, _, sample_shape=()) -> jp.array:
+    return jp.broadcast_to(self.loc, shape=sample_shape + self.batch_shape)
+
+  def log_prob(self, x):
+    return jp.where(jp.abs(x - self.loc) <= self.eps, 0.0, jp.log(0))
+
+  def entropy(self):
+    return jp.zeros_like(self.loc)
 
 def Independent(reinterpreted_batch_ndims: int):
   # pylint: disable=redefined-outer-name
@@ -44,7 +91,7 @@ def Independent(reinterpreted_batch_ndims: int):
     def batch_shape(self):
       return self.base_distribution.batch_shape[:-reinterpreted_batch_ndims]
 
-    def sample(self, rng, sample_shape=()):
+    def sample(self, rng, sample_shape=()) -> jp.array:
       return self.base_distribution.sample(rng, sample_shape)
 
     def log_prob(self, x):
@@ -81,7 +128,7 @@ class MVN(Distribution):
   def batch_shape(self):
     return self.loc.shape[:-1]
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.array:
     z = random.normal(rng, shape=sample_shape + self.event_shape)
     return self.loc + jp.inner(z, self.cov_cholesky)
 
