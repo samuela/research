@@ -8,7 +8,7 @@ from jax.experimental.stax import Dense, Relu, FanOut, Softplus
 import jax.scipy.special
 import matplotlib.pyplot as plt
 
-from .dists import BatchSlice, DiagMVN, Dist, Independent, MVN, Normal
+from research.statistax import BatchSlice, DiagMVN, Dist, Independent, MVN, Normal
 from .utils import Dampen, normal_kl
 
 theta = 0.5

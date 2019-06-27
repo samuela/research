@@ -7,7 +7,7 @@ from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, FanOut, Softplus
 import matplotlib.pyplot as plt
 
-from .dists import DiagMVN, Dist, MVN
+from research.statistax import DiagMVN, Dist, MVN
 from .utils import Dampen, normal_kl
 
 theta = 0.5

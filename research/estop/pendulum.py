@@ -1,7 +1,7 @@
 import jax.numpy as jp
 
 from research.estop import ddpg
-from research.gan_with_the_wind import dists
+from research.statistax import Deterministic, Uniform
 
 def pendulum_environment(mass: float, length: float, gravity: float,
                          friction: float, dt: float) -> ddpg.Env:
@@ -18,11 +18,13 @@ def pendulum_environment(mass: float, length: float, gravity: float,
                     u / (mass * length**2))
     new_theta_dot = theta_dot + dt * theta_dotdot
     new_theta = (theta + dt * new_theta_dot) % (2 * jp.pi)
-    return dists.Deterministic(jp.array([new_theta, new_theta_dot]))
+    return Deterministic(jp.array([new_theta, new_theta_dot]))
 
   return ddpg.Env(
-      initial_distribution=dists.Uniform(jp.array([0, -1]),
-                                         jp.array([2 * jp.pi, 1])),
+      initial_distribution=Uniform(
+          jp.array([0, -1]),
+          jp.array([2 * jp.pi, 1]),
+      ),
       step=step,
       reward=lambda s1, a, s2: -(s1[0] - jp.pi)**2,
   )

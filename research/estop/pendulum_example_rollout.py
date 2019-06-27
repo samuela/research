@@ -4,7 +4,7 @@ import jax.numpy as jp
 
 from research.estop import ddpg
 from research.estop import pendulum
-from research.gan_with_the_wind import dists
+from research.statistax import Deterministic
 
 env = pendulum.pendulum_environment(
     mass=1.0,
@@ -17,7 +17,7 @@ env = pendulum.pendulum_environment(
 states, actions = ddpg.rollout_from_state(
     random.PRNGKey(0),
     env,
-    lambda _: dists.Deterministic(jp.array(0.0)),
+    lambda _: Deterministic(jp.array(0.0)),
     num_timesteps=2500,
     state=jp.array([jp.pi - 0.01, 0.0]))
 

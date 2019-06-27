@@ -1,6 +1,6 @@
 import jax.numpy as jp
 
-from .dists import Normal
+from research.statistax import Normal
 
 def normal_kl(dist: Normal):
   """KL(dist || standard normal). This just assumes that the last batch

@@ -5,7 +5,7 @@ from jax.experimental import stax
 from jax.experimental.stax import FanInConcat, Dense, Relu
 
 from research.estop import ddpg
-from research.gan_with_the_wind import dists
+from research.statistax import Normal
 from research.estop import pendulum
 from research.estop.utils import Scalarify
 
@@ -15,7 +15,7 @@ episode_length = 100
 buffer_size = 128
 batch_size = 32
 optimizer = ddpg.Optimizer(*optimizers.adam(step_size=1e-3))
-noise = lambda _: dists.Normal(jp.array(0.0), jp.array(0.1))
+noise = lambda _: Normal(jp.array(0.0), jp.array(0.1))
 rng = random.PRNGKey(0)
 
 env = pendulum.pendulum_environment(
