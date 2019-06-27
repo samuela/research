@@ -3,9 +3,25 @@ from typing import NamedTuple, Tuple
 import jax.numpy as jp
 from jax import lax, random
 
-Distribution = NamedTuple
-
 NEG_HALF_LOG_TWO_PI = -0.5 * jp.log(2 * jp.pi)
+
+class Distribution(NamedTuple):
+  @property
+  def event_shape(self):
+    raise NotImplementedError()
+
+  @property
+  def batch_shape(self):
+    raise NotImplementedError()
+
+  def sample(self, rng, sample_shape=()):
+    raise NotImplementedError()
+
+  def log_prob(self, x):
+    raise NotImplementedError()
+
+  def entropy(self):
+    raise NotImplementedError()
 
 class Normal(Distribution):
   loc: jp.array
@@ -19,7 +35,7 @@ class Normal(Distribution):
   def batch_shape(self):
     return lax.broadcast_shapes(self.loc.shape, self.scale.shape)
 
-  def sample(self, rng, sample_shape=()) -> jp.array:
+  def sample(self, rng, sample_shape=()):
     return self.loc + self.scale * random.normal(
         rng, shape=sample_shape + self.batch_shape)
 
@@ -42,7 +58,7 @@ class Uniform(Distribution):
   def batch_shape(self):
     return lax.broadcast_shapes(self.minval.shape, self.maxval.shape)
 
-  def sample(self, rng, sample_shape=()) -> jp.array:
+  def sample(self, rng, sample_shape=()):
     return self.minval + (self.maxval - self.minval) * random.uniform(
         rng, shape=sample_shape + self.batch_shape)
 
@@ -68,7 +84,7 @@ class Deterministic(Distribution):
   def batch_shape(self):
     return self.loc.shape
 
-  def sample(self, _, sample_shape=()) -> jp.array:
+  def sample(self, _, sample_shape=()):
     return jp.broadcast_to(self.loc, shape=sample_shape + self.batch_shape)
 
   def log_prob(self, x):
@@ -91,7 +107,7 @@ def Independent(reinterpreted_batch_ndims: int):
     def batch_shape(self):
       return self.base_distribution.batch_shape[:-reinterpreted_batch_ndims]
 
-    def sample(self, rng, sample_shape=()) -> jp.array:
+    def sample(self, rng, sample_shape=()):
       return self.base_distribution.sample(rng, sample_shape)
 
     def log_prob(self, x):
@@ -128,7 +144,7 @@ class MVN(Distribution):
   def batch_shape(self):
     return self.loc.shape[:-1]
 
-  def sample(self, rng, sample_shape=()) -> jp.array:
+  def sample(self, rng, sample_shape=()):
     z = random.normal(rng, shape=sample_shape + self.event_shape)
     return self.loc + jp.inner(z, self.cov_cholesky)
 
@@ -165,6 +181,9 @@ class MVN(Distribution):
     dists = jp.sum(jp.linalg.solve(cc, delta)**2, axis=(-2, -1))
     print(dists)
     return d * NEG_HALF_LOG_TWO_PI - logdet - dists
+
+  def entropy(self):
+    raise NotImplementedError()
 
 def Dist(dist):
   def init_fn(_rng, input_shape):
