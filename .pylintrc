@@ -65,7 +65,8 @@ disable=missing-docstring,
         too-many-locals,
         too-many-arguments,
         no-else-return,
-        duplicate-code
+        duplicate-code,
+        len-as-condition
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
