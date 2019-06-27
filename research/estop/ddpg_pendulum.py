@@ -1,4 +1,4 @@
-from jax import jit, random
+from jax import random
 import jax.numpy as jp
 from jax.experimental import optimizers
 from jax.experimental import stax
