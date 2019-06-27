@@ -8,7 +8,8 @@ from jax.experimental.stax import Dense, Relu, FanOut, Softplus
 import jax.scipy.special
 import matplotlib.pyplot as plt
 
-from research.statistax import BatchSlice, DiagMVN, Dist, Independent, MVN, Normal
+from research.statistax import BatchSlice, DiagMVN, Independent, MVN, Normal
+from research.statistax.stax import DistributionLayer
 from .utils import Dampen, normal_kl
 
 theta = 0.5
@@ -68,7 +69,7 @@ encoder_init, encoder = stax.serial(
             Dampen(0.1, 1e-6),
         ),
     ),
-    Dist(DiagMVN),
+    DistributionLayer(DiagMVN),
 )
 
 decoder_init, decoder = stax.serial(
@@ -90,7 +91,7 @@ decoder_init, decoder = stax.serial(
             Softplus,
         ),
     ),
-    Dist(Normal),
+    DistributionLayer(Normal),
 )
 
 def elbo(rng, params, x, decoder_transform, num_mc_samples: int = 1):
