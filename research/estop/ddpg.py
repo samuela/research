@@ -57,10 +57,11 @@ class ReplayBuffer(NamedTuple):
     )
 
   def minibatch(self, rng, batch_size: int):
-    ixs = random.randint(rng, (batch_size, ),
-                         minval=0,
-                         maxval=self.buffer_size)
-    #  maxval=min(self.count, self.buffer_size))
+    # Note that the buffer may not yet be full, and unfortunately checking
+    # whether it is or not constitutes a branching condition that XLA is not
+    # happy with. As a result, there may be some sampling of zeros until count
+    # has exceeded buffer_size.
+    ixs = random.randint(rng, (batch_size, ), minval=0, maxval=self.buffer_size)
     return (
         self.states[ixs, ...],
         self.actions[ixs, ...],
