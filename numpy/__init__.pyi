@@ -3,16 +3,21 @@
 * https://github.com/facebook/pyre-check/issues/47
 * https://github.com/numpy/numpy-stubs
 """
+
+# pylint: disable=line-too-long
+# See https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
-from typing import Any, Optional, SupportsInt, SupportsFloat, Tuple, TypeVar, Union
+
+from typing import Any, Optional, Tuple, TypeVar, Union
 
 # pylint: disable=unused-argument, redefined-builtin
 
 pi: float
+newaxis: None
 
 Shape = Tuple[int, ...]
 
-class ndarray(SupportsInt, SupportsFloat):
+class ndarray:
   @property
   def shape(self) -> Shape:
     ...
@@ -29,7 +34,13 @@ class ndarray(SupportsInt, SupportsFloat):
   def __add__(self, other) -> ndarray:
     ...
 
+  def __radd__(self, other) -> ndarray:
+    ...
+
   def __sub__(self, other) -> ndarray:
+    ...
+
+  def __rsub__(self, other) -> ndarray:
     ...
 
   def __mul__(self, other) -> ndarray:
@@ -47,7 +58,16 @@ class ndarray(SupportsInt, SupportsFloat):
   def __matmul__(self, other) -> ndarray:
     ...
 
+  def __truediv__(self, other) -> ndarray:
+    ...
+
+  def __le__(self, other) -> ndarray:
+    ...
+
 ArrayLike = TypeVar("ArrayLike", int, float, ndarray)
+
+def abs(x: ArrayLike) -> ArrayLike:
+  ...
 
 def amax(a: ndarray, axis: Optional[int]) -> ndarray:
   ...
@@ -86,8 +106,19 @@ def log(x: ArrayLike) -> ArrayLike:
 def sin(x: ArrayLike) -> ArrayLike:
   ...
 
+def sum(a: ndarray,
+        axis: Optional[Union[int, Tuple[int, ...]]] = None) -> ndarray:
+  ...
+
 def sqrt(x: ArrayLike) -> ArrayLike:
   ...
 
-def zeros(shape: Shape, dtype=Any) -> ndarray:
+def where(condition: Any, x: Optional[Any] = None,
+          y: Optional[Any] = None) -> ndarray:
+  ...
+
+def zeros(shape: Shape, dtype: Optional[Any] = None) -> ndarray:
+  ...
+
+def zeros_like(x: ndarray, dtype: Optional[Any] = None) -> ndarray:
   ...
