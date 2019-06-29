@@ -5,7 +5,7 @@ from jax import lax, random
 
 NEG_HALF_LOG_TWO_PI = -0.5 * jp.log(2 * jp.pi)
 
-class Distribution(NamedTuple):
+class Distribution:
   @property
   def event_shape(self):
     raise NotImplementedError()
@@ -23,7 +23,7 @@ class Distribution(NamedTuple):
   def entropy(self):
     raise NotImplementedError()
 
-class Normal(Distribution):
+class Normal(Distribution, NamedTuple):
   loc: jp.array
   scale: jp.array
 
@@ -46,7 +46,7 @@ class Normal(Distribution):
   def entropy(self):
     return 0.5 - NEG_HALF_LOG_TWO_PI + jp.log(self.scale)
 
-class Uniform(Distribution):
+class Uniform(Distribution, NamedTuple):
   minval: jp.array
   maxval: jp.array
 
@@ -72,7 +72,7 @@ class Uniform(Distribution):
   def entropy(self):
     return jp.log(self.maxval - self.minval)
 
-class Deterministic(Distribution):
+class Deterministic(Distribution, NamedTuple):
   loc: jp.array
   eps: float = 0.0
 
@@ -95,7 +95,7 @@ class Deterministic(Distribution):
 
 def Independent(reinterpreted_batch_ndims: int):
   # pylint: disable=redefined-outer-name
-  class Independent(Distribution):
+  class Independent(Distribution, NamedTuple):
     base_distribution: Distribution
 
     @property
@@ -132,7 +132,7 @@ def BatchSlice(batch_slice: Tuple):
 def DiagMVN(loc: jp.array, scale: jp.array):
   return Independent(1)(Normal(loc, scale))
 
-class MVN(Distribution):
+class MVN(Distribution, NamedTuple):
   loc: jp.array
   cov_cholesky: jp.array
 
