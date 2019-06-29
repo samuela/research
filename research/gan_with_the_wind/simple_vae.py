@@ -1,11 +1,11 @@
 import time
 
+import matplotlib.pyplot as plt
 import jax.numpy as jp
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, FanOut, Softplus
-import matplotlib.pyplot as plt
 
 from research.statistax import DiagMVN, MVN
 from research.statistax.stax import DistributionLayer
