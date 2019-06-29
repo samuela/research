@@ -15,18 +15,18 @@ class Distribution(NamedTuple):
   def batch_shape(self):
     raise NotImplementedError()
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
     raise NotImplementedError()
 
-  def log_prob(self, x):
+  def log_prob(self, x: jp.ndarray) -> jp.ndarray:
     raise NotImplementedError()
 
-  def entropy(self):
+  def entropy(self) -> jp.ndarray:
     raise NotImplementedError()
 
 class Normal(Distribution):
-  loc: jp.array
-  scale: jp.array
+  loc: jp.ndarray
+  scale: jp.ndarray
 
   @property
   def event_shape(self):
@@ -36,20 +36,20 @@ class Normal(Distribution):
   def batch_shape(self):
     return lax.broadcast_shapes(self.loc.shape, self.scale.shape)
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
     return self.loc + self.scale * random.normal(
         rng, shape=sample_shape + self.batch_shape)
 
-  def log_prob(self, x):
+  def log_prob(self, x) -> jp.ndarray:
     dists = 0.5 * ((x - self.loc) / self.scale)**2.0
     return NEG_HALF_LOG_TWO_PI - jp.log(self.scale) - dists
 
-  def entropy(self):
+  def entropy(self) -> jp.ndarray:
     return 0.5 - NEG_HALF_LOG_TWO_PI + jp.log(self.scale)
 
 class Uniform(Distribution):
-  minval: jp.array
-  maxval: jp.array
+  minval: jp.ndarray
+  maxval: jp.ndarray
 
   @property
   def event_shape(self):
@@ -59,22 +59,22 @@ class Uniform(Distribution):
   def batch_shape(self):
     return lax.broadcast_shapes(self.minval.shape, self.maxval.shape)
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
     return self.minval + (self.maxval - self.minval) * random.uniform(
         rng, shape=sample_shape + self.batch_shape)
 
-  def log_prob(self, x):
+  def log_prob(self, x) -> jp.ndarray:
     return jp.where(
         self.minval <= x <= self.maxval,
         -jp.log(self.maxval - self.minval),
         jp.log(0),
     )
 
-  def entropy(self):
+  def entropy(self) -> jp.ndarray:
     return jp.log(self.maxval - self.minval)
 
 class Deterministic(Distribution):
-  loc: jp.array
+  loc: jp.ndarray
   eps: float = 0.0
 
   @property
@@ -85,13 +85,13 @@ class Deterministic(Distribution):
   def batch_shape(self):
     return self.loc.shape
 
-  def sample(self, _, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
     return jp.broadcast_to(self.loc, shape=sample_shape + self.batch_shape)
 
-  def log_prob(self, x):
+  def log_prob(self, x) -> jp.ndarray:
     return jp.where(jp.abs(x - self.loc) <= self.eps, 0.0, jp.log(0))
 
-  def entropy(self):
+  def entropy(self) -> jp.ndarray:
     return jp.zeros_like(self.loc)
 
 def Independent(reinterpreted_batch_ndims: int):
@@ -108,15 +108,15 @@ def Independent(reinterpreted_batch_ndims: int):
     def batch_shape(self):
       return self.base_distribution.batch_shape[:-reinterpreted_batch_ndims]
 
-    def sample(self, rng, sample_shape=()):
+    def sample(self, rng, sample_shape=()) -> jp.ndarray:
       return self.base_distribution.sample(rng, sample_shape)
 
-    def log_prob(self, x):
+    def log_prob(self, x) -> jp.ndarray:
       # Will have shape [sample_shape, base.batch_shape].
       full = self.base_distribution.log_prob(x)
       return jp.sum(full, axis=tuple(range(-reinterpreted_batch_ndims, 0)))
 
-    def entropy(self):
+    def entropy(self) -> jp.ndarray:
       # Will have shape base.batch_shape.
       full = self.base_distribution.entropy()
       return jp.sum(full, axis=tuple(range(-reinterpreted_batch_ndims, 0)))
@@ -133,14 +133,14 @@ def BatchSlice(batch_slice: Tuple):
 
   return slicey_slice
 
-def DiagMVN(loc: jp.array, scale: jp.array):
+def DiagMVN(loc: jp.ndarray, scale: jp.ndarray):
   return Independent(1)(Normal(loc, scale))
 
 class MVN(Distribution):
   """A multivariate normal distribution parameterized by its mean (`loc`) and a
   matrix A (`scale_tril`) such that covariance = A @ A.T."""
-  loc: jp.array
-  scale_tril: jp.array
+  loc: jp.ndarray
+  scale_tril: jp.ndarray
 
   @property
   def event_shape(self):
@@ -153,11 +153,11 @@ class MVN(Distribution):
     # broadcasted...  should be [..., d]
     return lax.broadcast_shapes(self.loc.shape, self.scale_tril[:-1])[:-1]
 
-  def sample(self, rng, sample_shape=()):
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
     z = random.normal(rng, shape=sample_shape + self.event_shape)
     return self.loc + jp.inner(z, self.scale_tril)
 
-  def log_prob(self, x):
+  def log_prob(self, x) -> jp.ndarray:
     (d, ) = self.event_shape
 
     # Put a new dimension at the end to force solve_triangular to treat delta as
@@ -172,7 +172,7 @@ class MVN(Distribution):
     return (d * NEG_HALF_LOG_TWO_PI - self._logdet_scale_tril -
             0.5 * jp.sum(renorm, axis=(-2, -1)))
 
-  def entropy(self):
+  def entropy(self) -> jp.ndarray:
     (d, ) = self.event_shape
     return d / 2 - d * NEG_HALF_LOG_TWO_PI + self._logdet_scale_tril
 

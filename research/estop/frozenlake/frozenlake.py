@@ -364,7 +364,7 @@ def deterministic_policy(env: FrozenLakeEnv, actions):
   policy[np.arange(env.lake.num_states), actions] = 1.0
   return policy
 
-def optimal_policy_reward(env, gamma: float) -> float:
+def optimal_policy_reward(env, gamma: float):
   state_action_values, _ = value_iteration(env, gamma, tolerance=1e-6)
   state_values = np.amax(state_action_values, axis=-1)
   return np.dot(state_values, env.initial_state_distribution)
