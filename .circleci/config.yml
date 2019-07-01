@@ -29,4 +29,4 @@ jobs:
           command: pipenv run pylint research
       - run:
           name: yapf
-          command: pipenv run yapf --diff --recursive .
+          command: pipenv run yapf --exclude "**/.*" --diff --recursive .
