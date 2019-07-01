@@ -4,13 +4,7 @@ from jax import lax, grad, ops, random, tree_util, vmap
 import jax.numpy as jp
 
 from research.gan_with_the_wind.dists import Distribution
-
-OptState = TypeVar("OptState")
-
-class Optimizer(NamedTuple):
-  init: Callable[[Any], OptState]
-  update: Callable[[int, Any, OptState], OptState]
-  get: Callable[[OptState], Any]
+from research.utils import Optimizer
 
 State = TypeVar("State")
 Action = TypeVar("Action")
@@ -84,6 +78,21 @@ def ddpg_step(
     state,
     noise: Distribution,
 ):
+  """Calculate the gradient from a single step of DDPG.
+
+  Args:
+    rng: The PRNG key.
+    params (tuple): The current (actor, critic) parameters.
+    tracking_params (tuple): The tracking (actor, critic) parameters.
+    env (Env): The environment to operate in.
+    gamma (float): The time discount factor.
+    replay_buffer (ReplayBuffer): The experience replay buffer.
+    batch_size (int): The size of the batch to pull out of `replay_buffer`.
+    actor: The actor function, `\\mu(s)`.
+    critic: The critic function, `Q(s, a)`.
+    state: The current state.
+    noise: A function for the action noise distribution at each time step.
+  """
   actor_params, critic_params = params
   tracking_actor_params, tracking_critic_params = tracking_params
   Q_track = lambda s, a: critic(tracking_critic_params, (s, a))
@@ -128,65 +137,86 @@ def ddpg_step(
   return (actor_grad, critic_grad), reward, next_state, new_rb
 
 class LoopState(NamedTuple):
-  opt_state: Any
+  optimizer: Optimizer
   tracking_params: Any
   cumulative_reward: jp.array
   state: State
   replay_buffer: ReplayBuffer
 
 def ddpg_episode(
-    rng,
-    init_replay_buffer: ReplayBuffer,
-    batch_size: int,
-    optimizer: Optimizer,
-    init_opt_state,
-    init_tracking_params,
     env: Env,
     gamma: float,
     tau: float,
     actor,
     critic,
-    epside_length: int,
     noise: Callable[[int], Distribution],
-) -> LoopState:
-  rng_start, rng_rest = random.split(rng)
-  rngs = random.split(rng_rest, epside_length)
+    epside_length: int,
+    batch_size: int,
+):
+  """Run DDPG for a single episode.
 
-  def step(i, loop_state: LoopState):
-    g, reward, next_state, new_replay_buffer = ddpg_step(
-        rngs[i],
-        optimizer.get(loop_state.opt_state),
-        loop_state.tracking_params,
-        env,
-        gamma,
-        loop_state.replay_buffer,
-        batch_size,
-        actor,
-        critic,
-        loop_state.state,
-        noise(i),
-    )
-    new_cumulative_reward = loop_state.cumulative_reward + (gamma**i) * reward
-    new_opt_state = optimizer.update(i, g, loop_state.opt_state)
-    new_tracking_params = tree_util.tree_multimap(
-        lambda new, old: tau * new + (1 - tau) * old,
-        optimizer.get(new_opt_state),
-        loop_state.tracking_params,
-    )
-    return LoopState(
-        new_opt_state,
-        new_tracking_params,
-        new_cumulative_reward,
-        next_state,
-        new_replay_buffer,
+  Args:
+    env (Env): The environment to run the agent in.
+    gamma (float): The time discount factor.
+    tau (float): The parameter tracking rate.
+    actor: The actor function, `\\mu(s)`.
+    critic: The critic function, `Q(s, a)`.
+    noise: A function for the action noise distribution at each time step.
+    episode_length (int): The length of the episode to run.
+    batch_size (int): The size of batches to be pulled out of the replay buffer.
+
+  Returns:
+    run: A `jit`-able function to actually run the episode.
+  """
+
+  def run(
+      rng,
+      init_replay_buffer: ReplayBuffer,
+      init_optimizer: Optimizer,
+      init_tracking_params,
+  ) -> LoopState:
+    """A curried `jit`-able function to actually run the DDPG episode."""
+    rng_start, rng_rest = random.split(rng)
+    rngs = random.split(rng_rest, epside_length)
+
+    def step(i, loop_state: LoopState):
+      g, reward, next_state, new_replay_buffer = ddpg_step(
+          rngs[i],
+          loop_state.optimizer.value,
+          loop_state.tracking_params,
+          env,
+          gamma,
+          loop_state.replay_buffer,
+          batch_size,
+          actor,
+          critic,
+          loop_state.state,
+          noise(i),
+      )
+      new_cumulative_reward = loop_state.cumulative_reward + (gamma**
+                                                              i) * reward
+      new_optimizer = loop_state.optimizer.update(g)
+      new_tracking_params = tree_util.tree_multimap(
+          lambda new, old: tau * new + (1 - tau) * old,
+          new_optimizer.value,
+          loop_state.tracking_params,
+      )
+      return LoopState(
+          new_optimizer,
+          new_tracking_params,
+          new_cumulative_reward,
+          next_state,
+          new_replay_buffer,
+      )
+
+    init_val = LoopState(
+        optimizer=init_optimizer,
+        tracking_params=init_tracking_params,
+        cumulative_reward=0.0,
+        state=env.initial_distribution.sample(rng_start),
+        replay_buffer=init_replay_buffer,
     )
 
-  init_val = LoopState(
-      opt_state=init_opt_state,
-      tracking_params=init_tracking_params,
-      cumulative_reward=0.0,
-      state=env.initial_distribution.sample(rng_start),
-      replay_buffer=init_replay_buffer,
-  )
+    return lax.fori_loop(0, epside_length, step, init_val)
 
-  return lax.fori_loop(0, epside_length, step, init_val)
+  return run
