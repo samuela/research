@@ -17,6 +17,7 @@ scipy = "*"
 tqdm = "*"
 jax = "*"
 jaxlib = "*"
+gym = "*"
 
 [requires]
 python_version = "3.7"
