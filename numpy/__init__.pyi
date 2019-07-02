@@ -100,6 +100,9 @@ def interp(x: ndarray, xp: ndarray, fp: ndarray,
            right: Optional[Any]) -> ndarray:
   ...
 
+def isfinite(x: ArrayLike) -> ArrayLike:
+  ...
+
 def log(x: ArrayLike) -> ArrayLike:
   ...
 

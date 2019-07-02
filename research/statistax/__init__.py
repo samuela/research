@@ -6,7 +6,7 @@ from jax.scipy import linalg
 
 NEG_HALF_LOG_TWO_PI = -0.5 * jp.log(2 * jp.pi)
 
-class Distribution(NamedTuple):
+class Distribution:
   @property
   def event_shape(self):
     raise NotImplementedError()
@@ -24,9 +24,9 @@ class Distribution(NamedTuple):
   def entropy(self) -> jp.ndarray:
     raise NotImplementedError()
 
-class Normal(Distribution):
-  loc: jp.ndarray
-  scale: jp.ndarray
+class Normal(Distribution, NamedTuple):
+  loc: jp.array
+  scale: jp.array
 
   @property
   def event_shape(self):
@@ -42,14 +42,14 @@ class Normal(Distribution):
 
   def log_prob(self, x) -> jp.ndarray:
     dists = 0.5 * ((x - self.loc) / self.scale)**2.0
-    return NEG_HALF_LOG_TWO_PI - jp.log(self.scale) - dists
+    return -jp.log(self.scale) - dists + NEG_HALF_LOG_TWO_PI
 
   def entropy(self) -> jp.ndarray:
-    return 0.5 - NEG_HALF_LOG_TWO_PI + jp.log(self.scale)
+    return jp.log(self.scale) + 0.5 - NEG_HALF_LOG_TWO_PI
 
-class Uniform(Distribution):
-  minval: jp.ndarray
-  maxval: jp.ndarray
+class Uniform(Distribution, NamedTuple):
+  minval: jp.array
+  maxval: jp.array
 
   @property
   def event_shape(self):
@@ -73,8 +73,8 @@ class Uniform(Distribution):
   def entropy(self) -> jp.ndarray:
     return jp.log(self.maxval - self.minval)
 
-class Deterministic(Distribution):
-  loc: jp.ndarray
+class Deterministic(Distribution, NamedTuple):
+  loc: jp.array
   eps: float = 0.0
 
   @property
@@ -96,7 +96,7 @@ class Deterministic(Distribution):
 
 def Independent(reinterpreted_batch_ndims: int):
   # pylint: disable=redefined-outer-name
-  class Independent(Distribution):
+  class Independent(Distribution, NamedTuple):
     base_distribution: Distribution
 
     @property
@@ -136,11 +136,9 @@ def BatchSlice(batch_slice: Tuple):
 def DiagMVN(loc: jp.ndarray, scale: jp.ndarray):
   return Independent(1)(Normal(loc, scale))
 
-class MVN(Distribution):
-  """A multivariate normal distribution parameterized by its mean (`loc`) and a
-  matrix A (`scale_tril`) such that covariance = A @ A.T."""
-  loc: jp.ndarray
-  scale_tril: jp.ndarray
+class MVN(Distribution, NamedTuple):
+  loc: jp.array
+  scale_tril: jp.array
 
   @property
   def event_shape(self):

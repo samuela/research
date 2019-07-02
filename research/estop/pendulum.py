@@ -6,7 +6,18 @@ from research.statistax import Deterministic, Uniform
 def pendulum_environment(mass: float, length: float, gravity: float,
                          friction: float, dt: float) -> ddpg.Env:
   def step(state, action):
-    """Take a single step in the discretized pendulum dynamics."""
+    """Take a single step in the discretized pendulum dynamics.
+
+    Args:
+      state(ndarray): An ndarray with the current theta, and d theta/dt. Note
+        that theta ranges from 0 to 2 pi, with 0 and 2 pi denoting the bottom of
+        the pendulum swing and pi denoting the top.
+      action(ndarray): The force to be applied. Positive force going
+        counterclockwise and negative force going clockwise.
+
+    Returns:
+      A Distribution over next states.
+    """
     assert state.shape == (2, )
     assert action.shape == (1, )
 
