@@ -14,6 +14,7 @@ from research.utils import make_optimizer
 gamma = 0.99
 tau = 0.001
 episode_length = 1000
+num_episodes = 1000
 buffer_size = 16384
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
@@ -71,7 +72,6 @@ run = jit(
         batch_size,
     ))
 
-num_episodes = 1000
 rngs = random.split(rng, num_episodes)
 
 reward_per_episode = []
