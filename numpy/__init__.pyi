@@ -4,24 +4,124 @@
 * https://github.com/numpy/numpy-stubs
 """
 
-from typing import Any, Optional
+# pylint: disable=line-too-long
+# See https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
+from __future__ import annotations
+
+from typing import Any, Optional, Tuple, TypeVar, Union
 
 # pylint: disable=unused-argument, redefined-builtin
 
-def array(object: Any) -> Any:
+pi: float
+newaxis: None
+
+Shape = Tuple[int, ...]
+
+class ndarray:
+  @property
+  def shape(self) -> Shape:
+    ...
+
+  def __int__(self) -> int:
+    ...
+
+  def __float__(self) -> float:
+    ...
+
+  def __getitem__(self, key) -> Any:
+    ...
+
+  def __add__(self, other) -> ndarray:
+    ...
+
+  def __radd__(self, other) -> ndarray:
+    ...
+
+  def __sub__(self, other) -> ndarray:
+    ...
+
+  def __rsub__(self, other) -> ndarray:
+    ...
+
+  def __mul__(self, other) -> ndarray:
+    ...
+
+  def __rmul__(self, other) -> ndarray:
+    ...
+
+  def __div__(self, other) -> ndarray:
+    ...
+
+  def __neg__(self) -> ndarray:
+    ...
+
+  def __matmul__(self, other) -> ndarray:
+    ...
+
+  def __truediv__(self, other) -> ndarray:
+    ...
+
+  def __le__(self, other) -> ndarray:
+    ...
+
+ArrayLike = TypeVar("ArrayLike", int, float, ndarray)
+
+def abs(x: ArrayLike) -> ArrayLike:
   ...
 
-def clip(a: Any, a_min: Any, a_max: Any) -> Any:
+def amax(a: ndarray, axis: Optional[int]) -> ndarray:
   ...
 
-def amax(a: Any, axis: Optional[int]) -> Any:
+def arange(start: int) -> ndarray:
   ...
 
-def dot(a: Any, b: Any) -> Any:
+def array(object: Any) -> ndarray:
   ...
 
-def arange(start: int) -> Any:
+def broadcast_to(arr: ndarray, shape: Shape) -> ndarray:
   ...
 
-def interp(x: Any, xp: Any, fp: Any, right: Optional[Any]) -> Any:
+def clip(a: ArrayLike, a_min: Any, a_max: Any) -> ArrayLike:
+  ...
+
+def cos(x: ArrayLike) -> ArrayLike:
+  ...
+
+def diag(v: ndarray, k: int = 0) -> ndarray:
+  ...
+
+def dot(a: ndarray, b: ndarray) -> ndarray:
+  ...
+
+def inner(a: ndarray, b: ndarray) -> ndarray:
+  ...
+
+def interp(x: ndarray, xp: ndarray, fp: ndarray,
+           right: Optional[Any]) -> ndarray:
+  ...
+
+def isfinite(x: ArrayLike) -> ArrayLike:
+  ...
+
+def log(x: ArrayLike) -> ArrayLike:
+  ...
+
+def sin(x: ArrayLike) -> ArrayLike:
+  ...
+
+def sum(a: ndarray,
+        axis: Optional[Union[int, Tuple[int, ...]]] = None) -> ndarray:
+  ...
+
+def sqrt(x: ArrayLike) -> ArrayLike:
+  ...
+
+def where(condition: Any, x: Optional[Any] = None,
+          y: Optional[Any] = None) -> ndarray:
+  ...
+
+def zeros(shape: Shape, dtype: Optional[Any] = None) -> ndarray:
+  ...
+
+def zeros_like(x: ndarray, dtype: Optional[Any] = None) -> ndarray:
   ...

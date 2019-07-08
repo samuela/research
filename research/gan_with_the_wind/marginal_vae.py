@@ -1,14 +1,15 @@
 import time
 
+import matplotlib.pyplot as plt
 import jax.numpy as jp
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, FanOut, Softplus
 import jax.scipy.special
-import matplotlib.pyplot as plt
 
-from .dists import BatchSlice, DiagMVN, Dist, Independent, MVN, Normal
+from research.statistax import BatchSlice, DiagMVN, Independent, MVN, Normal
+from research.statistax.stax import DistributionLayer
 from .utils import Dampen, normal_kl
 
 theta = 0.5
@@ -16,6 +17,8 @@ theta = 0.5
 eigenvectors = jp.array([[jp.cos(theta), -jp.sin(theta)],
                          [jp.sin(theta), jp.cos(theta)]])
 eigenvalues = jp.array([5, 0.1])
+# The scale_tril here isn't actually lower triangular, but it's ok in this case
+# because we only sample from it and so it suffices that A @ A.T = covariance.
 population_dist = MVN(jp.zeros((2, )),
                       eigenvectors @ jp.diag(jp.sqrt(eigenvalues)))
 
@@ -36,7 +39,7 @@ def sample_biased(rng):
   rng_x, rng_y = random.split(rng)
   x = sample_gap_normal(rng_x, bias_gap)
   y = random.normal(rng_y)
-  return population_dist.loc + population_dist.cov_cholesky @ jp.array([x, y])
+  return population_dist.loc + population_dist.scale_tril @ jp.array([x, y])
 
 def demo_plot(rng, num_samples: int):
   rng_population, rng_biased = random.split(rng)
@@ -68,7 +71,7 @@ encoder_init, encoder = stax.serial(
             Dampen(0.1, 1e-6),
         ),
     ),
-    Dist(DiagMVN),
+    DistributionLayer(DiagMVN),
 )
 
 decoder_init, decoder = stax.serial(
@@ -90,7 +93,7 @@ decoder_init, decoder = stax.serial(
             Softplus,
         ),
     ),
-    Dist(Normal),
+    DistributionLayer(Normal),
 )
 
 def elbo(rng, params, x, decoder_transform, num_mc_samples: int = 1):

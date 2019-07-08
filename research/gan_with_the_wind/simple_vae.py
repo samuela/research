@@ -1,13 +1,14 @@
 import time
 
+import matplotlib.pyplot as plt
 import jax.numpy as jp
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, FanOut, Softplus
-import matplotlib.pyplot as plt
 
-from .dists import DiagMVN, Dist, MVN
+from research.statistax import DiagMVN, MVN
+from research.statistax.stax import DistributionLayer
 from .utils import Dampen, normal_kl
 
 theta = 0.5
@@ -34,7 +35,7 @@ encoder_init, encoder = stax.serial(
             Dampen(0.1, 1e-6),
         ),
     ),
-    Dist(DiagMVN),
+    DistributionLayer(DiagMVN),
 )
 
 decoder_init, decoder = stax.serial(
@@ -46,7 +47,7 @@ decoder_init, decoder = stax.serial(
             Softplus,
         ),
     ),
-    Dist(DiagMVN),
+    DistributionLayer(DiagMVN),
 )
 
 def elbo(rng, params, x, num_mc_samples: int = 1):

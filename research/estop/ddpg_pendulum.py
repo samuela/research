@@ -1,14 +1,13 @@
+import matplotlib.pyplot as plt
 from jax import jit, random
 import jax.numpy as jp
 from jax.experimental import optimizers
 from jax.experimental import stax
 from jax.experimental.stax import FanInConcat, Dense, Relu
-import matplotlib.pyplot as plt
 
-from research.estop import ddpg
-from research.gan_with_the_wind import dists
-from research.estop import pendulum
+from research.estop import ddpg, pendulum
 from research.estop.utils import Scalarify
+from research.statistax import Normal
 from research.utils import make_optimizer
 
 gamma = 0.99
@@ -18,7 +17,7 @@ num_episodes = 1000
 buffer_size = 16384
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
-noise = lambda _: dists.Normal(jp.array(0.0), jp.array(0.1))
+noise = lambda _: Normal(jp.array(0.0), jp.array(0.1))
 rng = random.PRNGKey(0)
 
 env = pendulum.pendulum_environment(

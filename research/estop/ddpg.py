@@ -3,7 +3,7 @@ from typing import Any, NamedTuple, Callable, TypeVar
 from jax import lax, grad, ops, random, tree_util, vmap
 import jax.numpy as jp
 
-from research.gan_with_the_wind.dists import Distribution
+from research.statistax import Distribution
 from research.utils import Optimizer
 
 State = TypeVar("State")
