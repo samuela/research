@@ -1,4 +1,4 @@
-from typing import NamedTuple, Tuple
+from typing import cast, Iterable, NamedTuple, Tuple
 
 import jax.numpy as jp
 from jax import lax, random
@@ -25,8 +25,8 @@ class Distribution:
     raise NotImplementedError()
 
 class Normal(Distribution, NamedTuple):
-  loc: jp.array
-  scale: jp.array
+  loc: jp.ndarray
+  scale: jp.ndarray
 
   @property
   def event_shape(self):
@@ -48,8 +48,8 @@ class Normal(Distribution, NamedTuple):
     return jp.log(self.scale) + 0.5 - NEG_HALF_LOG_TWO_PI
 
 class Uniform(Distribution, NamedTuple):
-  minval: jp.array
-  maxval: jp.array
+  minval: jp.ndarray
+  maxval: jp.ndarray
 
   @property
   def event_shape(self):
@@ -74,7 +74,7 @@ class Uniform(Distribution, NamedTuple):
     return jp.log(self.maxval - self.minval)
 
 class Deterministic(Distribution, NamedTuple):
-  loc: jp.array
+  loc: jp.ndarray
   eps: float = 0.0
 
   @property
@@ -126,19 +126,22 @@ def Independent(reinterpreted_batch_ndims: int):
 def BatchSlice(batch_slice: Tuple):
   """A higher-order operation on Distributions that slices on their parameter
   arrays. This effectively marginalizes out batch distributions."""
-
-  def slicey_slice(dist: Distribution):
-    params_broadcasted = jp.broadcast_arrays(*dist)
+  def slicey_slice(dist: Distribution) -> Distribution:
+    # For annoying reasons, it's not possible to have Distribution subtype
+    # NamedTuple even though all distributions are also NamedTuples. But we need
+    # the input here to be Iterable. There's not a clear way to specify that the
+    # input must be a Distribution *and* a NamedTuple AFAICT.
+    params_broadcasted = jp.broadcast_arrays(*cast(Iterable, dist))
     return dist.__class__(*[arr[batch_slice] for arr in params_broadcasted])
 
   return slicey_slice
 
-def DiagMVN(loc: jp.ndarray, scale: jp.ndarray):
+def DiagMVN(loc: jp.ndarray, scale: jp.ndarray) -> Distribution:
   return Independent(1)(Normal(loc, scale))
 
 class MVN(Distribution, NamedTuple):
-  loc: jp.array
-  scale_tril: jp.array
+  loc: jp.ndarray
+  scale_tril: jp.ndarray
 
   @property
   def event_shape(self):
