@@ -8,7 +8,7 @@
 # See https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, TypeVar, Union
+from typing import Any, List, Optional, Tuple, TypeVar, Union
 
 # pylint: disable=unused-argument, redefined-builtin
 
@@ -76,6 +76,9 @@ def arange(start: int) -> ndarray:
   ...
 
 def array(object: Any) -> ndarray:
+  ...
+
+def broadcast_arrays(*args: ArrayLike) -> List[ndarray]:
   ...
 
 def broadcast_to(arr: ndarray, shape: Shape) -> ndarray:
