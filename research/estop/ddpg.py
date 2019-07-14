@@ -12,7 +12,7 @@ Action = TypeVar("Action")
 class Env(NamedTuple):
   initial_distribution: Distribution
   step: Callable[[State, Action], Distribution]
-  reward: Callable[[State, Action, State], jp.array]
+  reward: Callable[[State, Action, State], jp.ndarray]
 
 def rollout(rng, env: Env, policy, num_timesteps: int):
   init_rng, steps_rng = random.split(rng)
@@ -30,10 +30,10 @@ def rollout_from_state(rng, env: Env, policy, num_timesteps: int, state):
   return res
 
 class ReplayBuffer(NamedTuple):
-  states: jp.array
-  actions: jp.array
-  rewards: jp.array
-  next_states: jp.array
+  states: jp.ndarray
+  actions: jp.ndarray
+  rewards: jp.ndarray
+  next_states: jp.ndarray
   count: int
 
   @property
@@ -139,7 +139,7 @@ def ddpg_step(
 class LoopState(NamedTuple):
   optimizer: Optimizer
   tracking_params: Any
-  cumulative_reward: jp.array
+  cumulative_reward: jp.ndarray
   state: State
   replay_buffer: ReplayBuffer
 
@@ -212,7 +212,7 @@ def ddpg_episode(
     init_val = LoopState(
         optimizer=init_optimizer,
         tracking_params=init_tracking_params,
-        cumulative_reward=0.0,
+        cumulative_reward=jp.array(0.0),
         state=env.initial_distribution.sample(rng_start),
         replay_buffer=init_replay_buffer,
     )
