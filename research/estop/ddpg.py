@@ -51,13 +51,12 @@ class ReplayBuffer(NamedTuple):
     )
 
   def minibatch(self, rng, batch_size: int):
-    # Note that the buffer may not yet be full, and unfortunately checking
-    # whether it is or not constitutes a branching condition that XLA is not
-    # happy with. As a result, there may be some sampling of zeros until count
-    # has exceeded buffer_size.
-    ixs = random.randint(rng, (batch_size, ),
-                         minval=0,
-                         maxval=self.buffer_size)
+    ixs = random.randint(
+        rng,
+        (batch_size, ),
+        minval=0,
+        maxval=jp.minimum(self.buffer_size, self.count),
+    )
     return (
         self.states[ixs, ...],
         self.actions[ixs, ...],
@@ -111,6 +110,8 @@ def ddpg_step(
   # Sample minibatch from the replay buffer.
   replay_states, replay_actions, replay_rewards, replay_next_states = new_rb.minibatch(
       rng_minibatch, batch_size)
+
+  # When ns is terminal, the "gamma * Q_track" term should be dropped.
   replay_ys = vmap(lambda r, ns: r + gamma * Q_track(ns, mu_track(ns)),
                    in_axes=(0, 0))(replay_rewards, replay_next_states)
 
@@ -168,7 +169,6 @@ def ddpg_episode(
   Returns:
     run: A `jit`-able function to actually run the episode.
   """
-
   def run(
       rng,
       init_replay_buffer: ReplayBuffer,
