@@ -8,8 +8,7 @@ import pickle
 import tqdm
 from jax import random
 
-from research.estop.pendulum import config
-from research.estop.pendulum.run_ddpg import train
+from research.estop.pendulum import config, run_ddpg
 
 # Limit ourselves to single-threaded numpy operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
@@ -26,7 +25,7 @@ def job(random_seed: int, base_dir: Path):
       with (seed_dir / f"episode={episode}.pkl").open(mode="wb") as f:
         pickle.dump(info["optimizer"].value, f)
 
-  res = train(random.PRNGKey(random_seed), callback)
+  res = run_ddpg.train(random.PRNGKey(random_seed), callback)
   with (seed_dir / "reward_per_episode.pkl").open(mode="wb") as f:
     pickle.dump(res["reward_per_episode"], f)
   with (seed_dir / "final_params.pkl").open(mode="wb") as f:
@@ -47,6 +46,10 @@ def main():
           "episode_length": config.episode_length,
           "max_torque": config.max_torque,
           "num_random_seeds": num_random_seeds,
+          "num_episodes": run_ddpg.num_episodes,
+          "tau": run_ddpg.tau,
+          "buffer_size": run_ddpg.buffer_size,
+          "batch_size": run_ddpg.batch_size,
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
   # See https://codewithoutrules.com/2018/09/04/python-multiprocessing/.
