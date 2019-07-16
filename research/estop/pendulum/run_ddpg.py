@@ -1,7 +1,5 @@
-import pickle
 import time
 
-import matplotlib.pyplot as plt
 from jax import jit, random
 import jax.numpy as jp
 from jax.experimental import optimizers
@@ -15,15 +13,12 @@ from research.estop.utils import Scalarify
 from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
 
-init_rng_key = 0
 num_episodes = 1000
 tau = 1e-3
 buffer_size = 2**15
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
 noise = lambda _: Normal(jp.array(0.0), jp.array(0.1))
-
-rng = random.PRNGKey(init_rng_key)
 
 replay_buffer = ddpg.ReplayBuffer(
     states=jp.zeros((buffer_size, ) + config.state_shape),
@@ -51,7 +46,7 @@ critic_init, critic = stax.serial(
     Scalarify,
 )
 
-if __name__ == "__main__":
+def train(rng, callback):
   actor_init_rng, critic_init_rng, rng = random.split(rng, 3)
   _, init_actor_params = actor_init(actor_init_rng, config.state_shape)
   _, init_critic_params = critic_init(
@@ -76,49 +71,50 @@ if __name__ == "__main__":
   reward_per_episode = []
   for episode in range(num_episodes):
     t0 = time.time()
-    optimizer, tracking_params, reward, final_state, replay_buffer = run(
+    optimizer, tracking_params, reward, _, _ = run(
         episode_rngs[episode],
         replay_buffer,
         optimizer,
         tracking_params,
     )
-    print(
-        f"Episode {episode}, reward = {reward}, elapsed = {time.time() - t0}")
     reward_per_episode.append(reward)
-
     if not jp.isfinite(reward):
       raise Exception("Reached non-finite reward. Probably a NaN.")
 
-    # Visualize a rollout under the current policy.
-    if episode % 100 == 0:
-      viz_num_rollouts = 100
-      rollout_rngs = random.split(episode_rngs[episode], viz_num_rollouts)
-      rollouts = [
-          ddpg.rollout(
-              rollout_rngs[i],
-              config.env,
-              policy=lambda s: Deterministic(actor(optimizer.value[0], s)),
-              num_timesteps=250,
-          ) for i in range(viz_num_rollouts)
-      ]
-      viz_pendulum_rollout(rollouts[0][0], rollouts[0][1])
+    callback({
+        "episode": episode,
+        "optimizer": optimizer,
+        "elapsed": time.time() - t0,
+        "reward_per_episode": reward_per_episode,
+        "reward": reward,
+    })
 
-      plt.figure()
-      for states, _ in rollouts:
-        plt.scatter(states[:, 0], states[:, 1], c="tab:blue", alpha=0.1)
-      plt.xlabel("theta")
-      plt.ylabel("theta dot")
-      plt.title(f"Episode {episode}")
-      plt.show()
+  return {
+      "optimizer": optimizer,
+      "reward_per_episode": reward_per_episode,
+  }
 
-  # Store parameters.
-  # pickle.dump(optimizer.value, open(f"final_params_rng{init_rng_key}.pkl",
-  #                                   "wb"))
+def main():
+  rng = random.PRNGKey(0)
+  train_rng, rng = random.split(rng)
+  callback_rngs = random.split(rng, num_episodes)
 
-  # Plot the reward per episode.
-  plt.figure()
-  plt.plot(reward_per_episode)
-  plt.xlabel("Episode")
-  plt.ylabel("Cumulative reward")
-  plt.title("DDPG on the pendulum environment")
-  plt.show()
+  def callback(info):
+    episode = info['episode']
+    print(f"Episode {episode}, "
+          f"reward = {info['reward']}, "
+          f"elapsed = {info['elapsed']}")
+
+    if episode % 10 == 0:
+      states, actions = ddpg.rollout(
+          callback_rngs[episode],
+          config.env,
+          policy=lambda s: Deterministic(actor(info["optimizer"].value[0], s)),
+          num_timesteps=250,
+      )
+      viz_pendulum_rollout(states, actions)
+
+  train(train_rng, callback)
+
+if __name__ == "__main__":
+  main()
