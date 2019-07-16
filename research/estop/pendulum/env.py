@@ -10,6 +10,7 @@ def pendulum_environment(mass: float, length: float, gravity: float,
   """A pendulum swing up environment. This requires a swing-up when `gravity` is
   greater than `max_torque / (mass * length)` and can overpower gravity
   otherwise."""
+
   def step(state, action):
     """Take a single step in the discretized pendulum dynamics.
 
