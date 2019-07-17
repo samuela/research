@@ -38,7 +38,7 @@ def job(random_seed: int, base_dir: Path):
         }, f)
 
 def main():
-  num_random_seeds = 100
+  num_random_seeds = 72
 
   # Create necessary directory structure.
   results_dir = Path("results/ddpg_pendulum")

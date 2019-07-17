@@ -18,7 +18,7 @@ tau = 1e-3
 buffer_size = 2**15
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
-noise = lambda _: Normal(jp.array(0.0), jp.array(0.1))
+noise = lambda _: Normal(jp.array(0.0), jp.array(1))
 
 replay_buffer = ddpg.ReplayBuffer(
     states=jp.zeros((buffer_size, ) + config.state_shape),
