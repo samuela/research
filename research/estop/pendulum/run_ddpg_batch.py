@@ -34,7 +34,7 @@ def job(random_seed: int, base_dir: Path):
             "reward_per_episode": reward_per_episode,
             "params_per_episode": params_per_episode,
             "tracking_params_per_episode": tracking_params_per_episode,
-            # "elapsed_per_episode": elapsed_per_episode,
+            "elapsed_per_episode": elapsed_per_episode,
         }, f)
 
 def main():
