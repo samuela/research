@@ -14,7 +14,7 @@ from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
 
 num_episodes = 1000
-tau = 1e-3
+tau = 1e-4
 buffer_size = 2**15
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
