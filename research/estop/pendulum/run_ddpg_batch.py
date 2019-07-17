@@ -10,26 +10,32 @@ from jax import random
 
 from research.estop.pendulum import config, run_ddpg
 
-# Limit ourselves to single-threaded numpy operations to avoid thrashing. See
+# Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
 os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
                            "intra_op_parallelism_threads=1")
 
 def job(random_seed: int, base_dir: Path):
-  seed_dir = base_dir / f"seed={random_seed}"
-  seed_dir.mkdir()
+  reward_per_episode = []
+  params_per_episode = []
+  tracking_params_per_episode = []
+  elapsed_per_episode = []
 
   def callback(info):
-    episode = info["episode"]
-    if episode % 100 == 0:
-      with (seed_dir / f"episode={episode}.pkl").open(mode="wb") as f:
-        pickle.dump(info["optimizer"].value, f)
+    reward_per_episode.append(info["reward"])
+    params_per_episode.append(info["optimizer"].value)
+    tracking_params_per_episode.append(info["tracking_params"])
+    elapsed_per_episode.append(info["elapsed"])
 
-  res = run_ddpg.train(random.PRNGKey(random_seed), callback)
-  with (seed_dir / "reward_per_episode.pkl").open(mode="wb") as f:
-    pickle.dump(res["reward_per_episode"], f)
-  with (seed_dir / "final_params.pkl").open(mode="wb") as f:
-    pickle.dump(res["optimizer"].value, f)
+  run_ddpg.train(random.PRNGKey(random_seed), callback)
+  with (base_dir / f"seed={random_seed}.pkl").open(mode="wb") as f:
+    pickle.dump(
+        {
+            "reward_per_episode": reward_per_episode,
+            "params_per_episode": params_per_episode,
+            "tracking_params_per_episode": tracking_params_per_episode,
+            # "elapsed_per_episode": elapsed_per_episode,
+        }, f)
 
 def main():
   num_random_seeds = 100

@@ -68,7 +68,6 @@ def train(rng, callback):
 
   episode_rngs = random.split(rng, num_episodes)
 
-  reward_per_episode = []
   for episode in range(num_episodes):
     t0 = time.time()
     optimizer, tracking_params, reward, _, _ = run(
@@ -77,22 +76,16 @@ def train(rng, callback):
         optimizer,
         tracking_params,
     )
-    reward_per_episode.append(reward)
     if not jp.isfinite(reward):
       raise Exception("Reached non-finite reward. Probably a NaN.")
 
     callback({
         "episode": episode,
         "optimizer": optimizer,
+        "tracking_params": tracking_params,
         "elapsed": time.time() - t0,
-        "reward_per_episode": reward_per_episode,
         "reward": reward,
     })
-
-  return {
-      "optimizer": optimizer,
-      "reward_per_episode": reward_per_episode,
-  }
 
 def main():
   rng = random.PRNGKey(0)
