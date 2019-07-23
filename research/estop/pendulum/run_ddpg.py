@@ -9,8 +9,8 @@ from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
 from research.estop import ddpg
 from research.estop.pendulum import config
 from research.estop.pendulum.env import viz_pendulum_rollout
-from research.estop.utils import Scalarify, ornstein_uhlenbeck_noise
-from research.statistax import Deterministic
+from research.estop.utils import Scalarify
+from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
 
 num_episodes = 1000
@@ -18,8 +18,8 @@ tau = 1e-4
 buffer_size = 2**15
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
-init_noise = Deterministic(jp.array([0.0]))
-noise = ornstein_uhlenbeck_noise(mu=jp.array([0.0]))
+init_noise = Normal(jp.array(0.0), jp.array(0.1))
+noise = lambda _1, _2: Normal(jp.array(0.0), jp.array(0.1))
 
 replay_buffer = ddpg.ReplayBuffer(
     states=jp.zeros((buffer_size, ) + config.state_shape),
@@ -30,7 +30,7 @@ replay_buffer = ddpg.ReplayBuffer(
 )
 
 actor_init, actor = stax.serial(
-    Dense(128),
+    Dense(64),
     Relu,
     Dense(1),
     Tanh,
@@ -39,9 +39,9 @@ actor_init, actor = stax.serial(
 
 critic_init, critic = stax.serial(
     FanInConcat(),
-    Dense(128),
+    Dense(64),
     Relu,
-    Dense(128),
+    Dense(64),
     Relu,
     Dense(1),
     Scalarify,
@@ -113,7 +113,7 @@ def main():
             lambda s: Deterministic(actor(info["optimizer"].value[0], s)),
             num_timesteps=250,
         )
-        viz_pendulum_rollout(states, actions)
+        viz_pendulum_rollout(states, 2 * actions / config.max_torque)
 
   train(train_rng, callback)
 
