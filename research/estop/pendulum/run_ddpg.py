@@ -9,8 +9,8 @@ from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
 from research.estop import ddpg
 from research.estop.pendulum import config
 from research.estop.pendulum.env import viz_pendulum_rollout
-from research.estop.utils import Scalarify
-from research.statistax import Deterministic, Normal
+from research.estop.utils import Scalarify, ornstein_uhlenbeck_noise
+from research.statistax import Deterministic
 from research.utils import make_optimizer
 
 num_episodes = 1000
@@ -18,7 +18,8 @@ tau = 1e-4
 buffer_size = 2**15
 batch_size = 64
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
-noise = lambda _: Normal(jp.array(0.0), jp.array(1))
+init_noise = Deterministic(jp.array([0.0]))
+noise = ornstein_uhlenbeck_noise(mu=jp.array([0.0]))
 
 replay_buffer = ddpg.ReplayBuffer(
     states=jp.zeros((buffer_size, ) + config.state_shape),
@@ -70,8 +71,9 @@ def train(rng, callback):
 
   for episode in range(num_episodes):
     t0 = time.time()
-    optimizer, tracking_params, reward, _, _ = run(
+    optimizer, tracking_params, reward, _, _, _ = run(
         episode_rngs[episode],
+        init_noise,
         replay_buffer,
         optimizer,
         tracking_params,
@@ -92,22 +94,35 @@ def main():
   train_rng, rng = random.split(rng)
   callback_rngs = random.split(rng, num_episodes)
 
+  reward_per_episode = []
+
   def callback(info):
     episode = info['episode']
+    reward = info['reward']
     print(f"Episode {episode}, "
-          f"reward = {info['reward']}, "
+          f"reward = {reward}, "
           f"elapsed = {info['elapsed']}")
+    reward_per_episode.append(reward)
 
-    if episode % 10 == 0:
-      states, actions = ddpg.rollout(
-          callback_rngs[episode],
-          config.env,
-          policy=lambda s: Deterministic(actor(info["optimizer"].value[0], s)),
-          num_timesteps=250,
-      )
-      viz_pendulum_rollout(states, actions)
+    # if episode % 10 == 0:
+    if episode == num_episodes - 1:
+      for rollout in range(25):
+        states, actions = ddpg.rollout(
+            random.fold_in(callback_rngs[episode], rollout),
+            config.env,
+            lambda s: Deterministic(actor(info["optimizer"].value[0], s)),
+            num_timesteps=250,
+        )
+        viz_pendulum_rollout(states, actions)
 
   train(train_rng, callback)
+
+  import matplotlib.pyplot as plt
+  plt.figure()
+  plt.plot(reward_per_episode)
+  plt.xlabel("Episode")
+  plt.ylabel("Train episode reward, including action noise")
+  plt.show()
 
 if __name__ == "__main__":
   main()

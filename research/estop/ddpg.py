@@ -100,9 +100,10 @@ def ddpg_step(
   rng_noise, rng_transition, rng_minibatch = random.split(rng, 3)
 
   actor_action = actor(actor_params, state)
+  action_noise = noise.sample(rng_noise)
 
   # We corrupt the actor_action with noise in order to promote exploration.
-  action = actor_action + noise.sample(rng_noise)
+  action = actor_action + action_noise
   next_state = env.step(state, action).sample(rng_transition)
   reward = env.reward(state, action, next_state)
   new_rb = replay_buffer.add(state, action, reward, next_state)
@@ -135,7 +136,7 @@ def ddpg_step(
   # gradient of the actor depends on the critic. For simplicity, this
   # implementation calculates the gradient of the actor without updating the
   # critic first. This should have a negligible impact on behavior.
-  return (actor_grad, critic_grad), reward, next_state, new_rb
+  return (actor_grad, critic_grad), reward, next_state, new_rb, action_noise
 
 class LoopState(NamedTuple):
   optimizer: Optimizer
@@ -143,6 +144,7 @@ class LoopState(NamedTuple):
   cumulative_reward: jp.ndarray
   state: State
   replay_buffer: ReplayBuffer
+  prev_noise: jp.ndarray
 
 def ddpg_episode(
     env: Env,
@@ -150,7 +152,7 @@ def ddpg_episode(
     tau: float,
     actor,
     critic,
-    noise: Callable[[int], Distribution],
+    noise: Callable[[int, jp.ndarray], Distribution],
     epside_length: int,
     batch_size: int,
 ):
@@ -172,16 +174,17 @@ def ddpg_episode(
 
   def run(
       rng,
+      init_noise: Distribution,
       init_replay_buffer: ReplayBuffer,
       init_optimizer: Optimizer,
       init_tracking_params,
   ) -> LoopState:
     """A curried `jit`-able function to actually run the DDPG episode."""
-    rng_start, rng_rest = random.split(rng)
+    rng_start, rng_init_noise, rng_rest = random.split(rng, 3)
     rngs = random.split(rng_rest, epside_length)
 
     def step(i, loop_state: LoopState):
-      g, reward, next_state, new_replay_buffer = ddpg_step(
+      g, reward, next_state, new_replay_buffer, new_prev_noise = ddpg_step(
           rngs[i],
           loop_state.optimizer.value,
           loop_state.tracking_params,
@@ -192,7 +195,7 @@ def ddpg_episode(
           actor,
           critic,
           loop_state.state,
-          noise(i),
+          noise(i, loop_state.prev_noise),
       )
       new_cumulative_reward = loop_state.cumulative_reward + (gamma**
                                                               i) * reward
@@ -208,6 +211,7 @@ def ddpg_episode(
           new_cumulative_reward,
           next_state,
           new_replay_buffer,
+          new_prev_noise,
       )
 
     init_val = LoopState(
@@ -216,6 +220,7 @@ def ddpg_episode(
         cumulative_reward=jp.array(0.0),
         state=env.initial_distribution.sample(rng_start),
         replay_buffer=init_replay_buffer,
+        prev_noise=init_noise.sample(rng_init_noise),
     )
 
     return lax.fori_loop(0, epside_length, step, init_val)
