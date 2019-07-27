@@ -8,8 +8,8 @@ from research.estop.pendulum import config
 from research.estop.pendulum.run_ddpg import actor
 from research.statistax import Deterministic
 
-experiment_folder = "5_15ba7ed_ddpg_pendulum"
-seed = 0
+experiment_folder = "7_8ade325_ddpg_pendulum"
+seed = 4
 episode = -1
 num_rollouts = 1000
 
@@ -30,6 +30,12 @@ states_list = [
     )[0] for i in range(num_rollouts)
 ]
 states = jp.concatenate(states_list, axis=0)
+
+# import matplotlib.pyplot as plt
+# plt.figure()
+# plt.scatter(states[:, 0], states[:, 1], alpha=0.1)
+# plt.title(f"Seed {seed}")
+# plt.show()
 
 pickle.dump(
     {
