@@ -4,9 +4,16 @@ import jax.numpy as jp
 from research.estop import ddpg
 from research.statistax import Deterministic, Uniform
 
-def pendulum_environment(mass: float, length: float, gravity: float,
-                         friction: float, max_speed: float,
-                         dt: float) -> ddpg.Env:
+def cost(s, u):
+  return (s[0] - jp.pi)**2 + 0.1 * (s[1]**2) + 0.001 * (u[0]**2)
+
+def pendulum_environment(mass: float,
+                         length: float,
+                         gravity: float,
+                         friction: float,
+                         max_speed: float,
+                         dt: float,
+                         reward_adjustment: float = 0) -> ddpg.Env:
   """A pendulum swing up environment. This requires a swing-up when `gravity` is
   greater than `max_torque / (mass * length)` and can overpower gravity
   otherwise."""
@@ -50,12 +57,15 @@ def pendulum_environment(mass: float, length: float, gravity: float,
   # but oh well.
   return ddpg.Env(
       initial_distribution=Uniform(
-          jp.array([0, -1, 0, 0]),
-          jp.array([2 * jp.pi, 1, 0, 0]),
+          jp.array([jp.pi - 0.1, -1, 1, 0]),
+          jp.array([jp.pi + 0.1, 1, 1, 0]),
       ),
+      # initial_distribution=Uniform(
+      #     jp.array([0, -1, 0, 0]),
+      #     jp.array([2 * jp.pi, 1, 0, 0]),
+      # ),
       step=step,
-      reward=lambda s1, a, _: -(s1[0] - jp.pi)**2 - 0.1 * (s1[1]**2) - 0.001 *
-      (a[0]**2),
+      reward=lambda s1, a, _: reward_adjustment - cost(s1, a),
   )
 
 def viz_pendulum_rollout(states, actions):

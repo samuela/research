@@ -6,7 +6,7 @@ from pathlib import Path
 import pickle
 
 import tqdm
-from jax import random
+from jax import lax, random
 
 from research.estop.pendulum import config, run_ddpg
 
@@ -14,6 +14,8 @@ from research.estop.pendulum import config, run_ddpg
 # https://github.com/google/jax/issues/743.
 os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
                            "intra_op_parallelism_threads=1")
+
+num_episodes = 1000
 
 def job(random_seed: int, base_dir: Path):
   reward_per_episode = []
@@ -27,7 +29,12 @@ def job(random_seed: int, base_dir: Path):
     tracking_params_per_episode.append(info["tracking_params"])
     elapsed_per_episode.append(info["elapsed"])
 
-  run_ddpg.train(random.PRNGKey(random_seed), callback)
+  run_ddpg.train(
+      random.PRNGKey(random_seed),
+      num_episodes,
+      lambda t, _: lax.ge(t, config.episode_length),
+      callback,
+  )
   with (base_dir / f"seed={random_seed}.pkl").open(mode="wb") as f:
     pickle.dump(
         {
@@ -52,7 +59,7 @@ def main():
           "episode_length": config.episode_length,
           "max_torque": config.max_torque,
           "num_random_seeds": num_random_seeds,
-          "num_episodes": run_ddpg.num_episodes,
+          "num_episodes": num_episodes,
           "tau": run_ddpg.tau,
           "buffer_size": run_ddpg.buffer_size,
           "batch_size": run_ddpg.batch_size,
