@@ -34,19 +34,21 @@ class ReplayBuffer(NamedTuple):
   actions: jp.ndarray
   rewards: jp.ndarray
   next_states: jp.ndarray
+  done: jp.ndarray
   count: int
 
   @property
   def buffer_size(self):
     return self.states.shape[0]
 
-  def add(self, state, action, reward, next_state):
+  def add(self, state, action, reward, next_state, done):
     ix = self.count % self.buffer_size
     return ReplayBuffer(
         states=ops.index_update(self.states, ix, state),
         actions=ops.index_update(self.actions, ix, action),
         rewards=ops.index_update(self.rewards, ix, reward),
         next_states=ops.index_update(self.next_states, ix, next_state),
+        done=ops.index_update(self.done, ix, done),
         count=self.count + 1,
     )
 
@@ -62,6 +64,7 @@ class ReplayBuffer(NamedTuple):
         self.actions[ixs, ...],
         self.rewards[ixs, ...],
         self.next_states[ixs, ...],
+        self.done[ixs, ...],
     )
 
 def ddpg_step(
@@ -76,6 +79,7 @@ def ddpg_step(
     critic,
     state,
     noise: Distribution,
+    terminal_criterion,
 ):
   """Calculate the gradient from a single step of DDPG.
 
@@ -106,15 +110,20 @@ def ddpg_step(
   action = actor_action + action_noise
   next_state = env.step(state, action).sample(rng_transition)
   reward = env.reward(state, action, next_state)
-  new_rb = replay_buffer.add(state, action, reward, next_state)
+  done = terminal_criterion(next_state)
+  new_rb = replay_buffer.add(state, action, reward, next_state, done)
 
   # Sample minibatch from the replay buffer.
-  replay_states, replay_actions, replay_rewards, replay_next_states = new_rb.minibatch(
+  replay_states, replay_actions, replay_rewards, replay_next_states, replay_done = new_rb.minibatch(
       rng_minibatch, batch_size)
 
-  # When ns is terminal, the "gamma * Q_track" term should be dropped.
-  replay_ys = vmap(lambda r, ns: r + gamma * Q_track(ns, mu_track(ns)),
-                   in_axes=(0, 0))(replay_rewards, replay_next_states)
+  replay_ys = vmap(lambda r, ns, d: r + gamma * lax.bitwise_not(d) * Q_track(
+      ns, mu_track(ns)),
+                   in_axes=(0, 0, 0))(
+                       replay_rewards,
+                       replay_next_states,
+                       replay_done,
+                   )
 
   def critic_loss(p):
     replay_pred_ys = vmap(lambda s, a: critic(p, (s, a)),
@@ -136,15 +145,27 @@ def ddpg_step(
   # gradient of the actor depends on the critic. For simplicity, this
   # implementation calculates the gradient of the actor without updating the
   # critic first. This should have a negligible impact on behavior.
-  return (actor_grad, critic_grad), reward, next_state, new_rb, action_noise
+  return (
+      (actor_grad, critic_grad),
+      reward,
+      next_state,
+      new_rb,
+      action_noise,
+      done,
+  )
 
 class LoopState(NamedTuple):
+  episode_length: int
   optimizer: Optimizer
   tracking_params: Any
   cumulative_reward: jp.ndarray
   state: State
   replay_buffer: ReplayBuffer
   prev_noise: jp.ndarray
+
+  # This is actually a jax type because it has to be traced. Should just be a
+  # scalar with dtype=bool.
+  done: jp.ndarray
 
 def ddpg_episode(
     env: Env,
@@ -153,7 +174,7 @@ def ddpg_episode(
     actor,
     critic,
     noise: Callable[[int, jp.ndarray], Distribution],
-    epside_length: int,
+    terminal_criterion,
     batch_size: int,
 ):
   """Run DDPG for a single episode.
@@ -180,12 +201,12 @@ def ddpg_episode(
       init_tracking_params,
   ) -> LoopState:
     """A curried `jit`-able function to actually run the DDPG episode."""
-    rng_start, rng_init_noise, rng_rest = random.split(rng, 3)
-    rngs = random.split(rng_rest, epside_length)
+    rng_init_state, rng_init_noise, rng_steps = random.split(rng, 3)
 
-    def step(i, loop_state: LoopState):
-      g, reward, next_state, new_replay_buffer, new_prev_noise = ddpg_step(
-          rngs[i],
+    def step(loop_state: LoopState):
+      t = loop_state.episode_length
+      g, reward, next_state, new_replay_buffer, new_prev_noise, done = ddpg_step(
+          random.fold_in(rng_steps, t),
           loop_state.optimizer.value,
           loop_state.tracking_params,
           env,
@@ -195,10 +216,11 @@ def ddpg_episode(
           actor,
           critic,
           loop_state.state,
-          noise(i, loop_state.prev_noise),
+          noise(t, loop_state.prev_noise),
+          lambda s: terminal_criterion(t, s),
       )
       new_cumulative_reward = loop_state.cumulative_reward + (gamma**
-                                                              i) * reward
+                                                              t) * reward
       new_optimizer = loop_state.optimizer.update(g)
       new_tracking_params = tree_util.tree_multimap(
           lambda new, old: tau * new + (1 - tau) * old,
@@ -206,23 +228,27 @@ def ddpg_episode(
           loop_state.tracking_params,
       )
       return LoopState(
+          loop_state.episode_length + 1,
           new_optimizer,
           new_tracking_params,
           new_cumulative_reward,
           next_state,
           new_replay_buffer,
           new_prev_noise,
+          done,
       )
 
     init_val = LoopState(
+        episode_length=0,
         optimizer=init_optimizer,
         tracking_params=init_tracking_params,
         cumulative_reward=jp.array(0.0),
-        state=env.initial_distribution.sample(rng_start),
+        state=env.initial_distribution.sample(rng_init_state),
         replay_buffer=init_replay_buffer,
         prev_noise=init_noise.sample(rng_init_noise),
+        done=jp.array(False),
     )
 
-    return lax.fori_loop(0, epside_length, step, init_val)
+    return lax.while_loop(lambda ls: lax.bitwise_not(ls.done), step, init_val)
 
   return run
