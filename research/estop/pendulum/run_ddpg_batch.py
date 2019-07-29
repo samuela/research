@@ -18,19 +18,30 @@ os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
 num_episodes = 1000
 
 def job(random_seed: int, base_dir: Path):
-  reward_per_episode = []
-  params_per_episode = []
-  tracking_params_per_episode = []
+  rng = random.PRNGKey(random_seed)
+  callback_rng, train_rng = random.split(rng)
+  callback_rngs = random.split(callback_rng, num_episodes)
+
+  params = [None]
+  tracking_params = [None]
+  train_reward_per_episode = []
+  policy_value_per_episode = []
   elapsed_per_episode = []
 
   def callback(info):
-    reward_per_episode.append(info["reward"])
-    params_per_episode.append(info["optimizer"].value)
-    tracking_params_per_episode.append(info["tracking_params"])
+    episode = info['episode']
+    params[0] = info["optimizer"].value
+    tracking_params[0] = info["tracking_params"]
+
+    policy_value = run_ddpg.eval_policy(callback_rngs[episode],
+                                        info["optimizer"].value[0])
+
+    train_reward_per_episode.append(info["reward"])
+    policy_value_per_episode.append(policy_value)
     elapsed_per_episode.append(info["elapsed"])
 
   run_ddpg.train(
-      random.PRNGKey(random_seed),
+      train_rng,
       num_episodes,
       lambda t, _: lax.ge(t, config.episode_length),
       callback,
@@ -38,9 +49,10 @@ def job(random_seed: int, base_dir: Path):
   with (base_dir / f"seed={random_seed}.pkl").open(mode="wb") as f:
     pickle.dump(
         {
-            "reward_per_episode": reward_per_episode,
-            "params_per_episode": params_per_episode,
-            "tracking_params_per_episode": tracking_params_per_episode,
+            "final_params": params[0],
+            "final_tracking_params": tracking_params[0],
+            "train_reward_per_episode": train_reward_per_episode,
+            "policy_value_per_episode": policy_value_per_episode,
             "elapsed_per_episode": elapsed_per_episode,
         }, f)
 

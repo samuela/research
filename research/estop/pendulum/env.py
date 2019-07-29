@@ -65,7 +65,7 @@ def pendulum_environment(mass: float,
       #     jp.array([2 * jp.pi, 1, 0, 0]),
       # ),
       step=step,
-      reward=lambda s1, a, _: reward_adjustment - cost(s1, a),
+      reward=lambda s1, a, _: 1.0 - cost(s1, a) / reward_adjustment,
   )
 
 def viz_pendulum_rollout(states, actions):

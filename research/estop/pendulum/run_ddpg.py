@@ -16,9 +16,10 @@ from research.utils import make_optimizer
 tau = 1e-4
 buffer_size = 2**15
 batch_size = 64
+num_eval_rollouts = 128
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
-init_noise = Normal(jp.array(0.0), jp.array(0.1))
-noise = lambda _1, _2: Normal(jp.array(0.0), jp.array(0.1))
+init_noise = Normal(jp.array(0.0), jp.array(0.0))
+noise = lambda _1, _2: Normal(jp.array(0.0), jp.array(0.5))
 
 actor_init, actor = stax.serial(
     Dense(64),
@@ -35,10 +36,20 @@ critic_init, critic = stax.serial(
     Dense(64),
     Relu,
     Dense(1),
-    stax.elementwise(lambda x: x + config.reward_adjustment / (1 - config.gamma
-                                                               )),
+    stax.elementwise(lambda x: x + 1.0 / (1 - config.gamma)),
     Scalarify,
 )
+
+policy = lambda p: lambda s: Deterministic(actor(p, s))
+
+eval_policy = jit(
+    ddpg.evaluate_policy(
+        config.env,
+        policy,
+        num_timesteps=config.episode_length,
+        num_rollouts=num_eval_rollouts,
+        gamma=config.gamma,
+    ))
 
 def train(rng, num_episodes, terminal_criterion, callback):
   actor_init_rng, critic_init_rng, rng = random.split(rng, 3)
@@ -99,23 +110,31 @@ def main():
   train_rng, rng = random.split(rng)
   callback_rngs = random.split(rng, num_episodes)
 
-  reward_per_episode = []
+  train_reward_per_episode = []
+  policy_value_per_episode = []
 
   def callback(info):
     episode = info['episode']
     reward = info['reward']
-    print(f"Episode {episode}, "
-          f"reward = {reward}, "
-          f"elapsed = {info['elapsed']}")
-    reward_per_episode.append(reward)
+    current_actor_params, _ = info["optimizer"].value
 
-    # if episode == num_episodes - 1:
-    if episode % 500 == 0 or episode == num_episodes - 1:
+    policy_value = eval_policy(callback_rngs[episode], current_actor_params)
+
+    print(f"Episode {episode}, "
+          f"train reward = {reward}, "
+          f"policy value = {policy_value}, "
+          f"elapsed = {info['elapsed']}")
+
+    train_reward_per_episode.append(reward)
+    policy_value_per_episode.append(policy_value)
+
+    if episode == num_episodes - 1:
+      # if episode % 500 == 0 or episode == num_episodes - 1:
       for rollout in range(5):
-        states, actions = ddpg.rollout(
+        states, actions, _ = ddpg.rollout(
             random.fold_in(callback_rngs[episode], rollout),
             config.env,
-            lambda s: Deterministic(actor(info["optimizer"].value[0], s)),
+            policy(current_actor_params),
             num_timesteps=250,
         )
         viz_pendulum_rollout(states, 2 * actions / config.max_torque)
@@ -129,9 +148,14 @@ def main():
 
   import matplotlib.pyplot as plt
   plt.figure()
-  plt.plot(reward_per_episode)
+  plt.plot(train_reward_per_episode)
   plt.xlabel("Episode")
   plt.ylabel("Train episode reward, including action noise")
+
+  plt.figure()
+  plt.plot(policy_value_per_episode)
+  plt.xlabel("Episode")
+  plt.ylabel("Policy expected cumulative reward")
   plt.show()
 
 if __name__ == "__main__":
