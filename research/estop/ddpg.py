@@ -24,10 +24,23 @@ def rollout_from_state(rng, env: Env, policy, num_timesteps: int, state):
     action_rng, dynamics_rng = random.split(step_rng)
     action = policy(state).sample(action_rng)
     next_state = env.step(state, action).sample(dynamics_rng)
-    return next_state, (state, action)
+    reward = env.reward(state, action, next_state)
+    return next_state, (state, action, reward)
 
   _, res = lax.scan(step, state, random.split(rng, num_timesteps))
   return res
+
+def evaluate_policy(env: Env, policy, num_timesteps: int, num_rollouts: int,
+                    gamma: float):
+  def one_rollout(rollout_rng, p):
+    _, _, rewards = rollout(rollout_rng, env, policy(p), num_timesteps)
+    return jp.dot(rewards, jp.power(gamma, jp.arange(num_timesteps)))
+
+  def many_rollouts(rng, p):
+    rngs = random.split(rng, num_rollouts)
+    return jp.mean(vmap(one_rollout, in_axes=(0, None))(rngs, p))
+
+  return many_rollouts
 
 class ReplayBuffer(NamedTuple):
   states: jp.ndarray
@@ -192,7 +205,6 @@ def ddpg_episode(
   Returns:
     run: A `jit`-able function to actually run the episode.
   """
-
   def run(
       rng,
       init_noise: Distribution,
