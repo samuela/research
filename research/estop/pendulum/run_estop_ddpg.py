@@ -1,6 +1,6 @@
 import pickle
 
-from jax import  lax, random, vmap
+from jax import lax, random, vmap
 import jax.numpy as jp
 
 from research.estop import ddpg

@@ -126,7 +126,6 @@ def Independent(reinterpreted_batch_ndims: int):
 def BatchSlice(batch_slice: Tuple):
   """A higher-order operation on Distributions that slices on their parameter
   arrays. This effectively marginalizes out batch distributions."""
-
   def slicey_slice(dist: Distribution) -> Distribution:
     # For annoying reasons, it's not possible to have Distribution subtype
     # NamedTuple even though all distributions are also NamedTuples. But we need
