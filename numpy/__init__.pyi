@@ -8,7 +8,7 @@
 # See https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, TypeVar, Union
+from typing import Any, List, Optional, Tuple, TypeVar, Union
 
 # pylint: disable=unused-argument, redefined-builtin
 
@@ -69,13 +69,22 @@ ArrayLike = TypeVar("ArrayLike", int, float, ndarray)
 def abs(x: ArrayLike) -> ArrayLike:
   ...
 
-def amax(a: ndarray, axis: Optional[int]) -> ndarray:
+def amax(a: ndarray, axis: Optional[int] = None) -> ndarray:
+  ...
+
+def amin(a: ndarray, axis: Optional[int] = None) -> ndarray:
   ...
 
 def arange(start: int) -> ndarray:
   ...
 
+def argmax(a: ArrayLike, axis: Optional[int] = None) -> ArrayLike:
+  ...
+
 def array(object: Any) -> ndarray:
+  ...
+
+def broadcast_arrays(*args: ArrayLike) -> List[ndarray]:
   ...
 
 def broadcast_to(arr: ndarray, shape: Shape) -> ndarray:
@@ -85,6 +94,9 @@ def clip(a: ArrayLike, a_min: Any, a_max: Any) -> ArrayLike:
   ...
 
 def cos(x: ArrayLike) -> ArrayLike:
+  ...
+
+def cumsum(a: ArrayLike, axis: Optional[int]) -> ArrayLike:
   ...
 
 def diag(v: ndarray, k: int = 0) -> ndarray:
@@ -104,6 +116,15 @@ def isfinite(x: ArrayLike) -> ArrayLike:
   ...
 
 def log(x: ArrayLike) -> ArrayLike:
+  ...
+
+def max(a: ArrayLike, axis: Optional[int] = None) -> ArrayLike:
+  ...
+
+def min(a: ArrayLike, axis: Optional[int] = None) -> ArrayLike:
+  ...
+
+def reshape(a: ArrayLike, newshape: Shape) -> ArrayLike:
   ...
 
 def sin(x: ArrayLike) -> ArrayLike:

@@ -128,8 +128,9 @@ def step(rng, i, opt_state):
 
   def marginal_elbo_batch(params, dim: int):
     _, marginal_enc_params, dec_params = params
-    elbo_one = lambda rng, x: -elbo(rng, (marginal_enc_params[dim], dec_params
-                                          ), x, BatchSlice((..., dim)))
+    elbo_one = lambda rng, x: -elbo(rng,
+                                    (marginal_enc_params[dim], dec_params), x,
+                                    BatchSlice((..., dim)))
     rngs = random.split(rng, batch_size)
     return jp.mean(
         vmap(elbo_one, in_axes=(0, 0))(rngs, population_batch[..., dim]))
