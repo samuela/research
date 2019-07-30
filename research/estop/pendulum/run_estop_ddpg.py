@@ -5,7 +5,7 @@ import jax.numpy as jp
 
 from research.estop import ddpg
 from research.estop.pendulum import config, run_ddpg
-from research.estop.pendulum.env import viz_pendulum_rollout
+# from research.estop.pendulum.env import viz_pendulum_rollout
 
 experiment_folder = "9_1ff35d1_ddpg_pendulum"
 num_support_set_rollouts = 500
@@ -35,7 +35,7 @@ def build_support_set(rng, actor_params):
 
   return vmap(one_rollout)(random.split(rng, num_support_set_rollouts))
 
-if __name__ == "__main__":
+def main():
   rng = random.PRNGKey(0)
   num_episodes = 10000
 
@@ -129,3 +129,6 @@ if __name__ == "__main__":
   plt.title("E-stop DDPG")
 
   plt.show()
+
+if __name__ == "__main__":
+  main()
