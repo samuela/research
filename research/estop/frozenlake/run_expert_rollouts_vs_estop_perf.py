@@ -20,13 +20,6 @@ if __name__ == "__main__":
   env = build_env(lake)
   num_states_to_remove = 0.5 * lake.num_states
 
-  state_action_values, optimal_policy_values = frozenlake.value_iteration(
-      env, gamma, tolerance=1e-6)
-
-  # The value of the optimal policy in the full environment.
-  opt_full_policy_value = optimal_policy_values[-1]
-  policy_actions = np.argmax(state_action_values, axis=-1)
-
   def estop_map_optimal_policy_value(hp):
     # See https://stackoverflow.com/questions/5284646/rank-items-in-an-array-using-python-numpy.
     rank_hp2d = lake.reshape(np.argsort(np.argsort(hp)))
@@ -42,6 +35,13 @@ if __name__ == "__main__":
 
     estop_env = build_env(frozenlake.Lake(estop_map))
     return frozenlake.optimal_policy_reward(estop_env, gamma)
+
+  state_action_values, optimal_policy_values = frozenlake.value_iteration(
+      env, gamma, tolerance=1e-6)
+
+  # The value of the optimal policy in the full environment.
+  opt_full_policy_value = optimal_policy_values[-1]
+  policy_actions = np.argmax(state_action_values, axis=-1)
 
   # Calculate the value of the optimal policy in the exact e-stop environment.
   policy_transitions = np.array([
