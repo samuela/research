@@ -210,7 +210,8 @@ def expected_rewards(env: FrozenLakeEnv):
 def value_iteration(env: FrozenLakeEnv,
                     gamma: float,
                     tolerance: Optional[float] = None,
-                    max_iterations: Optional[int] = None):
+                    max_iterations: Optional[int] = None,
+                    callback=lambda _: None):
   """See Sutton & Barto page 83."""
   V = np.zeros((env.lake.num_states, ))
   Q = np.zeros((env.lake.num_states, NUM_ACTIONS))
@@ -232,9 +233,12 @@ def value_iteration(env: FrozenLakeEnv,
 
     delta = np.abs(V - new_state_values).max()
     policy_reward = np.dot(new_state_values, env.initial_state_distribution)
-    # print(
-    #     f"Iteration {iteration}, delta: {delta}, policy reward {policy_reward}"
-    # )
+    callback({
+        "iteration": num_iterations,
+        "Q": Q,
+        "delta": delta,
+        "policy_reward": policy_reward,
+    })
     V = new_state_values
     policy_rewards_per_iter.append(policy_reward)
     num_iterations += 1
