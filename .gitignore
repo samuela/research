@@ -4,3 +4,5 @@ __pycache__
 ._*
 .ionide/
 .pyre/
+results/
+figs/
