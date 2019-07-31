@@ -22,6 +22,10 @@ class ndarray:
   def shape(self) -> Shape:
     ...
 
+  @property
+  def T(self) -> ndarray:
+    ...
+
   def __int__(self) -> int:
     ...
 

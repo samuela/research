@@ -61,6 +61,9 @@ if __name__ == "__main__":
                                     tolerance=1e-6,
                                     callback=callback)
 
+  expert_policy_values = np.array(expert_policy_values)
+  estop_policy_values = np.array(estop_policy_values)
+
   plt.rcParams.update({"font.size": 16})
   plt.figure()
   plt.plot(expert_policy_values, estop_policy_values)
