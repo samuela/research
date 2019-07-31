@@ -60,13 +60,12 @@ if __name__ == "__main__":
       for i in range(num_random_seeds)
   ])
 
+  plt.rcParams.update({"font.size": 16})
   plt.figure()
   viz.plot_errorfill(x / 1000, full_policy_values_interp, "slategrey")
   viz.plot_errorfill(x / 1000, estop_policy_values_interp, "crimson")
-  plt.legend(["Full env. DDPG", "E-stop DDPG"])
+  plt.legend(["Full env. DDPG", "E-stop DDPG"], loc="lower right")
   plt.xlabel("Number of steps seen (thousands)")
   plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/full_vs_estop_ddpg_pendulum.pdf")
-
-  plt.show()
