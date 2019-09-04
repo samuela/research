@@ -18,6 +18,7 @@ tqdm = "*"
 jax = "*"
 jaxlib = "*"
 gym = "*"
+mujoco-py = "*"
 
 [requires]
 python_version = "3.7"
