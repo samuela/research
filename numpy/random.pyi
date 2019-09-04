@@ -1,2 +1,4 @@
-def seed(n: int) -> None:
+# pylint: disable=unused-argument, redefined-builtin
+
+def seed(n: int):
   ...

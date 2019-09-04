@@ -8,8 +8,7 @@ ipython = "*"
 yapf = "*"
 pylint = "*"
 rope = "*"
-# See https://github.com/facebook/pyre-check/issues/187.
-pyre-check = "==0.0.27"
+pyre-check = "*"
 
 [packages]
 numpy = "*"
