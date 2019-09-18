@@ -29,3 +29,4 @@ See
 
 - https://github.com/openai/mujoco-py/issues/455
 - https://github.com/openai/mujoco-py/issues/394
+- https://github.com/ethz-asl/reinmav-gym/issues/35
