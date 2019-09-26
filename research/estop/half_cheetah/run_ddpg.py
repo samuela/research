@@ -5,7 +5,6 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import numpy as np
 from jax import jit, random
 import jax.numpy as jp
-from jax.nn import initializers
 from jax.experimental import optimizers
 from jax.experimental import stax
 from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
@@ -37,12 +36,7 @@ actor_init, actor = stax.serial(
     Relu,
     Dense(64),
     Relu,
-    Dense(
-        config.action_shape[0],
-        # This is a scale glorot_normal initialization.
-        W_init=initializers.variance_scaling(0.1, "fan_avg",
-                                             "truncated_normal"),
-        b_init=initializers.normal()),
+    Dense(config.action_shape[0]),
     Tanh,
 )
 
@@ -61,6 +55,9 @@ critic_init, critic = stax.serial(
 deterministic_policy = lambda p: lambda s: Deterministic(actor(p, s))
 
 def rollout(rng, policy, callback=lambda: None):
+  """Rollout one episode of the half_cheetah environment. This is specialized to
+  the fact that we can't use lax.scan and the policy and environment dynamics
+  are deterministic."""
   init_state = config.env.initial_distribution.sample(rng)
 
   states = [init_state]
@@ -195,20 +192,6 @@ def main():
       lambda t, _: t >= config.episode_length,
       callback,
   )
-
-  import matplotlib.pyplot as plt
-  plt.figure()
-  plt.plot(train_reward_per_episode)
-  plt.xlabel("Episode")
-  plt.ylabel("Train episode reward, including action noise")
-
-  plt.figure()
-  plt.plot(
-      policy_evaluation_frequency * np.arange(len(policy_value_per_episode)),
-      policy_value_per_episode)
-  plt.xlabel("Episode")
-  plt.ylabel("Policy expected cumulative reward")
-  plt.show()
 
 if __name__ == "__main__":
   main()

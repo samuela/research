@@ -93,9 +93,9 @@ def main():
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
   # See https://codewithoutrules.com/2018/09/04/python-multiprocessing/.
-  # Running a single job usually takes up about 2 cores since mujoco runs
+  # Running a single job usually takes up about 1.5-2 cores since mujoco runs
   # separately and we can't really control its parallelism.
-  with get_context("spawn").Pool(processes=cpu_count() / 2) as pool:
+  with get_context("spawn").Pool(processes=cpu_count() // 2) as pool:
     for _ in tqdm.tqdm(pool.imap_unordered(
         functools.partial(job, base_dir=results_dir), range(num_random_seeds)),
                        desc="full",
