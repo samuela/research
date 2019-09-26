@@ -1,12 +1,12 @@
 import functools
-from multiprocessing import get_context
+from multiprocessing import cpu_count, get_context
 import os
 from pathlib import Path
 import pickle
 
 import tqdm
 import numpy as np
-from jax import random
+from jax import jit, random
 
 from research.estop.half_cheetah import config, run_ddpg
 
@@ -15,9 +15,12 @@ from research.estop.half_cheetah import config, run_ddpg
 os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
                            "intra_op_parallelism_threads=1")
 
-num_episodes = 1000
+num_episodes = 10000
 
 def job(random_seed: int, base_dir: Path):
+  job_dir = base_dir / f"seed={random_seed}"
+  job_dir.mkdir()
+
   rng = random.PRNGKey(random_seed)
   np.random.seed(random_seed)
 
@@ -35,13 +38,20 @@ def job(random_seed: int, base_dir: Path):
     params[0] = info["optimizer"].value
     tracking_params[0] = info["tracking_params"]
 
+    current_actor_params, _ = info["optimizer"].value
+
     train_reward_per_episode.append(info["reward"])
     elapsed_per_episode.append(info["elapsed"])
 
     if episode % run_ddpg.policy_evaluation_frequency == 0:
-      policy_value = run_ddpg.eval_policy(callback_rngs[episode],
-                                          info["optimizer"].value[0])
+      curr_policy = jit(run_ddpg.deterministic_policy(current_actor_params))
+      policy_value = run_ddpg.eval_policy(callback_rngs[episode], curr_policy)
       policy_value_per_episode.append(policy_value)
+
+    if episode % run_ddpg.policy_video_frequency == 0:
+      run_ddpg.film_policy(callback_rngs[episode],
+                           curr_policy,
+                           filepath=job_dir / f"episode_{episode}.mp4")
 
   run_ddpg.train(
       train_rng,
@@ -49,7 +59,7 @@ def job(random_seed: int, base_dir: Path):
       lambda t, _: t >= config.episode_length,
       callback,
   )
-  with (base_dir / f"seed={random_seed}.pkl").open(mode="wb") as f:
+  with (job_dir / f"data.pkl").open(mode="wb") as f:
     pickle.dump(
         {
             "final_params": params[0],
@@ -60,7 +70,7 @@ def job(random_seed: int, base_dir: Path):
         }, f)
 
 def main():
-  num_random_seeds = 72
+  num_random_seeds = 48
 
   # Create necessary directory structure.
   results_dir = Path("results/ddpg_half_cheetah")
@@ -80,7 +90,9 @@ def main():
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
   # See https://codewithoutrules.com/2018/09/04/python-multiprocessing/.
-  with get_context("spawn").Pool() as pool:
+  # Running a single job usually takes up about 2 cores since mujoco runs
+  # separately and we can't really control its parallelism.
+  with get_context("spawn").Pool(processes=cpu_count() / 2) as pool:
     for _ in tqdm.tqdm(pool.imap_unordered(
         functools.partial(job, base_dir=full_results_dir),
         range(num_random_seeds)),
