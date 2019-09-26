@@ -1,5 +1,3 @@
-import time
-
 import gym
 from jax import random
 import numpy as np
