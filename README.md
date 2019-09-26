@@ -84,6 +84,12 @@ See
 
 Note that the deb installation does not seem to support multiple CUDA installations living in harmony. This may become problematic as some packages like pytorch do not yet support CUDA 10.1.
 
+With CUDA 10.0, JAX may require the `xla_gpu_cuda_data_dir` XLA flag to be set as well:
+
+```
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-10.0/
+```
+
 ## Expand EBS volume
 
 No downtime is necessary.
