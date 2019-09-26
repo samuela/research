@@ -30,7 +30,8 @@ def job(random_seed: int, base_dir: Path):
   params = [None]
   tracking_params = [None]
   train_reward_per_episode = []
-  policy_value_per_episode = []
+  policy_evaluations = []
+  episode_lengths = []
   elapsed_per_episode = []
 
   def callback(info):
@@ -41,12 +42,13 @@ def job(random_seed: int, base_dir: Path):
     current_actor_params, _ = info["optimizer"].value
 
     train_reward_per_episode.append(info["reward"])
+    episode_lengths.append(info["episode_length"])
     elapsed_per_episode.append(info["elapsed"])
 
     if episode % run_ddpg.policy_evaluation_frequency == 0:
       curr_policy = jit(run_ddpg.deterministic_policy(current_actor_params))
       policy_value = run_ddpg.eval_policy(callback_rngs[episode], curr_policy)
-      policy_value_per_episode.append(policy_value)
+      policy_evaluations.append(policy_value)
 
     if episode % run_ddpg.policy_video_frequency == 0:
       run_ddpg.film_policy(callback_rngs[episode],
@@ -65,7 +67,8 @@ def job(random_seed: int, base_dir: Path):
             "final_params": params[0],
             "final_tracking_params": tracking_params[0],
             "train_reward_per_episode": train_reward_per_episode,
-            "policy_value_per_episode": policy_value_per_episode,
+            "policy_evaluations": policy_evaluations,
+            "episode_lengths": episode_lengths,
             "elapsed_per_episode": elapsed_per_episode,
         }, f)
 
@@ -74,9 +77,7 @@ def main():
 
   # Create necessary directory structure.
   results_dir = Path("results/ddpg_half_cheetah")
-  full_results_dir = results_dir / "full"
   results_dir.mkdir()
-  full_results_dir.mkdir()
 
   pickle.dump(
       {
@@ -87,6 +88,8 @@ def main():
           "tau": run_ddpg.tau,
           "buffer_size": run_ddpg.buffer_size,
           "batch_size": run_ddpg.batch_size,
+          "num_eval_rollouts": run_ddpg.num_eval_rollouts,
+          "policy_evaluation_frequency": run_ddpg.policy_evaluation_frequency,
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
   # See https://codewithoutrules.com/2018/09/04/python-multiprocessing/.
@@ -94,8 +97,7 @@ def main():
   # separately and we can't really control its parallelism.
   with get_context("spawn").Pool(processes=cpu_count() / 2) as pool:
     for _ in tqdm.tqdm(pool.imap_unordered(
-        functools.partial(job, base_dir=full_results_dir),
-        range(num_random_seeds)),
+        functools.partial(job, base_dir=results_dir), range(num_random_seeds)),
                        desc="full",
                        total=num_random_seeds):
       pass
