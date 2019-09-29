@@ -1,5 +1,4 @@
 from functools import partial
-import time
 from typing import Any, NamedTuple, Callable, TypeVar
 
 from jax import jit, lax, grad, random, tree_util, vmap
@@ -77,32 +76,13 @@ def step_and_update_replay_buffer(
     terminal_criterion
   """
   actor_params, _ = params
-
-  # tic = time.time()
   rng_noise, rng_transition = random.split(rng)
-  # rng_noise = rng  # XXX
-  # print(f"  random split: {time.time() - tic}")
-
-  # tic = time.time()
   action, action_noise = noisy_actor(rng_noise, actor_params, state, actor,
                                      noise)
-  # print(f"  noisy_actor: {time.time() - tic}")
-
-  # tic = time.time()
   next_state = env.step(state, action).sample(rng_transition)
-  # print(f"  next_state: {time.time() - tic}")
-
-  # tic = time.time()
   reward = env.reward(state, action, next_state)
-  # print(f"  reward: {time.time() - tic}")
-
-  # tic = time.time()
   done = terminal_criterion(next_state)
-  # print(f"  done: {time.time() - tic}")
-
-  # tic = time.time()
   new_rb = replay_buffer.add(state, action, reward, next_state, done)
-  # print(f"  new_rb: {time.time() - tic}")
 
   return action_noise, reward, next_state, done, new_rb
 
@@ -220,16 +200,8 @@ def ddpg_step(
     noise: A function for the action noise distribution at each time step.
     terminal_criterion
   """
-  # print()
-  # tic = time.time()
-
   rng_step, rng_minibatch = random.split(rng)
-  # rng_step = rng_minibatch = rng  # XXX
-  # rng_step = rng  # XXX
 
-  # print(f"ddpg_step random split: {time.time() - tic}")
-
-  # tic = time.time()
   action_noise, reward, next_state, done, new_rb = step_and_update_replay_buffer(
       rng_step,
       params_optimizer.value,
@@ -240,17 +212,10 @@ def ddpg_step(
       noise,
       terminal_criterion,
   )
-  # print(f"step_and_update_replay_buffer: {time.time() - tic}")
-
-  # tic = time.time()
 
   # Sample minibatch from the replay buffer.
   replay_minibatch = new_rb.minibatch(rng_minibatch, batch_size)
-  # replay_minibatch = new_rb.minibatch(None, batch_size)
 
-  # print(f"replay_minibatch: {time.time() - tic}")
-
-  # tic = time.time()
   new_optimizer, new_tracking_params = ddpg_update(
       params_optimizer,
       tracking_params,
@@ -260,7 +225,6 @@ def ddpg_step(
       actor,
       critic,
   )
-  # print(f"ddpg_update: {time.time() - tic}")
 
   return action_noise, reward, next_state, done, new_rb, new_optimizer, new_tracking_params
 
@@ -315,8 +279,6 @@ def ddpg_episode(
 
     def step(loop_state: LoopState):
       t = loop_state.episode_length
-
-      # t0 = time.time()
       action_noise, reward, next_state, done, new_rb, new_optimizer, new_tracking_params = ddpg_step(
           random.fold_in(rng_steps, t),
           loop_state.optimizer,
@@ -332,7 +294,6 @@ def ddpg_episode(
           noise(t, loop_state.prev_noise),
           lambda s: terminal_criterion(t, s),
       )
-      # print(f"ddpg step {time.time() - t0}")
 
       # tic = time.time()
       # new_cumulative_reward = loop_state.cumulative_reward + (gamma**
