@@ -5,8 +5,16 @@ ALL THE CODEZ
 ## Mujoco/Ubuntu setup
 
 1. Download mujoco at https://www.roboti.us/index.html, unzip and put in `~/.mujoco/mujoco200`.
-2. Put the license key at `~/.mujoco/mjkey.txt`.
-3. Install dependencies
+2. Add
+
+```bash
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/ubuntu/.mujoco/mujoco200/bin
+```
+
+to `~/.profile`.
+
+3. Put the license key at `~/.mujoco/mjkey.txt`.
+4. Install dependencies
 
 ```bash
 # Fixes `fatal error: GL/osmesa.h: No such file or directory`
@@ -15,7 +23,7 @@ sudo apt install libosmesa6-dev
 sudo apt install libglew-dev
 ```
 
-4. Install clang and set it as the default `cc` alternative.
+5. Install clang and set it as the default `cc` alternative.
 
 ```bash
 sudo apt install clang
@@ -88,6 +96,15 @@ With CUDA 10.0, JAX may require the `xla_gpu_cuda_data_dir` XLA flag to be set a
 
 ```
 XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-10.0/
+```
+
+## Set hostname
+
+On AWS Ubuntu 18.04,
+
+```bash
+user$ sudo su
+root$ hostnamectl set-hostname <whatever>
 ```
 
 ## Expand EBS volume
