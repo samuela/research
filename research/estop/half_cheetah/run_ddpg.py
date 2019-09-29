@@ -125,23 +125,28 @@ def train(rng, num_episodes, terminal_criterion, callback):
   init_noise = Deterministic(jp.zeros(config.action_shape))
   for episode in range(num_episodes):
     t0 = time.time()
-    episode_length, optimizer, tracking_params, reward, _, _, _, _ = run(
+    final_state = run(
         episode_rngs[episode],
         init_noise,
         replay_buffer,
         optimizer,
         tracking_params,
     )
-    if not jp.isfinite(reward):
+    if not jp.isfinite(final_state.cumulative_reward):
       raise Exception("Reached non-finite reward. Probably a NaN.")
 
     callback({
         "episode": episode,
-        "episode_length": episode_length,
-        "optimizer": optimizer,
-        "tracking_params": tracking_params,
+        "episode_length": final_state.episode_length,
+        "optimizer": final_state.optimizer,
+        "tracking_params": final_state.tracking_params,
+        # "discounted_cumulative_reward":
+        # final_state.discounted_cumulative_reward,
+        # "undiscounted_cumulative_reward":
+        # final_state.undiscounted_cumulative_reward,
+        "undiscounted_cumulative_reward": final_state.cumulative_reward,
         "elapsed": time.time() - t0,
-        "reward": reward,
+        "reward": final_state.cumulative_reward,
     })
 
 def main():
