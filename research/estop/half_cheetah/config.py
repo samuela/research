@@ -55,13 +55,8 @@ def unsafe_openai_gym_env(construct_env,
   last_reward = [0.0]
 
   def step(_, action):
-    # tic = time.time()
     obs_after, reward, _done, _info = gym_env.step(action)
-    # print(f"    mujoco: {time.time() - tic}")
-
-    # tic = time.time()
     last_reward[0] = reward + reward_adjustment
-    # print(f"    remember reward: {time.time() - tic}")
 
     return Deterministic(obs_after)
 
