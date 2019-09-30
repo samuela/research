@@ -132,7 +132,7 @@ def train(rng, num_episodes, terminal_criterion, callback):
         optimizer,
         tracking_params,
     )
-    if not jp.isfinite(final_state.cumulative_reward):
+    if not jp.isfinite(final_state.undiscounted_cumulative_reward):
       raise Exception("Reached non-finite reward. Probably a NaN.")
 
     callback({
@@ -140,14 +140,17 @@ def train(rng, num_episodes, terminal_criterion, callback):
         "episode_length": final_state.episode_length,
         "optimizer": final_state.optimizer,
         "tracking_params": final_state.tracking_params,
-        # "discounted_cumulative_reward":
-        # final_state.discounted_cumulative_reward,
-        # "undiscounted_cumulative_reward":
-        # final_state.undiscounted_cumulative_reward,
-        "undiscounted_cumulative_reward": final_state.cumulative_reward,
+        "discounted_cumulative_reward":
+        final_state.discounted_cumulative_reward,
+        "undiscounted_cumulative_reward":
+        final_state.undiscounted_cumulative_reward,
         "elapsed": time.time() - t0,
-        "reward": final_state.cumulative_reward,
     })
+
+    # Update loop variables...
+    optimizer = final_state.optimizer
+    tracking_params = final_state.tracking_params
+    replay_buffer = final_state.replay_buffer
 
 def main():
   num_episodes = 10000
@@ -158,22 +161,21 @@ def main():
   train_rng, rng = random.split(rng)
   callback_rngs = random.split(rng, num_episodes)
 
-  results_dir = Path("results/half_cheetah_ddpg/")
+  results_dir = Path("results/tmp_ddpg_half_cheetah/")
   results_dir.mkdir()
 
-  train_reward_per_episode = []
-  policy_value_per_episode = []
-
   def callback(info):
-    episode = info['episode']
-    reward = info['reward']
+    episode = info["episode"]
+    episode_length = info["episode_length"]
+    discounted_cumulative_reward = info["discounted_cumulative_reward"]
+    undiscounted_cumulative_reward = info["undiscounted_cumulative_reward"]
     current_actor_params, _ = info["optimizer"].value
 
-    print(f"Episode {episode}, "
-          f"train reward = {reward}, "
-          f"elapsed = {info['elapsed']}")
-
-    train_reward_per_episode.append(reward)
+    print(f"Episode {episode}\t" +
+          "disc. reward = {0:.4f}\t".format(discounted_cumulative_reward) +
+          "undisc. reward = {0:.4f}\t".format(undiscounted_cumulative_reward) +
+          "ep. length = {}\t".format(episode_length) +
+          "elapsed = {0:.4f}".format(info["elapsed"]))
 
     # Periodically evaluate the policy without any action noise.
     if episode % policy_evaluation_frequency == 0:
@@ -182,9 +184,8 @@ def main():
       tic = time.time()
       policy_value = eval_policy(callback_rngs[episode], curr_policy)
       print(f".. policy value = {policy_value}, elapsed = {time.time() - tic}")
-      policy_value_per_episode.append(policy_value)
 
-    if episode % policy_video_frequency == 0:
+    if (episode + 1) % policy_video_frequency == 0:
       tic = time.time()
       film_policy(callback_rngs[episode],
                   curr_policy,
