@@ -3,24 +3,20 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/python:3.7
+      - image: samuela/research-ci
 
     steps:
+      # The mujoco key is kept as a base64 encoded secret in circleci.
+      - run: echo $MUJOCO_LICENSE_KEY | base64 --decode > ~/.mujoco/mjkey.txt
+
       - checkout
-      - run: sudo chown -R circleci:circleci /usr/local/bin
-      - run: sudo chown -R circleci:circleci /usr/local/lib/python3.7/site-packages
       - restore_cache:
           key: deps-{{ checksum "Pipfile.lock" }}
-      - run:
-          command: |
-            sudo pip install pipenv
-            pipenv install --dev
+      - run: pipenv install --dev
       - save_cache:
           key: deps-{{ checksum "Pipfile.lock" }}
           paths:
-            - ".venv"
-            - "/usr/local/bin"
-            - "/usr/local/lib/python3.7/site-packages"
+            - "/home/circleci/.local/share/virtualenvs/"
       - run:
           name: pyre
           command: pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/ check
