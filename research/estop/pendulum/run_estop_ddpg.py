@@ -5,11 +5,11 @@ import jax.numpy as jp
 
 from research.estop import ddpg
 from research.estop.pendulum import config, run_ddpg
-# from research.estop.pendulum.env import viz_pendulum_rollout
 
 experiment_folder = "9_1ff35d1_ddpg_pendulum"
-num_support_set_rollouts = 500
+num_support_set_rollouts = 100
 epsilon = 0.5
+max_squared_dist = epsilon**2
 
 def load_best_seed():
   experiment_metadata = pickle.load(
@@ -18,7 +18,7 @@ def load_best_seed():
 
   data = [
       pickle.load(
-          open(f"results/{experiment_folder}/full/seed={seed}.pkl", "rb"))
+          open(f"results/{experiment_folder}/stuff/seed={seed}.pkl", "rb"))
       for seed in range(num_random_seeds)
   ]
   final_policy_values = jp.array(
@@ -50,10 +50,10 @@ def main():
   support_set = build_support_set(ss_rng, actor_params)
   support_set_flat = jp.reshape(support_set, (-1, support_set.shape[-1]))
 
-  theta_min = jp.min(support_set_flat[:, 0]) - epsilon
-  theta_max = jp.max(support_set_flat[:, 0]) + epsilon
-  theta_dot_min = jp.min(support_set_flat[:, 1]) - epsilon
-  theta_dot_max = jp.max(support_set_flat[:, 1]) + epsilon
+  # theta_min = jp.min(support_set_flat[:, 0]) - epsilon
+  # theta_max = jp.max(support_set_flat[:, 0]) + epsilon
+  # theta_dot_min = jp.min(support_set_flat[:, 1]) - epsilon
+  # theta_dot_max = jp.max(support_set_flat[:, 1]) + epsilon
   print("done")
 
   rng, train_rng = random.split(rng)
@@ -95,23 +95,24 @@ def main():
   run_ddpg.train(
       train_rng,
       num_episodes,
-      lambda t, s: lax.bitwise_or(
-          lax.ge(t, config.episode_length),
-          lax.bitwise_or(
-              lax.le(s[0], theta_min),
-              lax.bitwise_or(
-                  lax.ge(s[0], theta_max),
-                  lax.bitwise_or(lax.le(s[1], theta_dot_min),
-                                 lax.ge(s[1], theta_dot_max))))),
+      # lambda t, s: lax.bitwise_or(
+      #     lax.ge(t, config.episode_length),
+      #     lax.bitwise_or(
+      #         lax.le(s[0], theta_min),
+      #         lax.bitwise_or(
+      #             lax.ge(s[0], theta_max),
+      #             lax.bitwise_or(lax.le(s[1], theta_dot_min),
+      #                            lax.ge(s[1], theta_dot_max))))),
       # lambda t, s: lax.bitwise_or(
       #     lax.ge(t, config.episode_length),
       #     lax.bitwise_or(lax.ge(jp.abs(s[1]), 10.0),
       #                    lax.ge(jp.abs(s[0] - jp.pi), 0.5))),
-      # lambda loop_state: lax.bitwise_and(
-      #     lax.lt(loop_state.episode_length, config.episode_length),
-      #     lax.lt(
-      #         jp.min(jp.sum((support_set - loop_state.state[:2])**2, axis=1)),
-      #         max_squared_dist)),
+      lambda loop_state: lax.bitwise_or(
+          lax.ge(loop_state.episode_length, config.episode_length),
+          lax.ge(
+              jp.min(
+                  jp.sum((support_set_flat[:, :2] - loop_state.state[:2])**2,
+                         axis=1)), max_squared_dist)),
       callback,
   )
 
