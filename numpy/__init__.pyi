@@ -68,10 +68,6 @@ class ndarray:
   def __le__(self, other) -> ndarray:
     ...
 
-  @property
-  def T(self) -> ndarray:
-    ...
-
 ArrayLike = TypeVar("ArrayLike", int, float, ndarray, List[int], List[float])
 
 def abs(x: ArrayLike) -> ArrayLike:
