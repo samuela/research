@@ -21,6 +21,12 @@ to `~/.profile`.
 sudo apt install libosmesa6-dev
 # Fixes `/usr/bin/ld: cannot find -lGL`
 sudo apt install libglew-dev
+
+# These seem to be only necessary on circleci/python:
+# Fixes `No such file or directory: 'patchelf'`.
+sudo apt install patchelf
+# Fixes `ImportError: Failed to load GLFW3 shared library.`.
+sudo apt install libglfw3-dev
 ```
 
 5. Install clang and set it as the default `cc` alternative.
@@ -30,6 +36,8 @@ sudo apt install clang
 sudo update-alternatives --config cc
 brew uninstall gcc
 ```
+
+(Alternatively use gcc version 8.)
 
 Logging in/out to fix `$PATH` may also be necessary.
 
