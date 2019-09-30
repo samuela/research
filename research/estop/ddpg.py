@@ -232,9 +232,8 @@ class LoopState(NamedTuple):
   episode_length: int
   optimizer: Optimizer
   tracking_params: Any
-  # discounted_cumulative_reward: jp.ndarray
-  # undiscounted_cumulative_reward: jp.ndarray
-  cumulative_reward: jp.ndarray
+  discounted_cumulative_reward: jp.ndarray
+  undiscounted_cumulative_reward: jp.ndarray
   state: State
   replay_buffer: ReplayBuffer
   prev_noise: jp.ndarray
@@ -297,30 +296,27 @@ def ddpg_episode(
           lambda s: terminal_criterion(t, s),
       )
 
-      # new_discounted_cumulative_reward = loop_state.discounted_cumulative_reward + (
-      #     gamma**t) * reward
-      # new_undiscounted_cumulative_reward = loop_state.undiscounted_cumulative_reward + reward
-      new_cumulative_reward = loop_state.cumulative_reward + reward
+      new_discounted_cumulative_reward = loop_state.discounted_cumulative_reward + (
+          gamma**t) * reward
+      new_undiscounted_cumulative_reward = loop_state.undiscounted_cumulative_reward + reward
       return LoopState(
-          loop_state.episode_length + 1,
-          new_optimizer,
-          new_tracking_params,
-          # new_discounted_cumulative_reward,
-          # new_undiscounted_cumulative_reward,
-          new_cumulative_reward,
-          next_state,
-          new_rb,
-          action_noise,
-          done,
+          episode_length=loop_state.episode_length + 1,
+          optimizer=new_optimizer,
+          tracking_params=new_tracking_params,
+          discounted_cumulative_reward=new_discounted_cumulative_reward,
+          undiscounted_cumulative_reward=new_undiscounted_cumulative_reward,
+          state=next_state,
+          replay_buffer=new_rb,
+          prev_noise=action_noise,
+          done=done,
       )
 
     init_val = LoopState(
         episode_length=0,
         optimizer=init_optimizer,
         tracking_params=init_tracking_params,
-        # discounted_cumulative_reward=jp.array(0.0),
-        # undiscounted_cumulative_reward=jp.array(0.0),
-        cumulative_reward=jp.array(0.0),
+        discounted_cumulative_reward=jp.array(0.0),
+        undiscounted_cumulative_reward=jp.array(0.0),
         state=env.initial_distribution.sample(rng_init_state),
         replay_buffer=init_replay_buffer,
         prev_noise=init_noise.sample(rng_init_noise),
