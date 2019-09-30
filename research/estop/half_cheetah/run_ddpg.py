@@ -19,9 +19,9 @@ from research.utils import make_optimizer
 tau = 1e-4
 buffer_size = 2**20
 batch_size = 128
-num_eval_rollouts = 16
+num_eval_rollouts = 64
 policy_evaluation_frequency = 10
-policy_video_frequency = 100
+policy_video_frequency = 1000
 opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
 
 # For some reason using DiagMVN here is ~100x slower.
@@ -186,6 +186,8 @@ def main():
       print(f".. policy value = {policy_value}, elapsed = {time.time() - tic}")
 
     if (episode + 1) % policy_video_frequency == 0:
+      curr_policy = jit(deterministic_policy(current_actor_params))
+
       tic = time.time()
       film_policy(callback_rngs[episode],
                   curr_policy,
