@@ -132,6 +132,9 @@ def max(a: ArrayLike, axis: Optional[int] = None) -> ArrayLike:
 def min(a: ArrayLike, axis: Optional[int] = None) -> ArrayLike:
   ...
 
+def ones(shape: Shape, dtype: Optional[Any] = None) -> ndarray:
+  ...
+
 def reshape(a: ArrayLike, newshape: Shape) -> ArrayLike:
   ...
 
