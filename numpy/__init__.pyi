@@ -123,7 +123,7 @@ def isfinite(x: ArrayLike) -> ArrayLike:
   ...
 
 def linspace(start: ArrayLike, stop: ArrayLike,
-             num: Optional[int] = None) -> ArrayLike:
+             num: Optional[int] = None) -> ndarray:
   ...
 
 def log(x: ArrayLike) -> ArrayLike:
