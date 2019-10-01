@@ -1,19 +1,15 @@
-from typing import Tuple, Any
+from typing import Any, NamedTuple
 
 import gym
+from gym.envs.registration import registry
 from jax import random
 import numpy as np
 
-from research.estop.ddpg import Env
 from research.statistax import Deterministic, SampleOnly
+from research.estop.ddpg import Env
 
-def openai_gym_env(construct_env,
-                   reward_adjustment: float = 0.0) -> Tuple[Env, Any]:
+def openai_gym_env(gym_env, reward_adjustment: float = 0.0) -> Env:
   """A correct, safer wrapper of an OpenAI gym environment."""
-  # Gym environment classes are not valid jax types so they don't play nicely
-  # with things like `lax.fori_loop`.
-  gym_env = construct_env()
-
   def init(rng):
     gym_env.seed(int(random.randint(rng, (), 0, 1e6)))
     return gym_env.reset()
@@ -36,14 +32,9 @@ def openai_gym_env(construct_env,
     # that we've already seen and added to `observed_rewards`.
     return observed_rewards[(str(s1), str(a), str(s2))]
 
-  return Env(SampleOnly(init), step, reward), gym_env
+  return Env(SampleOnly(init), step, reward)
 
-def unsafe_openai_gym_env(construct_env,
-                          reward_adjustment: float = 0.0) -> Tuple[Env, Any]:
-  # Gym environment classes are not valid jax types so they don't play nicely
-  # with things like `lax.fori_loop`.
-  gym_env = construct_env()
-
+def unsafe_openai_gym_env(gym_env, reward_adjustment: float = 0.0) -> Env:
   def init(rng):
     gym_env.seed(int(random.randint(rng, (), 0, 1e6)))
     return gym_env.reset()
@@ -61,22 +52,22 @@ def unsafe_openai_gym_env(construct_env,
     # very last transition seen.
     return last_reward[0]
 
-  return Env(SampleOnly(init), step, reward), gym_env
+  return Env(SampleOnly(init), step, reward)
 
-gamma = 0.99
-episode_length = 1000
+class GymEnvSpec(NamedTuple):
+  max_episode_steps: int
+  env: Env
+  gym_env: Any
+  state_shape: Any
+  action_shape: Any
 
-# env = openai_gym_env(lambda: gym.make("HalfCheetah-v3"))
-env, openai_gym_env = unsafe_openai_gym_env(lambda: gym.make("HalfCheetah-v3"),
-                                            reward_adjustment=1.0)
-
-# You can get these values from `state_space` and `action_shape` on the OpenAI
-# gym environments.
-state_shape = (17, )
-action_shape = (6, )
-
-# rng = random.PRNGKey(0)
-# s = env.initial_distribution.sample(rng)
-# a = random.normal(rng, action_shape)
-# s2 = env.step(s, a).sample(rng)
-# r = env.reward(s, a, s2)
+def build_spec(env_name: str, reward_adjustment: float) -> GymEnvSpec:
+  gym_env = gym.make(env_name)
+  env = unsafe_openai_gym_env(gym_env, reward_adjustment=reward_adjustment)
+  return GymEnvSpec(
+      max_episode_steps=registry.env_specs[env_name].max_episode_steps,
+      env=env,
+      gym_env=gym_env,
+      state_shape=gym_env.observation_space.shape,
+      action_shape=gym_env.action_space.shape,
+  )

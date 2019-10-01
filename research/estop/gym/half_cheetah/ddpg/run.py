@@ -11,11 +11,12 @@ from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
 
 from research import flax
 from research.estop import ddpg, replay_buffers
-from research.estop.gym.half_cheetah import config
+from research.estop.gym.half_cheetah import spec
 from research.estop.utils import Scalarify
 from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
 
+gamma = 0.99
 tau = 1e-4
 buffer_size = 2**20
 batch_size = 128
@@ -26,8 +27,8 @@ opt_init = make_optimizer(optimizers.adam(step_size=1e-3))
 
 # For some reason using DiagMVN here is ~100x slower.
 noise = lambda _1, _2: Normal(
-    jp.zeros(config.action_shape),
-    0.1 * jp.ones(config.action_shape),
+    jp.zeros(spec.action_shape),
+    0.1 * jp.ones(spec.action_shape),
 )
 
 # Actions must be bounded [-1, 1].
@@ -36,7 +37,7 @@ actor_init, actor = stax.serial(
     Relu,
     Dense(64),
     Relu,
-    Dense(config.action_shape[0]),
+    Dense(spec.action_shape[0]),
     Tanh,
 )
 
@@ -58,19 +59,19 @@ def rollout(rng, policy, callback=lambda: None):
   """Rollout one episode of the half_cheetah environment. This is specialized to
   the fact that we can't use lax.scan and the policy and environment dynamics
   are deterministic."""
-  init_state = config.env.initial_distribution.sample(rng)
+  init_state = spec.env.initial_distribution.sample(rng)
 
   states = [init_state]
   actions = []
   rewards = []
-  for _ in range(config.episode_length):
+  for _ in range(spec.max_episode_steps):
     state = states[-1]
 
     # These are specialized to the fact the policy and the environment are both
     # deterministic because it's ~10x faster.
     action = policy(state).loc
-    next_state = config.env.step(state, action).loc
-    reward = config.env.reward(state, action, next_state)
+    next_state = spec.env.step(state, action).loc
+    reward = spec.env.reward(state, action, next_state)
 
     states.append(next_state)
     actions.append(action)
@@ -92,26 +93,26 @@ def eval_policy(rng, policy):
   return total_reward / num_eval_rollouts
 
 def film_policy(rng, policy, filepath: Path):
-  video_env = VideoRecorder(config.openai_gym_env, path=str(filepath))
+  video_env = VideoRecorder(spec.gym_env, path=str(filepath))
   # pylint: disable=unnecessary-lambda
   rollout(rng, policy, callback=lambda: video_env.capture_frame())
   video_env.close()
 
 def train(rng, num_episodes, terminal_criterion, callback):
   actor_init_rng, critic_init_rng, rng = random.split(rng, 3)
-  _, init_actor_params = actor_init(actor_init_rng, config.state_shape)
+  _, init_actor_params = actor_init(actor_init_rng, spec.state_shape)
   _, init_critic_params = critic_init(
-      critic_init_rng, (config.state_shape, config.action_shape))
+      critic_init_rng, (spec.state_shape, spec.action_shape))
   optimizer = opt_init((init_actor_params, init_critic_params))
   tracking_params = optimizer.value
 
   replay_buffer = replay_buffers.NumpyReplayBuffer(buffer_size,
-                                                   config.state_shape,
-                                                   config.action_shape)
+                                                   spec.state_shape,
+                                                   spec.action_shape)
 
   run = ddpg.ddpg_episode(
-      config.env,
-      config.gamma,
+      spec.env,
+      gamma,
       tau,
       actor,
       critic,
@@ -123,7 +124,7 @@ def train(rng, num_episodes, terminal_criterion, callback):
   )
 
   episode_rngs = random.split(rng, num_episodes)
-  init_noise = Deterministic(jp.zeros(config.action_shape))
+  init_noise = Deterministic(jp.zeros(spec.action_shape))
   for episode in range(num_episodes):
     t0 = time.time()
     final_state = run(
@@ -198,7 +199,7 @@ def main():
   train(
       train_rng,
       num_episodes,
-      lambda t, _: t >= config.episode_length,
+      lambda t, _: t >= spec.max_episode_steps,
       callback,
   )
 

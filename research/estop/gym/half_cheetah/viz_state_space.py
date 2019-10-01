@@ -2,9 +2,9 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import tqdm
 import numpy as np
 
-from research.estop.gym.half_cheetah import config
+from research.estop.gym.half_cheetah import spec
 
-env = config.openai_gym_env
+env = spec.gym_env
 
 delta = 2
 env.reset()

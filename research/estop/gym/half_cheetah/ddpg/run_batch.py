@@ -8,7 +8,7 @@ import tqdm
 import numpy as np
 from jax import jit, random
 
-from research.estop.gym.half_cheetah import config
+from research.estop.gym.half_cheetah import spec
 from research.estop.gym.half_cheetah.ddpg import run as run_ddpg
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
@@ -68,7 +68,7 @@ def job(
   run_ddpg.train(
       train_rng,
       num_episodes,
-      lambda t, s: ((t >= config.episode_length) or np.any(s < state_min) or np
+      lambda t, s: ((t >= spec.max_episode_steps) or np.any(s < state_min) or np
                     .any(s > state_max)),
       callback,
   )
@@ -99,8 +99,8 @@ def main():
   pickle.dump(
       {
           "type": "vanilla",
-          "gamma": config.gamma,
-          "episode_length": config.episode_length,
+          "gamma": run_ddpg.gamma,
+          "episode_length": spec.max_episode_steps,
           "num_random_seeds": num_random_seeds,
           "num_episodes": num_episodes,
           "tau": run_ddpg.tau,
@@ -118,8 +118,8 @@ def main():
         functools.partial(job,
                           out_dir=results_dir,
                           num_episodes=num_episodes,
-                          state_min=-np.inf * np.ones(config.state_shape),
-                          state_max=np.inf * np.ones(config.state_shape)),
+                          state_min=-np.inf * np.ones(spec.state_shape),
+                          state_max=np.inf * np.ones(spec.state_shape)),
         range(num_random_seeds)),
                        total=num_random_seeds):
       pass
