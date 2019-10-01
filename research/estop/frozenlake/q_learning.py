@@ -77,6 +77,10 @@ def run_q_learning(
   # This is crucial! There is no positive or negative reward for taking any
   # action in a terminal state. See Sutton & Barto page 131.
   for s in env.terminal_states:
+    # For the life of me, I don't understand why this disable is necessary. It
+    # only seems necessary on circleci, even though the pylint version there is
+    # exactly same as locally.
+    # pylint: disable=unsupported-assignment-operation
     Q[s, :] = 0.0
 
   # We use this to warm start iterative policy evaluation.
