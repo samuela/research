@@ -109,6 +109,9 @@ def diag(v: ndarray, k: int = 0) -> ndarray:
 def dot(a: ndarray, b: ndarray) -> ndarray:
   ...
 
+def eye(n: int) -> ndarray:
+  ...
+
 def inner(a: ndarray, b: ndarray) -> ndarray:
   ...
 
@@ -117,6 +120,10 @@ def interp(x: ndarray, xp: ndarray, fp: ndarray,
   ...
 
 def isfinite(x: ArrayLike) -> ArrayLike:
+  ...
+
+def linspace(start: ArrayLike, stop: ArrayLike,
+             num: Optional[int]) -> ArrayLike:
   ...
 
 def log(x: ArrayLike) -> ArrayLike:
