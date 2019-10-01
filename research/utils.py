@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import NamedTuple, TypeVar
+from typing import NamedTuple, TypeVar, Generic
 
 _OptState = TypeVar("_OptState")
 
 class Optimizer:
-  iteration: int
-
   def update(self, g) -> Optimizer:
     raise NotImplementedError()
 
@@ -14,10 +12,14 @@ class Optimizer:
   def value(self):
     raise NotImplementedError()
 
+  @property
+  def iteration(self):
+    raise NotImplementedError()
+
 def make_optimizer(opt):
   opt_init, opt_update, get_params = opt
 
-  class _Optimizer(NamedTuple, Optimizer):
+  class _Optimizer(Generic[_OptState], NamedTuple, Optimizer):
     iteration: int
     opt_state: _OptState
 
