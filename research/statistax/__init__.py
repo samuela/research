@@ -1,4 +1,4 @@
-from typing import cast, Iterable, NamedTuple, Tuple
+from typing import cast, Iterable, NamedTuple, Tuple, Callable, Any
 
 import jax.numpy as jp
 from jax import lax, random
@@ -93,6 +93,16 @@ class Deterministic(Distribution, NamedTuple):
 
   def entropy(self) -> jp.ndarray:
     return jp.zeros_like(self.loc)
+
+class SampleOnly(Distribution, NamedTuple):
+  # pylint: disable=abstract-method
+
+  sample_fn: Callable[[Any], jp.ndarray]
+
+  def sample(self, rng, sample_shape=()) -> jp.ndarray:
+    # For now we don't bother supporting sample_shape.
+    assert sample_shape == ()
+    return self.sample_fn(rng)
 
 def Independent(reinterpreted_batch_ndims: int):
   # pylint: disable=redefined-outer-name
