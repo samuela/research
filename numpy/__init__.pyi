@@ -8,16 +8,16 @@
 # See https://stackoverflow.com/questions/33533148/how-do-i-specify-that-the-return-type-of-a-method-is-the-same-as-the-class-itsel
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple, TypeVar, Union
+from typing import Any, List, Optional, Tuple, TypeVar, Union, Iterable
 
-# pylint: disable=unused-argument, redefined-builtin
+# pylint: disable=unused-argument, redefined-builtin, inherit-non-class
 
 pi: float
 newaxis: None
 
 Shape = Tuple[int, ...]
 
-class ndarray:
+class ndarray(Iterable):
   @property
   def shape(self) -> Shape:
     ...
