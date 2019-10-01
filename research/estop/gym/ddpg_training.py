@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 import time
 import datetime
+import pickle
 
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import numpy as np
@@ -15,7 +16,7 @@ from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
 
 from research import flax
 from research.estop import replay_buffers, ddpg
-from research.estop.gym.gym_wrappers import GymEnvSpec
+from research.estop.gym.gym_wrappers import GymEnvSpec, build_env_spec
 from research.estop.utils import Scalarify
 from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
@@ -249,3 +250,97 @@ def debug_run(
       terminal_criterion=lambda t, _: t >= env_spec.max_episode_steps,
       callback=callback,
   )
+
+def batch_job(
+    random_seed: int,
+    env_name: str,
+    reward_adjustment: float,
+    num_episodes: int,
+    state_min,
+    state_max,
+    out_dir: Path,
+    policy_evaluation_frequency: int = 100,
+    policy_video_frequency: int = 1000,
+):
+  """Run a "batch" training job.
+
+  Note that only pickle-able things may be arguments to this function so that we
+  can use it with multiprocessing. This is why we need to pass in `env_name` and
+  `reward_adjustment`, for example."""
+
+  job_dir = out_dir / f"seed={random_seed}"
+  job_dir.mkdir()
+
+  rng = random.PRNGKey(random_seed)
+  np.random.seed(random_seed)
+
+  callback_rng, train_rng = random.split(rng)
+  callback_rngs = random.split(callback_rng, num_episodes)
+
+  env_spec = build_env_spec(env_name, reward_adjustment)
+  train_config = make_default_ddpg_train_config(env_spec)
+
+  params = [None]
+  tracking_params = [None]
+  discounted_cumulative_reward_per_episode = []
+  undiscounted_cumulative_reward_per_episode = []
+  policy_evaluations = []
+  episode_lengths = []
+  elapsed_per_episode = []
+
+  def callback(info):
+    episode = info['episode']
+    params[0] = info["optimizer"].value
+    tracking_params[0] = info["tracking_params"]
+
+    current_actor_params, _ = info["optimizer"].value
+
+    discounted_cumulative_reward_per_episode.append(
+        info["discounted_cumulative_reward"])
+    undiscounted_cumulative_reward_per_episode.append(
+        info["undiscounted_cumulative_reward"])
+    episode_lengths.append(info["episode_length"])
+    elapsed_per_episode.append(info["elapsed"])
+
+    if episode % policy_evaluation_frequency == 0:
+      curr_policy = jit(
+          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
+      policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
+                                 train_config.num_eval_rollouts)
+      policy_evaluations.append(policy_value)
+
+    if (episode + 1) % policy_video_frequency == 0:
+      curr_policy = jit(
+          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
+      film_policy(env_spec,
+                  callback_rngs[episode],
+                  curr_policy,
+                  filepath=job_dir / f"episode_{episode}.mp4")
+
+  train(
+      train_config,
+      env_spec,
+      train_rng,
+      num_episodes,
+      # TODO what to do about gym done values???
+      lambda t, s: ((t >= env_spec.max_episode_steps) or np.any(s < state_min)
+                    or np.any(s > state_max)),
+      callback,
+  )
+  with (job_dir / f"data.pkl").open(mode="wb") as f:
+    pickle.dump(
+        {
+            "env_name": env_name,
+            "reward_adjustment": reward_adjustment,
+            "final_params": params[0],
+            "final_tracking_params": tracking_params[0],
+            "discounted_cumulative_reward_per_episode":
+            discounted_cumulative_reward_per_episode,
+            "undiscounted_cumulative_reward_per_episode":
+            undiscounted_cumulative_reward_per_episode,
+            "policy_evaluations": policy_evaluations,
+            "episode_lengths": episode_lengths,
+            "elapsed_per_episode": elapsed_per_episode,
+            "state_min": state_min,
+            "state_max": state_max,
+        }, f)
