@@ -3,7 +3,7 @@ from jax import random
 import numpy as np
 
 from research.estop.ddpg import Env
-from research.statistax import Deterministic
+from research.statistax import Deterministic, SampleOnly
 
 def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
   """A correct, safer wrapper of an OpenAI gym environment."""
@@ -14,10 +14,6 @@ def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
   def init(rng):
     gym_env.seed(int(random.randint(rng, (), 0, 1e6)))
     return gym_env.reset()
-
-  # Fake distribution. Don't tell...
-  initial_distribution = lambda: None
-  initial_distribution.sample = init
 
   observed_rewards = {}
 
@@ -36,7 +32,7 @@ def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
     # that we've already seen and added to `observed_rewards`.
     return observed_rewards[(str(s1), str(a), str(s2))]
 
-  return Env(initial_distribution, step, reward)
+  return Env(SampleOnly(init), step, reward)
 
 def unsafe_openai_gym_env(construct_env,
                           reward_adjustment: float = 0.0) -> Env:
@@ -47,10 +43,6 @@ def unsafe_openai_gym_env(construct_env,
   def init(rng):
     gym_env.seed(int(random.randint(rng, (), 0, 1e6)))
     return gym_env.reset()
-
-  # Fake distribution. Don't tell...
-  initial_distribution = lambda: None
-  initial_distribution.sample = init
 
   last_reward = [0.0]
 
@@ -65,7 +57,7 @@ def unsafe_openai_gym_env(construct_env,
     # very last transition seen.
     return last_reward[0]
 
-  return Env(initial_distribution, step, reward), gym_env
+  return Env(SampleOnly(init), step, reward), gym_env
 
 gamma = 0.99
 episode_length = 1000
