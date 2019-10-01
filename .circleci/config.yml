@@ -19,10 +19,19 @@ jobs:
             - "/home/circleci/.local/share/virtualenvs/"
       - run:
           name: pyre
-          command: pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/ check
+          command: |
+            pipenv run pip freeze | grep pyre
+            pipenv run pyre --version
+            pipenv run pyre --search-path=$(pipenv --venv)/lib/python3.7/site-packages/ check
       - run:
           name: pylint
-          command: pipenv run pylint research
+          command: |
+            pipenv run pip freeze | grep pylint
+            pipenv run pylint --version
+            pipenv run pylint research
       - run:
           name: yapf
-          command: pipenv run yapf --exclude "**/.*" --diff --recursive .
+          command: |
+            pipenv run pip freeze | grep yapf
+            pipenv run yapf --version
+            pipenv run yapf --exclude "**/.*" --diff --recursive .
