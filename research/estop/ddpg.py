@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, NamedTuple, Callable, TypeVar
+from typing import Any, NamedTuple, Callable, TypeVar, Generic
 
 from jax import jit, lax, grad, random, tree_util, vmap
 import jax.numpy as jp
@@ -228,7 +228,7 @@ def ddpg_step(
 
   return action_noise, reward, next_state, done, new_rb, new_optimizer, new_tracking_params
 
-class LoopState(NamedTuple):
+class LoopState(Generic[State], NamedTuple):
   episode_length: int
   optimizer: Optimizer
   tracking_params: Any
