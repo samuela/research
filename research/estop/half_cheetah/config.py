@@ -63,6 +63,9 @@ gamma = 0.99
 episode_length = 1000
 
 # env = openai_gym_env(lambda: gym.make("HalfCheetah-v3"))
+
+# See https://github.com/facebook/pyre-check/issues/211.
+# pyre-ignore
 env, _gym_env = unsafe_openai_gym_env(lambda: gym.make("HalfCheetah-v3"),
                                       reward_adjustment=1.0)
 
