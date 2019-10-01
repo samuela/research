@@ -1,3 +1,3 @@
-from research.estop.gym.gym_wrappers import build_spec
+from research.estop.gym.gym_wrappers import build_env_spec
 
-spec = build_spec("Ant-v3", reward_adjustment=0.0)
+env_spec = build_env_spec("Ant-v3", reward_adjustment=2.5)

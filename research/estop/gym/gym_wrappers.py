@@ -55,16 +55,18 @@ def unsafe_openai_gym_env(gym_env, reward_adjustment: float = 0.0) -> Env:
   return Env(SampleOnly(init), step, reward)
 
 class GymEnvSpec(NamedTuple):
+  env_name: str
   max_episode_steps: int
   env: Env
   gym_env: Any
   state_shape: Any
   action_shape: Any
 
-def build_spec(env_name: str, reward_adjustment: float) -> GymEnvSpec:
+def build_env_spec(env_name: str, reward_adjustment: float) -> GymEnvSpec:
   gym_env = gym.make(env_name)
   env = unsafe_openai_gym_env(gym_env, reward_adjustment=reward_adjustment)
   return GymEnvSpec(
+      env_name=env_name,
       max_episode_steps=registry.env_specs[env_name].max_episode_steps,
       env=env,
       gym_env=gym_env,
