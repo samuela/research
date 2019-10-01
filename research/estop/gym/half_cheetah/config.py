@@ -1,3 +1,5 @@
+from typing import Tuple, Any
+
 import gym
 from jax import random
 import numpy as np
@@ -5,7 +7,8 @@ import numpy as np
 from research.estop.ddpg import Env
 from research.statistax import Deterministic, SampleOnly
 
-def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
+def openai_gym_env(construct_env,
+                   reward_adjustment: float = 0.0) -> Tuple[Env, Any]:
   """A correct, safer wrapper of an OpenAI gym environment."""
   # Gym environment classes are not valid jax types so they don't play nicely
   # with things like `lax.fori_loop`.
@@ -33,10 +36,10 @@ def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
     # that we've already seen and added to `observed_rewards`.
     return observed_rewards[(str(s1), str(a), str(s2))]
 
-  return Env(SampleOnly(init), step, reward)
+  return Env(SampleOnly(init), step, reward), gym_env
 
 def unsafe_openai_gym_env(construct_env,
-                          reward_adjustment: float = 0.0) -> Env:
+                          reward_adjustment: float = 0.0) -> Tuple[Env, Any]:
   # Gym environment classes are not valid jax types so they don't play nicely
   # with things like `lax.fori_loop`.
   gym_env = construct_env()
@@ -64,9 +67,6 @@ gamma = 0.99
 episode_length = 1000
 
 # env = openai_gym_env(lambda: gym.make("HalfCheetah-v3"))
-
-# See https://github.com/facebook/pyre-check/issues/211.
-# pyre-ignore
 env, openai_gym_env = unsafe_openai_gym_env(lambda: gym.make("HalfCheetah-v3"),
                                             reward_adjustment=1.0)
 
