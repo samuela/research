@@ -1,5 +1,7 @@
 # research
 
+[![CircleCI](https://circleci.com/gh/samuela/research.svg?style=svg&circle-token=8cdcd12f566758fdc366a319545cd8343551eb0f)](https://circleci.com/gh/samuela/research)
+
 ALL THE CODEZ
 
 ## Mujoco/Ubuntu setup
