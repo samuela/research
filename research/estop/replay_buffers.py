@@ -21,21 +21,21 @@ class JaxReplayBuffer(ReplayBuffer, NamedTuple):
   rewards: jp.ndarray
   next_states: jp.ndarray
   done: jp.ndarray
-  count: int
+  size: int
 
   @property
   def buffer_size(self):
     return self.states.shape[0]
 
   def add(self, state, action, reward, next_state, done):
-    ix = self.count % self.buffer_size
+    ix = self.size % self.buffer_size
     return JaxReplayBuffer(
         states=ops.index_update(self.states, ix, state),
         actions=ops.index_update(self.actions, ix, action),
         rewards=ops.index_update(self.rewards, ix, reward),
         next_states=ops.index_update(self.next_states, ix, next_state),
         done=ops.index_update(self.done, ix, done),
-        count=self.count + 1,
+        size=self.size + 1,
     )
 
   def minibatch(self, rng, batch_size: int):
@@ -43,7 +43,7 @@ class JaxReplayBuffer(ReplayBuffer, NamedTuple):
         rng,
         (batch_size, ),
         minval=0,
-        maxval=jp.minimum(self.buffer_size, self.count),
+        maxval=jp.minimum(self.buffer_size, self.size),
     )
     return (
         self.states[ixs, ...],
@@ -59,7 +59,7 @@ class NumpyReplayBuffer(ReplayBuffer):
   rewards: np.ndarray
   next_states: np.ndarray
   done: np.ndarray
-  count: int
+  size: int
 
   def __init__(self, buffer_size, state_shape, action_shape):
     self.states = np.zeros((buffer_size, ) + state_shape)
@@ -67,20 +67,20 @@ class NumpyReplayBuffer(ReplayBuffer):
     self.rewards = np.zeros((buffer_size, ))
     self.next_states = np.zeros((buffer_size, ) + state_shape)
     self.done = np.zeros((buffer_size, ), dtype=bool)
-    self.count = 0
+    self.size = 0
 
   @property
   def buffer_size(self):
     return self.states.shape[0]
 
   def add(self, state, action, reward, next_state, done):
-    ix = self.count % self.buffer_size
+    ix = self.size % self.buffer_size
     self.states[ix, ...] = state
     self.actions[ix, ...] = action
     self.rewards[ix, ...] = reward
     self.next_states[ix, ...] = next_state
     self.done[ix, ...] = done
-    self.count += 1
+    self.size += 1
     return self
 
   def minibatch(self, rng, batch_size: int):
@@ -90,7 +90,7 @@ class NumpyReplayBuffer(ReplayBuffer):
 
     ixs = np.random.randint(
         low=0,
-        high=np.minimum(self.buffer_size, self.count),
+        high=np.minimum(self.buffer_size, self.size),
         size=(batch_size, ),
     )
     return (
