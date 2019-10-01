@@ -8,7 +8,8 @@ import tqdm
 import numpy as np
 from jax import jit, random
 
-from research.estop.half_cheetah import config, run_ddpg
+from research.estop.gym.half_cheetah import config
+from research.estop.gym.half_cheetah.ddpg import run as run_ddpg
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.

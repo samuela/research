@@ -11,7 +11,7 @@ from jax.experimental.stax import FanInConcat, Dense, Relu, Tanh
 
 from research import flax
 from research.estop import ddpg, replay_buffers
-from research.estop.half_cheetah import config
+from research.estop.gym.half_cheetah import config
 from research.estop.utils import Scalarify
 from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer

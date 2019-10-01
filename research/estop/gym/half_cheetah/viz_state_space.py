@@ -2,7 +2,7 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import tqdm
 import numpy as np
 
-from research.estop.half_cheetah import config
+from research.estop.gym.half_cheetah import config
 
 env = config.openai_gym_env
 
