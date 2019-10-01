@@ -226,7 +226,9 @@ def debug_run(
       tic = time.time()
       policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
                                  train_config.num_eval_rollouts)
-      print(f".. policy value (undisc.) = {policy_value}, elapsed = {time.time() - tic}")
+      print(
+          f".. policy value (undisc.) = {policy_value}, elapsed = {time.time() - tic}"
+      )
 
     if (episode + 1) % policy_video_frequency == 0:
       curr_policy = jit(
