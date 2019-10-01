@@ -167,6 +167,15 @@ def ddpg_update(
   )
   return new_optimizer, new_tracking_params
 
+class DDPGStepOut(Generic[State], NamedTuple):
+  action_noise: jp.ndarray
+  reward: jp.ndarray
+  next_state: State
+  done: jp.ndarray
+  replay_buffer: ReplayBuffer
+  optimizer: Optimizer
+  tracking_params: Any
+
 def ddpg_step(
     rng,
     params_optimizer: Optimizer,
@@ -181,7 +190,7 @@ def ddpg_step(
     state,
     noise: Distribution,
     terminal_criterion,
-):
+) -> DDPGStepOut:
   """Step the environment, update replay buffer, calculate gradients, and update
   the parameters.
 
@@ -226,7 +235,8 @@ def ddpg_step(
       critic,
   )
 
-  return action_noise, reward, next_state, done, new_rb, new_optimizer, new_tracking_params
+  return DDPGStepOut(action_noise, reward, next_state, done, new_rb,
+                     new_optimizer, new_tracking_params)
 
 class LoopState(Generic[State], NamedTuple):
   episode_length: int
@@ -280,7 +290,7 @@ def ddpg_episode(
 
     def step(loop_state: LoopState):
       t = loop_state.episode_length
-      action_noise, reward, next_state, done, new_rb, new_optimizer, new_tracking_params = ddpg_step(
+      step_out = ddpg_step(
           random.fold_in(rng_steps, t),
           loop_state.optimizer,
           loop_state.tracking_params,
@@ -297,18 +307,19 @@ def ddpg_episode(
       )
 
       new_discounted_cumulative_reward = loop_state.discounted_cumulative_reward + (
-          gamma**t) * reward
-      new_undiscounted_cumulative_reward = loop_state.undiscounted_cumulative_reward + reward
+          gamma**t) * step_out.reward
+      new_undiscounted_cumulative_reward = (
+          loop_state.undiscounted_cumulative_reward + step_out.reward)
       return LoopState(
           episode_length=loop_state.episode_length + 1,
-          optimizer=new_optimizer,
-          tracking_params=new_tracking_params,
+          optimizer=step_out.optimizer,
+          tracking_params=step_out.tracking_params,
           discounted_cumulative_reward=new_discounted_cumulative_reward,
           undiscounted_cumulative_reward=new_undiscounted_cumulative_reward,
-          state=next_state,
-          replay_buffer=new_rb,
-          prev_noise=action_noise,
-          done=done,
+          state=step_out.next_state,
+          replay_buffer=step_out.replay_buffer,
+          prev_noise=step_out.action_noise,
+          done=step_out.done,
       )
 
     init_val = LoopState(

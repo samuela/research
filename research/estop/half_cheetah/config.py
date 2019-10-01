@@ -19,6 +19,7 @@ def openai_gym_env(construct_env, reward_adjustment: float = 0.0) -> Env:
 
   def step(state, action):
     # Assert that state matches the current state of gym_env.
+    # pylint: disable=protected-access
     assert np.allclose(state, gym_env.env._get_obs())
 
     obs_before = state
@@ -66,8 +67,8 @@ episode_length = 1000
 
 # See https://github.com/facebook/pyre-check/issues/211.
 # pyre-ignore
-env, _gym_env = unsafe_openai_gym_env(lambda: gym.make("HalfCheetah-v3"),
-                                      reward_adjustment=1.0)
+env, openai_gym_env = unsafe_openai_gym_env(lambda: gym.make("HalfCheetah-v3"),
+                                            reward_adjustment=1.0)
 
 # You can get these values from `state_space` and `action_shape` on the OpenAI
 # gym environments.

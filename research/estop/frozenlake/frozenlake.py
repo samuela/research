@@ -297,6 +297,7 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
   N = np.linalg.inv(Ninv)
 
   # Calculate the hitting probabilities.
+  # pylint: disable=unsubscriptable-object
   transient_hp = (N - np.eye(t)) * np.power(np.diag(N), -1)[np.newaxis, :]
   absorbing_hp = np.linalg.solve(Ninv, R)
 

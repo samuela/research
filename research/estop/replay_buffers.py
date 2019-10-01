@@ -71,6 +71,7 @@ class NumpyReplayBuffer(ReplayBuffer):
 
   @property
   def buffer_size(self):
+    # pylint: disable=unsubscriptable-object
     return self.states.shape[0]
 
   def add(self, state, action, reward, next_state, done):

@@ -116,20 +116,5 @@ def main():
       callback,
   )
 
-  import matplotlib.pyplot as plt
-  plt.figure()
-  plt.plot(train_reward_per_episode)
-  plt.xlabel("Episode")
-  plt.ylabel("Train episode reward, including action noise")
-  plt.title("E-stop DDPG")
-
-  plt.figure()
-  plt.plot(policy_value_per_episode)
-  plt.xlabel("Episode")
-  plt.ylabel("Policy expected cumulative reward")
-  plt.title("E-stop DDPG")
-
-  plt.show()
-
 if __name__ == "__main__":
   main()

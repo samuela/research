@@ -92,7 +92,8 @@ def eval_policy(rng, policy):
   return total_reward / num_eval_rollouts
 
 def film_policy(rng, policy, filepath: Path):
-  video_env = VideoRecorder(config._gym_env, path=str(filepath))
+  video_env = VideoRecorder(config.openai_gym_env, path=str(filepath))
+  # pylint: disable=unnecessary-lambda
   rollout(rng, policy, callback=lambda: video_env.capture_frame())
   video_env.close()
 

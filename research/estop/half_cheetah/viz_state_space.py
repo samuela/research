@@ -4,7 +4,7 @@ import numpy as np
 
 from research.estop.half_cheetah import config
 
-env = config._gym_env
+env = config.openai_gym_env
 
 delta = 2
 env.reset()

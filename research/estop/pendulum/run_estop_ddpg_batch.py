@@ -17,7 +17,7 @@ os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
 
 num_episodes = 10000
 
-# TODO unify this with the job in run_ddpg_batch.
+# Maybe unify this with the job in run_ddpg_batch.
 def job(
     random_seed: int,
     base_dir: Path,

@@ -35,6 +35,7 @@ if __name__ == "__main__":
   plt.rcParams.update({"font.size": 16})
 
   plt.figure()
+  # pylint: disable=unsubscriptable-object
   x = policy_evaluation_frequency * np.arange(full_policy_rewards.shape[1])
   viz.plot_errorfill(x, full_policy_rewards, "slategrey")
   viz.plot_errorfill(x, estop_policy_rewards, "crimson")
