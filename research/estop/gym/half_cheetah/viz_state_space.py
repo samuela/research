@@ -1,10 +1,11 @@
+import gym
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import tqdm
 import numpy as np
 
-from research.estop.gym.half_cheetah import env_spec
+from research.estop.gym.half_cheetah import env_name
 
-env = env_spec.gym_env
+env = gym.make(env_name)
 
 delta = 2
 env.reset()
