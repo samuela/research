@@ -35,6 +35,10 @@ class DDPGTrainConfig(NamedTuple):
   critic_init: Any
   critic: Any
 
+def deterministic_policy(train_config: DDPGTrainConfig, actor_params):
+  return jit(
+      lambda s: Deterministic(train_config.actor(actor_params, s)))
+
 def make_default_ddpg_train_config(env_spec: GymEnvSpec):
   """Usually decent parameters."""
   # Actions must be bounded [-1, 1].
@@ -221,9 +225,7 @@ def debug_run(
 
     # Periodically evaluate the policy without any action noise.
     if episode % policy_evaluation_frequency == 0:
-      curr_policy = jit(
-          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
-
+      curr_policy = deterministic_policy(train_config, current_actor_params)
       tic = time.time()
       policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
                                  train_config.num_eval_rollouts)
@@ -232,9 +234,7 @@ def debug_run(
       )
 
     if (episode + 1) % policy_video_frequency == 0:
-      curr_policy = jit(
-          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
-
+      curr_policy = deterministic_policy(train_config, current_actor_params)
       tic = time.time()
       film_policy(env_spec,
                   callback_rngs[episode],
@@ -303,15 +303,13 @@ def batch_job(
     elapsed_per_episode.append(info["elapsed"])
 
     if episode % policy_evaluation_frequency == 0:
-      curr_policy = jit(
-          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
+      curr_policy = deterministic_policy(train_config, current_actor_params)
       policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
                                  train_config.num_eval_rollouts)
       policy_evaluations.append(policy_value)
 
     if (episode + 1) % policy_video_frequency == 0:
-      curr_policy = jit(
-          lambda s: Deterministic(train_config.actor(current_actor_params, s)))
+      curr_policy = deterministic_policy(train_config, current_actor_params)
       film_policy(env_spec,
                   callback_rngs[episode],
                   curr_policy,
