@@ -1,7 +1,7 @@
 """Utilities for running DDPG on gym environments, esp. mujoco."""
 
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Optional
 import time
 import datetime
 import pickle
@@ -26,7 +26,6 @@ class DDPGTrainConfig(NamedTuple):
   tau: float
   buffer_size: int
   batch_size: int
-  num_eval_rollouts: int
   optimizer_init: Any
   noise: Any
 
@@ -36,8 +35,7 @@ class DDPGTrainConfig(NamedTuple):
   critic: Any
 
 def deterministic_policy(train_config: DDPGTrainConfig, actor_params):
-  return jit(
-      lambda s: Deterministic(train_config.actor(actor_params, s)))
+  return jit(lambda s: Deterministic(train_config.actor(actor_params, s)))
 
 def make_default_ddpg_train_config(env_spec: GymEnvSpec):
   """Usually decent parameters."""
@@ -67,7 +65,6 @@ def make_default_ddpg_train_config(env_spec: GymEnvSpec):
       tau=1e-4,
       buffer_size=2**20,
       batch_size=128,
-      num_eval_rollouts=64,
       optimizer_init=make_optimizer(optimizers.adam(step_size=1e-3)),
       # For some reason using DiagMVN here is ~100x slower.
       noise=lambda _1, _2: Normal(
@@ -196,8 +193,11 @@ def debug_run(
     train_config: DDPGTrainConfig,
     seed: int = 0,
     num_episodes: int = 10000,
-    policy_evaluation_frequency: int = 10,
-    policy_video_frequency: int = 100,
+    state_min: Optional[np.ndarray] = None,
+    state_max: Optional[np.ndarray] = None,
+    num_eval_rollouts: int = 8,
+    policy_evaluation_frequency: int = 1000,
+    policy_video_frequency: int = 1000,
 ):
   """A debug training loop designed to be used for local testing."""
   rng = random.PRNGKey(seed)
@@ -228,7 +228,7 @@ def debug_run(
       curr_policy = deterministic_policy(train_config, current_actor_params)
       tic = time.time()
       policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
-                                 train_config.num_eval_rollouts)
+                                 num_eval_rollouts)
       print(
           f".. policy value (undisc.) = {policy_value}, elapsed = {time.time() - tic}"
       )
@@ -242,12 +242,20 @@ def debug_run(
                   filepath=results_dir / f"episode_{episode}.mp4")
       print(f".. saved episode video, elapsed = {time.time() - tic}")
 
+  state_min = state_min if state_min is not None else -np.inf * np.ones(
+      env_spec.state_shape)
+  state_max = state_max if state_max is not None else np.inf * np.ones(
+      env_spec.state_shape)
+
   train(
       train_config=train_config,
       env_spec=env_spec,
       rng=train_rng,
       num_episodes=num_episodes,
-      terminal_criterion=lambda t, _: t >= env_spec.max_episode_steps,
+      # TODO what to do about gym done values???
+      terminal_criterion=lambda t, s:
+      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(
+          s > state_max)),
       callback=callback,
   )
 
@@ -259,6 +267,7 @@ def batch_job(
     state_min,
     state_max,
     out_dir: Path,
+    num_eval_rollouts: int = 64,
     policy_evaluation_frequency: int = 100,
     policy_video_frequency: int = 1000,
 ):
@@ -305,7 +314,7 @@ def batch_job(
     if episode % policy_evaluation_frequency == 0:
       curr_policy = deterministic_policy(train_config, current_actor_params)
       policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
-                                 train_config.num_eval_rollouts)
+                                 num_eval_rollouts)
       policy_evaluations.append(policy_value)
 
     if (episode + 1) % policy_video_frequency == 0:
