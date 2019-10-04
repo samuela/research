@@ -32,7 +32,7 @@ def run_expert_rollouts(rng):
 
   data = [
       pickle.load((input_results_dir / f"seed={seed}" / "data.pkl").open("rb"))
-      for seed in range(experiment_metadata["num_random_seeds"])
+      for seed in tqdm.trange(experiment_metadata["num_random_seeds"])
   ]
   final_policy_values = np.array([x["policy_evaluations"][-1] for x in data])
   best_seed = int(np.argmax(final_policy_values))
@@ -65,9 +65,9 @@ def get_estop_bounds(expert_rollouts):
       np.percentile(expert_rollouts[:, :, i], 100 - p)
       for i, p in enumerate(percentiles)
   ])
-  return state_min, state_max
+  return state_min - 1, state_max + 1
 
-def main():
+if __name__ == "__main__":
   rng = random.PRNGKey(0)
 
   expert_rollouts = run_expert_rollouts(rng)
@@ -92,6 +92,3 @@ def main():
             seed=0,
             state_min=state_min,
             state_max=state_max)
-
-if __name__ == "__main__":
-  main()
