@@ -65,7 +65,8 @@ def get_estop_bounds(expert_rollouts):
       np.percentile(expert_rollouts[:, :, i], 100 - p)
       for i, p in enumerate(percentiles)
   ])
-  return state_min - 1, state_max + 1
+  std = np.std(expert_rollouts, axis=(0, 1))
+  return state_min - std, state_max + std
 
 if __name__ == "__main__":
   rng = random.PRNGKey(0)
