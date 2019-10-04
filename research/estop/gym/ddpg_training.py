@@ -217,11 +217,13 @@ def debug_run(
     undiscounted_cumulative_reward = info["undiscounted_cumulative_reward"]
     current_actor_params, _ = info["optimizer"].value
 
-    print(f"Episode {episode}\t" +
-          "disc. reward = {0:.4f}\t".format(discounted_cumulative_reward) +
-          "undisc. reward = {0:.4f}\t".format(undiscounted_cumulative_reward) +
-          "ep. length = {}\t".format(episode_length) +
-          "elapsed = {0:.4f}".format(info["elapsed"]))
+    print(f"Episode {episode}")
+    print("  disc. reward = {0:.4f}".format(discounted_cumulative_reward))
+    print("  undisc. reward = {0:.4f}".format(undiscounted_cumulative_reward))
+    print("  ep. length = {}".format(episode_length))
+    print("  reward/step = {0:.4f}".format(undiscounted_cumulative_reward /
+                                           episode_length))
+    print("  elapsed = {0:.4f}".format(info["elapsed"]))
 
     # Periodically evaluate the policy without any action noise.
     if episode % policy_evaluation_frequency == 0:
