@@ -49,6 +49,14 @@ See
 - https://github.com/openai/mujoco-py/issues/394
 - https://github.com/ethz-asl/reinmav-gym/issues/35
 
+## Install ffmpeg
+
+This is necessary for recording mujoco videos.
+
+```bash
+brew install ffmpeg
+```
+
 ## CUDA/cuDNN setup
 
 The `nvidia-driver-430` and `nvidia-cuda-toolkit` on Ubuntu 18.04 install CUDA 9.1 which is not supported by JAX at the moment.
