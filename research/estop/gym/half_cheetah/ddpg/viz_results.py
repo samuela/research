@@ -2,13 +2,13 @@ from pathlib import Path
 import pickle
 
 import matplotlib.pyplot as plt
-import numpy as np
 import tqdm
+import numpy as np
 
 from research.estop.frozenlake import viz
 
 full_results_dir = Path("results/13_ed7ee131_ddpg_half_cheetah")
-estop_results_dir = Path("results/14_d7779d1_estop_ddpg_half_cheetah")
+estop_results_dir = Path("results/16_eabf2614_estop_ddpg_half_cheetah")
 num_random_seeds = 48
 
 def load_policy_evaluations(results_dir):
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
   print("Loading e-stop results...")
   estop_steps_seen, estop_policy_evaluations = load_policy_evaluations(
-    estop_results_dir)
+      estop_results_dir)
 
   num_steps_seen_to_plot = 1000 * 10000
   freq = 100
