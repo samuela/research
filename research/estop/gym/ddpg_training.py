@@ -198,6 +198,7 @@ def debug_run(
     num_eval_rollouts: int = 8,
     policy_evaluation_frequency: int = 1000,
     policy_video_frequency: int = 1000,
+    respect_gym_done: bool = False,
 ):
   """A debug training loop designed to be used for local testing."""
   rng = random.PRNGKey(seed)
@@ -254,10 +255,9 @@ def debug_run(
       env_spec=env_spec,
       rng=train_rng,
       num_episodes=num_episodes,
-      # TODO what to do about gym done values???
       terminal_criterion=lambda t, s:
       ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(
-          s > state_max)),
+          s > state_max) or (respect_gym_done and env_spec.gym_env.done)),
       callback=callback,
   )
 
@@ -272,6 +272,7 @@ def batch_job(
     num_eval_rollouts: int = 64,
     policy_evaluation_frequency: int = 100,
     policy_video_frequency: int = 1000,
+    respect_gym_done: bool = False,
 ):
   """Run a "batch" training job.
 
@@ -331,9 +332,9 @@ def batch_job(
       env_spec,
       train_rng,
       num_episodes,
-      # TODO what to do about gym done values???
-      lambda t, s: ((t >= env_spec.max_episode_steps) or np.any(s < state_min)
-                    or np.any(s > state_max)),
+      lambda t, s:
+      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(
+          s > state_max) or (respect_gym_done and env_spec.gym_env.done)),
       callback,
   )
   with (job_dir / f"data.pkl").open(mode="wb") as f:
