@@ -23,7 +23,7 @@ output_results_dir = Path("results/estop_ddpg_half_cheetah")
 num_support_set_rollouts = 128
 
 num_random_seeds = cpu_count() // 2
-num_episodes = 10000
+num_episodes = 20000
 policy_evaluation_frequency = 1000
 policy_video_frequency = 1000
 
