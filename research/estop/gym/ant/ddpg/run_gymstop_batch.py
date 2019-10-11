@@ -41,20 +41,23 @@ def main():
   # Running a single job usually takes up about 1.5-2 cores since mujoco runs
   # separately and we can't really control its parallelism.
   with get_context("spawn").Pool(processes=cpu_count() // 2) as pool:
-    for _ in tqdm.tqdm(pool.imap_unordered(
-        functools.partial(
-            batch_job,
-            env_name=env_name,
-            reward_adjustment=reward_adjustment,
-            num_episodes=num_episodes,
-            state_min=-np.inf * np.ones(state_shape),
-            state_max=np.inf * np.ones(state_shape),
-            out_dir=results_dir,
-            policy_evaluation_frequency=policy_evaluation_frequency,
-            policy_video_frequency=policy_video_frequency,
-            respect_gym_done=True),
-        range(num_random_seeds)),
-                       total=num_random_seeds):
+    for _ in tqdm.tqdm(
+        pool.imap_unordered(
+            functools.partial(
+                batch_job,
+                env_name=env_name,
+                reward_adjustment=reward_adjustment,
+                num_episodes=num_episodes,
+                state_min=-np.inf * np.ones(state_shape),
+                state_max=np.inf * np.ones(state_shape),
+                out_dir=results_dir,
+                policy_evaluation_frequency=policy_evaluation_frequency,
+                policy_video_frequency=policy_video_frequency,
+                respect_gym_done=True),
+            range(num_random_seeds),
+        ),
+        total=num_random_seeds,
+    ):
       pass
 
 if __name__ == "__main__":
