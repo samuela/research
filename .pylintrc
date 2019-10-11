@@ -19,7 +19,7 @@ ignore-patterns=\.\_.*
 
 # Use multiple processes to speed up Pylint. Specifying 0 will auto-detect the
 # number of processors available to use.
-jobs=1
+jobs=0
 
 # Control the amount of potential inferred values when inferring a single
 # object. This can help the performance when dealing with large functions or
@@ -60,13 +60,17 @@ confidence=
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
+
+# unsubscriptable-object: For some reason pylint thinks that nparray.shape[...]
+# is illegal. We use pyre to check this anyways.
 disable=missing-docstring,
         invalid-name,
         too-many-locals,
         too-many-arguments,
         no-else-return,
         duplicate-code,
-        len-as-condition
+        len-as-condition,
+        unsubscriptable-object
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
