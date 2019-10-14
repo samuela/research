@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from jax import jit, random, vmap
 import jax.numpy as jp
 
-from research.estop import ddpg
+from research.estop import mdp
 from research.estop.pendulum import config
 from research.estop.pendulum import run_ddpg
 
@@ -33,9 +33,9 @@ print("Rolling out trajectories...")
 rng = random.PRNGKey(0)
 
 def one_rollout(rollout_rng):
-  states, _, _ = ddpg.rollout(rollout_rng, config.env,
-                              run_ddpg.policy(actor_params),
-                              config.episode_length)
+  states, _, _ = mdp.rollout(rollout_rng, config.env,
+                             run_ddpg.policy(actor_params),
+                             config.episode_length)
   return states
 
 support_set = jit(vmap(one_rollout))(random.split(rng, num_rollouts))

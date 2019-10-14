@@ -3,7 +3,7 @@ import pickle
 from jax import lax, random, vmap
 import jax.numpy as jp
 
-from research.estop import ddpg
+from research.estop import mdp
 from research.estop.pendulum import config, run_ddpg
 
 experiment_folder = "9_1ff35d1_ddpg_pendulum"
@@ -28,9 +28,9 @@ def load_best_seed():
 
 def build_support_set(rng, actor_params):
   def one_rollout(rollout_rng):
-    states, _, _ = ddpg.rollout(rollout_rng, config.env,
-                                run_ddpg.policy(actor_params),
-                                config.episode_length)
+    states, _, _ = mdp.rollout(rollout_rng, config.env,
+                               run_ddpg.policy(actor_params),
+                               config.episode_length)
     return states
 
   return vmap(one_rollout)(random.split(rng, num_support_set_rollouts))

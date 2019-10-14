@@ -3,11 +3,11 @@ import pickle
 from jax import random
 import jax.numpy as jp
 
-from research.estop import ddpg
 from research.estop.pendulum import config
 from research.estop.pendulum.env import viz_pendulum_rollout
 from research.estop.pendulum.run_ddpg import actor
 from research.statistax import Deterministic
+from research.estop.mdp import rollout
 
 experiment_folder = "ddpg_pendulum"
 experiment_metadata = pickle.load(
@@ -30,7 +30,7 @@ actor_params, _ = data[best_seed]["final_params"]
 rng = random.PRNGKey(0)
 while True:
   rollout_rng, rng = random.split(rng)
-  states, actions, _ = ddpg.rollout(
+  states, actions, _ = rollout(
       rollout_rng,
       config.env,
       lambda s: Deterministic(actor(actor_params, s)),

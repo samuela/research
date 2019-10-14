@@ -12,6 +12,7 @@ from research.estop.pendulum.env import viz_pendulum_rollout
 from research.estop.utils import Scalarify
 from research.statistax import Deterministic, Normal
 from research.utils import make_optimizer
+from research.estop import mdp
 
 tau = 1e-4
 buffer_size = 2**15
@@ -43,7 +44,7 @@ critic_init, critic = stax.serial(
 policy = lambda p: lambda s: Deterministic(actor(p, s))
 
 eval_policy = jit(
-    ddpg.evaluate_policy(
+    mdp.evaluate_policy(
         config.env,
         policy,
         num_timesteps=config.episode_length,
@@ -131,7 +132,7 @@ def main():
     if episode == num_episodes - 1:
       # if episode % 500 == 0 or episode == num_episodes - 1:
       for rollout in range(5):
-        states, actions, _ = ddpg.rollout(
+        states, actions, _ = rollout(
             random.fold_in(callback_rngs[episode], rollout),
             config.env,
             policy(current_actor_params),
