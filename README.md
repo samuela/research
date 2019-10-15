@@ -4,42 +4,110 @@
 
 ALL THE CODEZ
 
-## Mujoco/Ubuntu setup
+## New machine setup
 
-1. Download mujoco at https://www.roboti.us/index.html, unzip and put in `~/.mujoco/mujoco200`.
-2. Add
+On AWS:
 
-```bash
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/ubuntu/.mujoco/mujoco200/bin
+1. Create a new VM.
+2. Assign it a new Elastic IP.
+
+Locally:
+
+1. Update `~/.ssh/config` with a new entry:
+
+```
+Host <name>
+ HostName <ip address/url>
+ User ubuntu
+ IdentityFile ~/.ssh/samuelainsworth-aws-oregon.pem    # or wherever.
 ```
 
-to `~/.profile`.
+On the machine:
+
+First,
+
+```bash
+sudo apt update
+sudo apt upgrade
+sudo reboot
+```
+
+1. Set the hostname.
+2. Install nuvemfs.
+3. Install linuxbrew and clang.
+4. Install pipenv.
+5. Install mujoco.
+
+### Set hostname
+
+On AWS Ubuntu 18.04,
+
+```bash
+user$ sudo su
+root$ hostnamectl set-hostname <whatever>
+```
+
+### Install nuvemfs
+
+```bash
+wget https://nuvemfscliassets.blob.core.windows.net/nuvemfs-cli-assets/stable/nuvemfs-cli-x86_64-unknown-linux-musl
+chmod +x nuvemfs-cli-x86_64-unknown-linux-musl
+echo "alias nuvemfs=\"~/nuvemfs-cli-x86_64-unknown-linux-musl\"" >> ~/.profile
+sudo apt install -y cifs-utils
+```
+
+### Install linuxbrew and clang
+
+See https://docs.brew.sh/Homebrew-on-Linux.
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh)"
+echo 'eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> ~/.profile
+sudo apt install -y clang
+```
+
+### Install pipenv
+
+```bash
+brew install pipenv
+```
+
+### Mujoco/Ubuntu setup
+
+```bash
+sudo apt-get install unzip
+wget https://www.roboti.us/download/mujoco200_linux.zip
+unzip mujoco200_linux.zip
+mkdir ~/.mujoco
+mv mujoco200_linux ~/.mujoco/mujoco200
+rm mujoco200_linux.zip
+echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/home/ubuntu/.mujoco/mujoco200/bin" >> ~/.profile
+```
 
 3. Put the license key at `~/.mujoco/mjkey.txt`.
+
+```bash
+cp ~/nu/skainswo/mjkey.txt ~/.mujoco/mjkey.txt
+```
+
 4. Install dependencies
 
 ```bash
 # Fixes `fatal error: GL/osmesa.h: No such file or directory`
-sudo apt install libosmesa6-dev
+sudo apt install -y libosmesa6-dev
 # Fixes `/usr/bin/ld: cannot find -lGL`
-sudo apt install libglew-dev
+sudo apt install -y libglew-dev
+# Necessary for mujoco videos.
+sudo apt install -y ffmpeg
 
 # These seem to be only necessary on circleci/python:
 # Fixes `No such file or directory: 'patchelf'`.
-sudo apt install patchelf
+sudo apt install -y patchelf
 # Fixes `ImportError: Failed to load GLFW3 shared library.`.
-sudo apt install libglfw3-dev
+sudo apt install -y libglfw3-dev
 ```
 
-5. Install clang and set it as the default `cc` alternative.
-
-```bash
-sudo apt install clang
-sudo update-alternatives --config cc
-brew uninstall gcc
-```
-
-(Alternatively use gcc version 8.)
+Either clang will need to be set it as the default `cc` alternative (`sudo update-alternatives --config cc`) or you'll need to use gcc version 8.
 
 Logging in/out to fix `$PATH` may also be necessary.
 
@@ -49,15 +117,7 @@ See
 - https://github.com/openai/mujoco-py/issues/394
 - https://github.com/ethz-asl/reinmav-gym/issues/35
 
-## Install ffmpeg
-
-This is necessary for recording mujoco videos.
-
-```bash
-brew install ffmpeg
-```
-
-## CUDA/cuDNN setup
+### CUDA/cuDNN setup
 
 The `nvidia-driver-430` and `nvidia-cuda-toolkit` on Ubuntu 18.04 install CUDA 9.1 which is not supported by JAX at the moment.
 
@@ -116,16 +176,7 @@ With CUDA 10.0, JAX may require the `xla_gpu_cuda_data_dir` XLA flag to be set a
 XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-10.0/
 ```
 
-## Set hostname
-
-On AWS Ubuntu 18.04,
-
-```bash
-user$ sudo su
-root$ hostnamectl set-hostname <whatever>
-```
-
-## Expand EBS volume
+### Expand EBS volume
 
 No downtime is necessary.
 
