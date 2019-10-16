@@ -8,7 +8,7 @@ ALL THE CODEZ
 
 On AWS:
 
-1. Create a new VM.
+1. Create a new VM with Ubuntu 18.04.
 2. Assign it a new Elastic IP.
 
 Locally:
@@ -19,7 +19,7 @@ Locally:
 Host <name>
  HostName <ip address/url>
  User ubuntu
- IdentityFile ~/.ssh/samuelainsworth-aws-oregon.pem    # or wherever.
+ IdentityFile ~/.ssh/aws-macbookpro.pem    # or wherever.
 ```
 
 On the machine:
@@ -50,10 +50,11 @@ root$ hostnamectl set-hostname <whatever>
 ### Install nuvemfs
 
 ```bash
+sudo apt install -y cifs-utils
 wget https://nuvemfscliassets.blob.core.windows.net/nuvemfs-cli-assets/stable/nuvemfs-cli-x86_64-unknown-linux-musl
 chmod +x nuvemfs-cli-x86_64-unknown-linux-musl
 echo "alias nuvemfs=\"~/nuvemfs-cli-x86_64-unknown-linux-musl\"" >> ~/.profile
-sudo apt install -y cifs-utils
+source ~/.profile
 ```
 
 ### Install linuxbrew and clang
@@ -61,8 +62,10 @@ sudo apt install -y cifs-utils
 See https://docs.brew.sh/Homebrew-on-Linux.
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh)"
+# See https://stackoverflow.com/questions/24426424/unattended-no-prompt-homebrew-installation-using-expect.
+echo | sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh)"
 echo 'eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> ~/.profile
+source ~/.profile
 sudo apt install -y clang
 ```
 
@@ -70,18 +73,23 @@ sudo apt install -y clang
 
 ```bash
 brew install pipenv
+
+# gcc is a dependency of pipenv but conflicts with clang and the mujoco-py
+# install process.
+brew remove gcc
 ```
 
 ### Mujoco/Ubuntu setup
 
 ```bash
-sudo apt-get install unzip
+sudo apt install -y unzip
 wget https://www.roboti.us/download/mujoco200_linux.zip
 unzip mujoco200_linux.zip
 mkdir ~/.mujoco
 mv mujoco200_linux ~/.mujoco/mujoco200
 rm mujoco200_linux.zip
 echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/home/ubuntu/.mujoco/mujoco200/bin" >> ~/.profile
+source ~/.profile
 ```
 
 3. Put the license key at `~/.mujoco/mjkey.txt`.
@@ -93,21 +101,18 @@ cp ~/nu/skainswo/mjkey.txt ~/.mujoco/mjkey.txt
 4. Install dependencies
 
 ```bash
-# Fixes `fatal error: GL/osmesa.h: No such file or directory`
-sudo apt install -y libosmesa6-dev
-# Fixes `/usr/bin/ld: cannot find -lGL`
-sudo apt install -y libglew-dev
-# Necessary for mujoco videos.
-sudo apt install -y ffmpeg
+# libosmesa6-dev: Fixes `fatal error: GL/osmesa.h: No such file or directory`
+# libglew-dev: Fixes `/usr/bin/ld: cannot find -lGL`
+# ffmpeg: Necessary for mujoco videos.
+sudo apt install -y libosmesa6-dev libglew-dev ffmpeg
 
 # These seem to be only necessary on circleci/python:
-# Fixes `No such file or directory: 'patchelf'`.
-sudo apt install -y patchelf
-# Fixes `ImportError: Failed to load GLFW3 shared library.`.
-sudo apt install -y libglfw3-dev
+# patchelf: Fixes `No such file or directory: 'patchelf'`.
+# libglfw3-dev: Fixes `ImportError: Failed to load GLFW3 shared library.`.
+sudo apt install -y patchelf libglfw3-dev
 ```
 
-Either clang will need to be set it as the default `cc` alternative (`sudo update-alternatives --config cc`) or you'll need to use gcc version 8.
+Either clang will need to be set it as the default `cc` alternative (`sudo update-alternatives --config cc`) or you'll need to use gcc version 8. If you follow these instructions exactly (without ever installing `build-essentials`) then it should work no problemo.
 
 Logging in/out to fix `$PATH` may also be necessary.
 
@@ -182,3 +187,13 @@ No downtime is necessary.
 
 1. Change the volume in the console.
 2. Then follow https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/recognize-expanded-volume-linux.html. Use `df -T` to get the filesystem type.
+
+## Mujoco lockfile issues
+
+Sometimes the mujoco lockfile gets screwed up and in that case it's necessary to delete it. If jobs are just hanging forever without starting try deleting the lockfile:
+
+```bash
+rm $(pipenv --venv)/lib/python3.7/site-packages/mujoco_py/generated/mujocopy-buildlock.lock
+```
+
+See https://github.com/openai/mujoco-py/issues/424.
