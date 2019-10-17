@@ -19,7 +19,7 @@ os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
 def main():
   num_random_seeds = cpu_count() // 2
   num_episodes = 20000
-  policy_evaluation_frequency = 1000
+  policy_evaluation_frequency = 100
   policy_video_frequency = 1000
 
   # Create necessary directory structure.
