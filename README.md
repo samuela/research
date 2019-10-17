@@ -34,9 +34,8 @@ sudo reboot
 
 1. Set the hostname.
 2. Install nuvemfs.
-3. Install linuxbrew and clang.
-4. Install pipenv.
-5. Install mujoco.
+3. Install mujoco.
+4. Install linuxbrew and pipenv.
 
 ### Set hostname
 
@@ -57,32 +56,12 @@ echo "alias nuvemfs=\"~/nuvemfs-cli-x86_64-unknown-linux-musl\"" >> ~/.profile
 source ~/.profile
 ```
 
-### Install linuxbrew and clang
-
-See https://docs.brew.sh/Homebrew-on-Linux.
-
-```bash
-# See https://stackoverflow.com/questions/24426424/unattended-no-prompt-homebrew-installation-using-expect.
-echo | sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh)"
-echo 'eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> ~/.profile
-source ~/.profile
-sudo apt install -y clang
-```
-
-### Install pipenv
-
-```bash
-brew install pipenv
-
-# gcc is a dependency of pipenv but conflicts with clang and the mujoco-py
-# install process.
-brew remove gcc
-```
-
 ### Mujoco/Ubuntu setup
 
+1. Download and install Mujoco.
+
 ```bash
-sudo apt install -y unzip
+sudo apt install -y unzip clang
 wget https://www.roboti.us/download/mujoco200_linux.zip
 unzip mujoco200_linux.zip
 mkdir ~/.mujoco
@@ -92,13 +71,7 @@ echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/home/ubuntu/.mujoco/mujoco200/bi
 source ~/.profile
 ```
 
-3. Put the license key at `~/.mujoco/mjkey.txt`.
-
-```bash
-cp ~/nu/skainswo/mjkey.txt ~/.mujoco/mjkey.txt
-```
-
-4. Install dependencies
+2. Install dependencies
 
 ```bash
 # libosmesa6-dev: Fixes `fatal error: GL/osmesa.h: No such file or directory`
@@ -121,6 +94,24 @@ See
 - https://github.com/openai/mujoco-py/issues/455
 - https://github.com/openai/mujoco-py/issues/394
 - https://github.com/ethz-asl/reinmav-gym/issues/35
+
+3. Put the license key at `~/.mujoco/mjkey.txt`.
+
+```bash
+cp ~/nu/skainswo/mjkey.txt ~/.mujoco/mjkey.txt
+```
+
+### Install linuxbrew and pipenv
+
+See https://docs.brew.sh/Homebrew-on-Linux.
+
+```bash
+# See https://stackoverflow.com/questions/24426424/unattended-no-prompt-homebrew-installation-using-expect.
+echo | sh -c "$(curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh)"
+echo 'eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> ~/.profile
+source ~/.profile
+brew install pipenv
+```
 
 ### CUDA/cuDNN setup
 
