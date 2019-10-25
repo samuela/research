@@ -65,7 +65,7 @@ if __name__ == "__main__":
   viz.plot_errorfill(x / 1000, full_policy_values_interp, "slategrey")
   viz.plot_errorfill(x / 1000, estop_policy_values_interp, "crimson")
   plt.legend(["Full env. DDPG", "E-stop DDPG"], loc="lower right")
-  plt.xlabel("Number of steps seen (thousands)")
+  plt.xlabel("Timesteps (thousands)")
   plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/full_vs_estop_ddpg_pendulum.pdf")
