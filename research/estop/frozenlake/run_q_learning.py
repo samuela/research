@@ -45,9 +45,9 @@ def main():
   lake_map = frozenlake.MAP_8x8
   policy_evaluation_frequency = 10
   gamma = 0.99
-  num_random_seeds = 100
+  num_random_seeds = 96
 
-  results_dir = Path("results/qlearning_pkls")
+  results_dir = Path("results/frozenlake_qlearning")
   estop_results_dir = results_dir / "estop"
   full_results_dir = results_dir / "full"
   results_dir.mkdir()
@@ -102,11 +102,6 @@ def main():
           "estop_lake": estop_lake,
           "estop_env": estop_env,
       }, (results_dir / "metadata.pkl").open(mode="wb"))
-
-  # plt.figure()
-  # viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
-  # plt.title("E-stop map")
-  # plt.show()
 
   pool = Pool()
 

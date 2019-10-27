@@ -54,10 +54,10 @@ def main():
   lake_map = frozenlake.MAP_8x8
   policy_evaluation_frequency = 10
   gamma = 0.99
-  num_random_seeds = 100
+  num_random_seeds = 96
 
   # Create necessary directory structure.
-  results_dir = Path("results/actor_critic_pkls")
+  results_dir = Path("results/frozenlake_actor_critic")
   estop_results_dir = results_dir / "estop"
   full_results_dir = results_dir / "full"
   results_dir.mkdir()
@@ -95,16 +95,6 @@ def main():
 
   estop_lake = frozenlake.Lake(estop_map)
   estop_env = build_env(estop_lake)
-
-  # plt.figure()
-  # viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
-  # plt.title("E-stop map")
-
-  # plt.figure()
-  # viz.plot_heatmap(lake, np.zeros(lake.num_states))
-  # plt.title("Full map")
-
-  # plt.show()
 
   # pickle dump the environemnt setup/metadata...
   pickle.dump(
