@@ -7,7 +7,7 @@ import numpy as np
 from research.estop.frozenlake import viz
 
 if __name__ == "__main__":
-  results_dir = Path("results/actor_critic_pkls_e9c2c7c")
+  results_dir = Path("results/22_fcb75e0_frozenlake_actor_critic")
 
   metadata = pickle.load((results_dir / "metadata.pkl").open(mode="rb"))
   num_random_seeds = metadata["num_random_seeds"]
@@ -75,7 +75,7 @@ if __name__ == "__main__":
   plt.legend(
       ["Full env. Actor-Critic", "E-stop Actor-Critic", "Optimal policy"],
       loc="lower right")
-  plt.xlabel("Number of states seen (thousands)")
+  plt.xlabel("Timesteps (thousands)")
   plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/actor_critic_per_states_seen.pdf")

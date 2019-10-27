@@ -7,7 +7,7 @@ import numpy as np
 from research.estop.frozenlake import viz
 
 if __name__ == "__main__":
-  results_dir = Path("results/qlearning_pkls_444a731")
+  results_dir = Path("results/23_fcb75e0_frozenlake_qlearning")
 
   metadata = pickle.load((results_dir / "metadata.pkl").open(mode="rb"))
   num_random_seeds = metadata["num_random_seeds"]
@@ -76,7 +76,7 @@ if __name__ == "__main__":
   viz.plot_errorfill(x / 1000, estop_policy_rewards_interp, "crimson")
   plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
-  plt.xlabel("Number of states seen (thousands)")
+  plt.xlabel("Timesteps (thousands)")
   plt.ylabel("Cumulative policy reward")
   plt.tight_layout()
   plt.savefig("figs/q_learning_per_states_seen.pdf")
