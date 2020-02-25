@@ -49,8 +49,9 @@ def q_learning_episode(env,
                                   p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
-    Q[current_state, action] += alpha * (
-        reward + gamma * Q[next_state, :].max() - Q[current_state, action])
+    Q[current_state,
+      action] += alpha * (reward + gamma * Q[next_state, :].max() -
+                          Q[current_state, action])
 
     episode.append((current_state, action, reward))
     current_state = next_state
