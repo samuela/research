@@ -8,7 +8,7 @@ ipython = "*"
 yapf = "*"
 pylint = "*"
 rope = "*"
-pyre-check = "*"
+pyre-check = "==0.0.33"
 
 [packages]
 numpy = "*"

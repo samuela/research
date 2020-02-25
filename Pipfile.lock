@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "47e2c259bf6dca6d319ac44fe1509756f2ca2c896638cab2e0e70fe9a76512c9"
+            "sha256": "9d58ee4e511290bf3994746978b5519f9cb596fcb9ca0fa3e4fcce7c86f19775"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -547,11 +547,11 @@
         },
         "pyre-check": {
             "hashes": [
-                "sha256:5d6bf81d59710e257c433b9dd07d9234ffea68be88d672caf4af095cd375212b",
-                "sha256:9eea36a3731129d1ea3842d67c58cc2c4cd26f01b819c6fb722b2fb0d8a27c58"
+                "sha256:0f66251700445e5d57bd42bdbb395cbb4ad2e9babb5ec01442e76ab87914fa13",
+                "sha256:c7ff814903426b06aa40112547aa191056b7aeb5688f998ec18bc9ec1a5c5624"
             ],
             "index": "pypi",
-            "version": "==0.0.43"
+            "version": "==0.0.33"
         },
         "pyre-extensions": {
             "hashes": [
@@ -631,13 +631,6 @@
             ],
             "markers": "implementation_name == 'cpython' and python_version < '3.8'",
             "version": "==1.4.1"
-        },
-        "typeshed": {
-            "hashes": [
-                "sha256:097c3f643fb754d38b0538c1d9d2b49f04e68ab6ea53196171c8663d9c473211",
-                "sha256:5a9253eb9e9beaa54ee5aa4e41f1ba1af15ffcd647d0a27e22239b699626d07d"
-            ],
-            "version": "==0.0.1"
         },
         "typing-extensions": {
             "hashes": [
