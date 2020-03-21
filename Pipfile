@@ -19,6 +19,8 @@ jax = "*"
 jaxlib = "*"
 gym = "*"
 mujoco-py = "*"
+taichi-nightly = "*"
+opencv-python-headless = "*"
 
 [requires]
 python_version = "3.7"
