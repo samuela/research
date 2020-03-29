@@ -15,12 +15,15 @@ numpy = "*"
 matplotlib = "*"
 scipy = "*"
 tqdm = "*"
-jax = "*"
+jax = {editable = true,path = "./../jax"}
 jaxlib = "*"
 gym = "*"
 mujoco-py = "*"
 taichi-nightly = "*"
 opencv-python-headless = "*"
+control = "*"
+# See https://github.com/python-control/Slycot/issues/95. Install via `pipenv shell` instead.
+# slycot = "*"
 
 [requires]
 python_version = "3.7"
