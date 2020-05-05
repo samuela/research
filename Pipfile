@@ -24,6 +24,8 @@ opencv-python-headless = "*"
 control = "*"
 # See https://github.com/python-control/Slycot/issues/95. Install via `pipenv shell` instead.
 # slycot = "*"
+qrcode = "*"
+simplegist = {editable = true,path = "./../simplegist"}
 
 [requires]
 python_version = "3.7"
