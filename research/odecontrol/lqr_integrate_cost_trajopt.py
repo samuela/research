@@ -1,21 +1,20 @@
+"""This is an attempt at naively using a neural ODE for trajectory optimization
+over a finite time horizon. This script shows that it fails miserably due to
+issues recovering the initial conditions in reverse pass."""
+
 import time
 import control
 import matplotlib.pyplot as plt
 import jax
 from jax import random
 from jax import jit
-from jax import value_and_grad
-from jax import lax
-from jax import vmap
 import jax.numpy as jp
 from jax.experimental import stax
 from jax.experimental import ode
 from jax.experimental import optimizers
 from jax.experimental.stax import Dense
-from jax.experimental.stax import Relu
 from jax.experimental.stax import Tanh
 from research.utils import make_optimizer
-from research.utils import DenseNoBias
 from research.utils import random_psd
 from research import blt
 
@@ -52,7 +51,6 @@ def policy_integrate_cost(dynamics_fn, cost_fn, gamma):
       # Zero is necessary for some reason...
       t = jp.array([0.0, total_time])
       y0 = jp.concatenate((jp.zeros((1, )), x0))
-      # odeint_kwargs = {"rtol": 1e-3, "mxstep": 1e6}
       odeint_kwargs = {"mxstep": 1e6}
       y_fwd = ode.odeint(ofunc, y0, t, policy_params, **odeint_kwargs)
 
@@ -75,8 +73,6 @@ def main():
   rng = random.PRNGKey(0)
 
   x0 = jp.array([2.0, 1.0])
-  # rng_x0, rng = random.split(rng)
-  # x0 = random.normal(rng_x0, shape=(x_dim, ))
 
   ### Set up the problem/environment
   # xdot = Ax + Bu
@@ -103,16 +99,12 @@ def main():
   policy_init, policy = stax.serial(
       Dense(64),
       Tanh,
-      # Dense(64),
-      # Tanh,
       Dense(x_dim),
   )
-  # policy_init, policy = DenseNoBias(2)
 
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (x_dim, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  # cost_and_grad = jit(value_and_grad(policy_loss(policy)))
   runny_run = jit(policy_loss(policy))
 
   ### Main optimization loop.
@@ -136,12 +128,6 @@ def main():
     costs.append(float(cost))
 
   print(f"Opt solution cost from starting point: {opt_cost}")
-  # print(f"Gradient at opt solution: {opt_g}")
-
-  # Print the identified and optimal policy. Note that layers multiply multipy
-  # on the right instead of the left so we need a transpose.
-  # print(f"Est solution parameters: {opt.value}")
-  # print(f"Opt solution parameters: {-K.T}")
 
   ### Plot performance per iteration, incl. average optimal policy performance.
   _, ax1 = plt.subplots()
@@ -157,10 +143,6 @@ def main():
   ax2.set_yscale("log")
   ax2.tick_params(axis="y", labelcolor="tab:red")
   ax2.plot(bwd_errors, color="tab:red")
-  # plt.yscale("log")
-  # plt.xlabel("Iteration")
-  # plt.ylabel("Cost")
-  # plt.legend(["Learned policy", "Direct LQR solution"])
   plt.title(f"ODE control of LQR problem")
 
   blt.show()
