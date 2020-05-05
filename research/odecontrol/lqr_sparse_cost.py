@@ -16,24 +16,28 @@ from jax.experimental.stax import Tanh
 from research.utils import make_optimizer
 from research.utils import DenseNoBias
 from research.utils import random_psd
+from research import blt
 
-def policy_integrate_cost(dynamics_fn, cost_fn, policy, gamma):
-  def ofunc(y, t, policy_params):
-    x = y[1:]
+def policy_cost(dynamics_fn, cost_fn, policy, num_keypoints):
+  def ofunc(x, _t, policy_params):
     u = policy(policy_params, x)
-    return jp.concatenate((jp.expand_dims((gamma**t) * cost_fn(x, u), axis=0), dynamics_fn(x, u)))
+    return dynamics_fn(x, u)
 
-  def evally(policy_params, x0, total_time):
-    # Zero is necessary for some reason...
-    t = jp.array([0.0, total_time])
-    y0 = jp.concatenate((jp.zeros((1, )), x0))
-    yT = ode.odeint(ofunc, y0, t, policy_params, rtol=1e-3, mxstep=1e6)
-    return yT[1, 0]
+  def evally(policy_params, rng, x0, gamma):
+    # policy_params if first since that's what we want gradients wrt.
+    t = random.exponential(rng, (num_keypoints, )) / -jp.log(gamma)
+    t = jp.concatenate((jp.zeros((1, )), jp.sort(t)))
+    print(f"t = {t}")
+    x_t = ode.odeint(ofunc, x0, t, policy_params, rtol=1e-3, mxstep=1e6)
+    print(f"x_t = {x_t}")
+    costs = vmap(lambda x: cost_fn(x, policy(policy_params, x)))(x_t)
+    print(f"costs = {costs}")
+    return jp.mean(costs)
 
   return evally
 
 def main():
-  total_secs = 10.0
+  num_keypoints = 64
   gamma = 0.9
   rng = random.PRNGKey(0)
 
@@ -42,21 +46,11 @@ def main():
   # u = - Kx
   # cost = xQx + uRu + 2xNu
 
-  A = jp.eye(2)
+  A = -0.1 * jp.eye(2)
   B = jp.eye(2)
   Q = jp.eye(2)
   R = jp.eye(2)
   N = jp.zeros((2, 2))
-
-  # rngA, rngB, rngQ, rngR, rng = random.split(rng, 5)
-  # # A = random.normal(rngA, (2, 2))
-  # A = -1 * random_psd(rngA, 2)
-  # B = random.normal(rngB, (2, 2))
-  # Q = random_psd(rngQ, 2) + 0.1 * jp.eye(2)
-  # R = random_psd(rngR, 2) + 0.1 * jp.eye(2)
-  # N = jp.zeros((2, 2))
-
-  # x_dim, u_dim = B.shape
 
   dynamics_fn = lambda x, u: A @ x + B @ u
   cost_fn = lambda x, u: x.T @ Q @ x + u.T @ R @ u + 2 * x.T @ N @ u
@@ -66,10 +60,12 @@ def main():
   K = jp.array(K)
 
   t0 = time.time()
-  rng_eval, rng = random.split(rng)
-  x0_eval = random.normal(rng_eval, (1000, 2))
-  opt_all_costs = vmap(lambda x0: policy_integrate_cost(dynamics_fn, cost_fn, lambda _, x: -K @ x,
-                                                        gamma)(None, x0, total_secs))(x0_eval)
+  rng_x0_eval, rng_eval_keypoints, rng = random.split(rng, 3)
+  x0_eval = random.normal(rng_x0_eval, (1000, 2))
+  opt_all_costs = vmap(
+      lambda rng, x0: policy_cost(dynamics_fn, cost_fn, lambda _, x: -K @ x, num_keypoints)
+      (None, rng, x0, gamma),
+      in_axes=(0, 0))(random.split(rng_eval_keypoints, x0_eval.shape[0]), x0_eval)
   opt_cost = jp.mean(opt_all_costs)
   print(f"opt_cost = {opt_cost} in {time.time() - t0}s")
 
@@ -86,37 +82,25 @@ def main():
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (2, ))
 
-  cost_and_grad = jit(value_and_grad(policy_integrate_cost(dynamics_fn, cost_fn, policy, gamma)))
+  cost_and_grad = value_and_grad(policy_cost(dynamics_fn, cost_fn, policy, num_keypoints))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-
-  def multiple_steps(num_steps):
-    """Return a jit-able function that runs `num_steps` iterations."""
-    def body(_, stuff):
-      rng, _, opt = stuff
-      rng_x0, rng = random.split(rng)
-      x0 = random.normal(rng_x0, (2, ))
-      cost, g = cost_and_grad(opt.value, x0, total_secs)
-
-      # Gradient clipping
-      # g = tree_map(lambda x: jp.clip(x, -10, 10), g)
-      # g = optimizers.clip_grads(g, 64)
-
-      return rng, cost, opt.update(g)
-
-    return lambda rng, opt: lax.fori_loop(0, num_steps, body, (rng, jp.zeros(()), opt))
-
-  multi_steps = 1
-  run = jit(multiple_steps(multi_steps))
 
   ### Main optimization loop.
   costs = []
-  for i in range(25000):
+  for i in range(1000):
     t0 = time.time()
-    rng, cost, opt = run(rng, opt)
+    # gamma_i = gamma * (1 - 1 / (i / 1000 + 1.01))
+    gamma_i = gamma
+    rng_x0, rng_keypoints, rng = random.split(rng, 3)
+    x0 = random.normal(rng_x0, (2, ))
+    cost, g = cost_and_grad(opt.value, rng_keypoints, x0, gamma_i)
+    opt = opt.update(g)
     print(
-        f"Episode {(i + 1) * multi_steps}: excess cost = {cost - opt_cost}, elapsed = {time.time() - t0}"
+        f"Episode {i}: excess cost = {cost - opt_cost}, gamma = {gamma_i} elapsed = {time.time() - t0}"
     )
     costs.append(float(cost))
+
+    if not jp.isfinite(cost): break
 
   print(f"Opt solution cost from starting point: {opt_cost}")
   # print(f"Gradient at opt solution: {opt_g}")
@@ -126,10 +110,12 @@ def main():
   print(f"Est solution parameters: {opt.value}")
   print(f"Opt solution parameters: {-K.T}")
 
-  est_all_costs = vmap(lambda x0: policy_integrate_cost(dynamics_fn, cost_fn, policy, gamma)
-                       (opt.value, x0, total_secs))(x0_eval)
+  rng_eval_keypoints, rng = random.split(rng)
+  est_all_costs = vmap(lambda rng, x0: policy_cost(dynamics_fn, cost_fn, policy, num_keypoints)
+                       (opt.value, rng, x0, gamma),
+                       in_axes=(0, 0))(random.split(rng_eval_keypoints, x0_eval.shape[0]), x0_eval)
 
-  ### Scatter plot of learned policy performance vs optimal policy performance.
+  # ### Scatter plot of learned policy performance vs optimal policy performance.
   plt.figure()
   plt.scatter(est_all_costs, opt_all_costs)
   plt.plot([-100, 100], [-100, 100], color="gray")
@@ -145,13 +131,14 @@ def main():
   plt.axhline(opt_cost, linestyle="--", color="gray")
   plt.yscale("log")
   plt.xlabel("Iteration")
-  plt.ylabel(f"Cost (T = {total_secs}s)")
+  plt.ylabel(f"Cost (gamma = {gamma}, num_keypoints = {num_keypoints})")
   plt.legend(["Learned policy", "Direct LQR solution"])
-  plt.title("ODE control of LQR problem")
+  plt.title("ODE control of LQR problem (keypoint sampling)")
 
   ### Example rollout plots (learned policy vs optimal policy).
   x0 = jp.array([1.0, 2.0])
   framerate = 30
+  total_secs = 10.0
   timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
   est_policy_rollout_states = ode.odeint(lambda x, _: dynamics_fn(x, policy(opt.value, x)),
                                          y0=x0,
@@ -180,7 +167,7 @@ def main():
   ### Plot quiver field showing dynamics under learned policy.
   plot_policy_dynamics(dynamics_fn, cost_fn, lambda x: policy(opt.value, x))
 
-  plt.show()
+  blt.show()
 
 def plot_policy_dynamics(dynamics_fn, cost_fn, policy):
   t0 = time.time()

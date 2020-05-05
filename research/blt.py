@@ -58,11 +58,12 @@ def show():
     assert resp["success"]
     fig_urls.append(resp["url"])
 
+  logfile.seek(0)
+  log_gist = sg.create(name=gist_name + ".log", content=logfile.read().decode(sys.stdout.encoding))
+
   # Post a comment to the gist with the stdout/err and upload figures as images.
   comment_header = "Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b6b38)"
-  logfile.seek(0)
-  console_output = logfile.read().decode(sys.stdout.encoding)
-  console_output_section = f"<details><summary>Console output</summary>\n\n\n```\n{console_output}\n```\n</details>"
+  console_output_section = f"Console output: {log_gist['Gist-Link']}\n\n"
   plots_section = "\n".join([f"<img src='{url}'>" for url in fig_urls])
   sg.comments().create(id=gist_id,
                        body=f"{comment_header}\n\n{console_output_section}\n\n{plots_section}")
