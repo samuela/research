@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import NamedTuple, TypeVar, Generic
 from jax.nn.initializers import glorot_normal
+from jax.tree_util import tree_map
 from jax import random
 import jax.numpy as jp
 
@@ -60,3 +61,6 @@ def random_psd(rng, n):
 def random_orthonormal(rng, n):
   u, _, vh = jp.linalg.svd(random.normal(rng, shape=(n, n)))
   return u @ vh
+
+def zeros_like_tree(tree):
+  return tree_map(jp.zeros_like, tree)
