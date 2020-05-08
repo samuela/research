@@ -118,6 +118,8 @@ def main():
   xT_fwd_per_iter = []
   cost_0_bwd_per_iter = []
   x0_bwd_per_iter = []
+
+  t1 = time.time()
   for i in range(5000):
     t0 = time.time()
     (y0_fwd, yT_fwd, y0_bwd), vjp = jax.vjp(runny_run, opt.value, x0, total_time)
@@ -141,6 +143,8 @@ def main():
     print(f"  fwd xT norm sq. = {jp.sum(xT_fwd**2)}")
     print(f"  elapsed         = {time.time() - t0}s")
 
+  print(f"total elapsed = {t1 - time.time()}s")
+
   cost_T_fwd_per_iter = jp.array(cost_T_fwd_per_iter)
   xT_fwd_per_iter = jp.array(xT_fwd_per_iter)
   cost_0_bwd_per_iter = jp.array(cost_0_bwd_per_iter)
@@ -152,17 +156,20 @@ def main():
   ax1.set_ylabel("Cost", color="tab:blue")
   ax1.set_yscale("log")
   ax1.tick_params(axis="y", labelcolor="tab:blue")
-  ax1.plot(cost_T_fwd_per_iter, color="tab:blue")
+  ax1.plot(cost_T_fwd_per_iter, color="tab:blue", label="Policy cost")
   plt.axhline(opt_cost_fwd, linestyle="--", color="gray")
+  ax1.legend(loc="upper left")
 
   ax2 = ax1.twinx()
-  ax2.set_ylabel("Backward solve L2^2 error (cost in red, x(t) in purple, x(T) norm sq. in brown)",
-                 color="tab:red")
+  ax2.set_ylabel("Error", color="tab:red")
   ax2.set_yscale("log")
   ax2.tick_params(axis="y", labelcolor="tab:red")
-  ax2.plot(cost_0_bwd_per_iter**2, color="tab:red")
-  ax2.plot(jp.sum((x0_bwd_per_iter - x0)**2, axis=-1), color="tab:purple")
-  ax2.plot(jp.sum(xT_fwd_per_iter**2, axis=-1), color="tab:brown")
+  ax2.plot(cost_0_bwd_per_iter**2, color="tab:red", label="Cost rewind error")
+  ax2.plot(jp.sum((x0_bwd_per_iter - x0)**2, axis=-1),
+           color="tab:purple",
+           label="x(0) rewind error")
+  ax2.plot(jp.sum(xT_fwd_per_iter**2, axis=-1), color="tab:brown", label="x(T) squared norm")
+  ax2.legend(loc="upper right")
 
   plt.title(f"ODE control of LQR problem")
 
