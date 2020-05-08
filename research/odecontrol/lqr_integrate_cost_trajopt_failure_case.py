@@ -39,37 +39,32 @@ def random_env(rng):
   N = jp.zeros((2, 2))
   return A, B, Q, R, N
 
-def policy_integrate_cost(dynamics_fn, cost_fn, gamma):
+def policy_integrate_cost(dynamics_fn, cost_fn, gamma, policy):
   # Specialize to the environment.
 
-  def eval_policy(policy):
-    # Specialize to the policy.
+  def ofunc(y, t, policy_params):
+    _, x = y
+    u = policy(policy_params, x)
+    return ((gamma**t) * cost_fn(x, u), dynamics_fn(x, u))
 
-    def ofunc(y, t, policy_params):
-      _, x = y
-      u = policy(policy_params, x)
-      return ((gamma**t) * cost_fn(x, u), dynamics_fn(x, u))
+  def eval_from_x0(policy_params, x0, total_time):
+    # Zero is necessary for some reason...
+    ts = jp.array([0.0, total_time])
+    y0 = (jp.zeros(()), x0)
+    odeint_kwargs = {"mxstep": 1e6}
+    y_fwd = ode.odeint(ofunc, y0, ts, policy_params, **odeint_kwargs)
+    yT = tree_map(itemgetter(1), y_fwd)
 
-    def eval_from_x0(policy_params, x0, total_time):
-      # Zero is necessary for some reason...
-      t = jp.array([0.0, total_time])
-      y0 = (jp.zeros(()), x0)
-      odeint_kwargs = {"mxstep": 1e6}
-      y_fwd = ode.odeint(ofunc, y0, t, policy_params, **odeint_kwargs)
-      yT = tree_map(itemgetter(1), y_fwd)
+    # This is similar but not exactly the same as the place that the rev-mode
+    # solution since the step sizes can vary when using all the other
+    # parameters.
+    y_bwd = ode.odeint(lambda y, t, *args: tree_map(jp.negative, ofunc(y, -t, *args)), yT,
+                       -ts[::-1], policy_params, **odeint_kwargs)
+    y0_bwd = tree_map(itemgetter(1), y_bwd)
 
-      # This is similar but not exactly the same as the place that the rev-mode
-      # solution since the step sizes can vary when using all the other
-      # parameters.
-      y_bwd = ode.odeint(lambda y, t, *args: tree_map(jp.negative, ofunc(y, -t, *args)), yT,
-                         -t[::-1], policy_params, **odeint_kwargs)
-      y0_bwd = tree_map(itemgetter(1), y_bwd)
+    return y0, yT, y0_bwd
 
-      return y0, yT, y0_bwd
-
-    return eval_from_x0
-
-  return eval_policy
+  return eval_from_x0
 
 def main():
   total_time = 20.0
@@ -86,16 +81,16 @@ def main():
   A, B, Q, R, N = fixed_env(x_dim)
   dynamics_fn = lambda x, u: A @ x + B @ u
   cost_fn = lambda x, u: x.T @ Q @ x + u.T @ R @ u + 2 * x.T @ N @ u
-  policy_loss = policy_integrate_cost(dynamics_fn, cost_fn, gamma)
+  # position_cost_fn = lambda x, u: x.T @ Q @ x
+  # control_cost_fn = lambda x, u: u.T @ R @ u
 
   ### Solve the Riccatti equation to get the infinite-horizon optimal solution.
   K, _, _ = control.lqr(A, B, Q, R, N)
   K = jp.array(K)
 
   t0 = time.time()
-  _, (opt_cost_fwd, opt_xT_fwd), (opt_cost_bwd,
-                                  opt_x0_bwd) = policy_loss(lambda _, x: -K @ x)(None, x0,
-                                                                                 total_time)
+  _, (opt_cost_fwd, opt_xT_fwd), (opt_cost_bwd, opt_x0_bwd) = policy_integrate_cost(
+      dynamics_fn, cost_fn, gamma, lambda _, x: -K @ x)(None, x0, total_time)
   print(f"opt_cost_fwd = {opt_cost_fwd}, opt_cost_bwd = {opt_cost_bwd} in {time.time() - t0}s")
   print(opt_xT_fwd)
   print(opt_x0_bwd)
@@ -111,7 +106,7 @@ def main():
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (x_dim, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  runny_run = jit(policy_loss(policy))
+  runny_run = jit(policy_integrate_cost(dynamics_fn, cost_fn, gamma, policy))
 
   ### Main optimization loop.
   cost_T_fwd_per_iter = []
@@ -143,7 +138,7 @@ def main():
     print(f"  fwd xT norm sq. = {jp.sum(xT_fwd**2)}")
     print(f"  elapsed         = {time.time() - t0}s")
 
-  print(f"total elapsed = {t1 - time.time()}s")
+  print(f"total elapsed = {time.time() - t1}s")
 
   cost_T_fwd_per_iter = jp.array(cost_T_fwd_per_iter)
   xT_fwd_per_iter = jp.array(xT_fwd_per_iter)
