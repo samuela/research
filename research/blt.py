@@ -15,6 +15,7 @@ Setup:
 
 from datetime import datetime
 import os
+import pickle
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,10 @@ import matplotlib.pyplot as plt
 import qrcode
 import requests
 import numpy as np
+
+# A global (ugh) store of things that we'd like recorded by blt. Use
+# `blt.remember()` to update entries.
+_STUFF_TO_REMEMBER = {}
 
 # Do this at import time, so foolish hoomans have less of a chance of editing
 # the file while the script is running but before we save plots.
@@ -68,6 +73,11 @@ def _add_gist_files(gist_id, files):
     subprocess.check_output(["git", "commit", "-m", "add files"], cwd=clonedir)
     subprocess.check_output(["git", "push"], cwd=clonedir, stderr=subprocess.PIPE)
 
+def remember(kvs):
+  # pylint: disable=global-statement
+  global _STUFF_TO_REMEMBER
+  _STUFF_TO_REMEMBER.update(kvs)
+
 def show():
   logfile.seek(0)
   console_output = logfile.read().decode(sys.stdout.encoding)
@@ -107,7 +117,12 @@ def show():
     plt.savefig(plot_path, format="pdf")
     fig_paths[fignum] = plot_path
 
-  _add_gist_files(gist_id, {f"B_fig{fignum}.pdf": path for (fignum, path) in fig_paths.items()})
+  with tempfile.NamedTemporaryFile() as stuff_file:
+    # Dump stuff to remember into a stuff to remember pkl file.
+    pickle.dump(_STUFF_TO_REMEMBER, stuff_file)
+    stuff_file.seek(0)
+    figs_files = {f"B_fig{fignum}.pdf": path for (fignum, path) in fig_paths.items()}
+    _add_gist_files(gist_id, {"E_remembered_stuff.pkl": stuff_file.name, **figs_files})
 
   # Updating a gist does not alter its html url.
   print(f"[blt] results dumped: {gist_url}")
