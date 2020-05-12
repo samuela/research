@@ -83,6 +83,9 @@ sudo apt install -y libosmesa6-dev libglew-dev ffmpeg
 # patchelf: Fixes `No such file or directory: 'patchelf'`.
 # libglfw3-dev: Fixes `ImportError: Failed to load GLFW3 shared library.`.
 sudo apt install -y patchelf libglfw3-dev
+
+# These are required for slycot which is required by control...
+sudo apt install gfortran libblas-dev liblapack-dev
 ```
 
 Either clang will need to be set it as the default `cc` alternative (`sudo update-alternatives --config cc`) or you'll need to use gcc version 8. If you follow these instructions exactly (without ever installing `build-essentials`) then it should work no problemo.
