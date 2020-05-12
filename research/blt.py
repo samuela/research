@@ -110,6 +110,10 @@ Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
 
   # See https://gist.github.com/fliedonion/6057f4a3a533f7992c60 for an
   # explanation of gist file ordering rules. Basically: it's alphabetical.
+  # Note that GitHub gists do not support empty files, so we need to
+  # conditionally include the diff file.
+  git_diff_output = subprocess.check_output(["git", "--no-pager", "diff"]).decode("utf-8")
+  diff_entry = {"E_git_diff.diff": {"content": git_diff_output}} if git_diff_output != "" else {}
   create_gist_resp = _create_gist(
       gist_name, {
           f"A_{gist_name}_metadata.md": {
@@ -121,9 +125,7 @@ Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
           "D_console_output.log": {
               "content": console_output
           },
-          "E_git_diff.diff": {
-              "content": subprocess.check_output(["git", "--no-pager", "diff"]).decode("utf-8")
-          }
+          **diff_entry
       })
   gist_id = create_gist_resp["id"]
   gist_url = create_gist_resp["html_url"]
