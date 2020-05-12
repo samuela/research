@@ -33,14 +33,14 @@ def fixed_env(n):
   N = jp.zeros((n, n))
   return A, B, Q, R, N
 
-def random_env(rng):
-  rngA, rngB, rngQ, rngR = random.split(rng, 4)
-  A = -1 * random_psd(rngA, 2)
-  B = random.normal(rngB, (2, 2))
-  Q = random_psd(rngQ, 2) + 0.1 * jp.eye(2)
-  R = random_psd(rngR, 2) + 0.1 * jp.eye(2)
-  N = jp.zeros((2, 2))
-  return A, B, Q, R, N
+# def random_env(rng):
+#   rngA, rngB, rngQ, rngR = random.split(rng, 4)
+#   A = -1 * random_psd(rngA, 2)
+#   B = random.normal(rngB, (2, 2))
+#   Q = random_psd(rngQ, 2) + 0.1 * jp.eye(2)
+#   R = random_psd(rngR, 2) + 0.1 * jp.eye(2)
+#   N = jp.zeros((2, 2))
+#   return A, B, Q, R, N
 
 def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy):
   # Specialize to the environment.
@@ -84,12 +84,20 @@ def fruity_loops(outer_loop_fn, inner_loop_fn, outer_loop_count, inner_loop_coun
 
   return carry, tree_multimap(lambda *args: jp.concatenate(args), history[0], *history[1:])
 
+class Record(NamedTuple):
+  x_cost_T_fwd_per_iter: jp.ndarray
+  u_cost_T_fwd_per_iter: jp.ndarray
+  xT_fwd_per_iter: jp.ndarray
+  x_cost_0_bwd_per_iter: jp.ndarray
+  u_cost_0_bwd_per_iter: jp.ndarray
+  x0_bwd_per_iter: jp.ndarray
+
 def main():
   total_time = 20.0
   gamma = 1.0
   x_dim = 2
   outer_loop_count = 5
-  inner_loop_count = 1000
+  inner_loop_count = 3
   rng = random.PRNGKey(0)
 
   x0 = jp.array([2.0, 1.0])
@@ -145,14 +153,6 @@ def main():
   _, init_policy_params = policy_init(rng_init_params, (x_dim, ))
   init_opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
 
-  class Record(NamedTuple):
-    x_cost_T_fwd_per_iter: jp.ndarray
-    u_cost_T_fwd_per_iter: jp.ndarray
-    xT_fwd_per_iter: jp.ndarray
-    x_cost_0_bwd_per_iter: jp.ndarray
-    u_cost_0_bwd_per_iter: jp.ndarray
-    x0_bwd_per_iter: jp.ndarray
-
   def inner_loop(opt, _):
     runny_run = policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy)
 
@@ -184,6 +184,8 @@ def main():
   t1 = time.time()
   _, history = fruity_loops(outer_loop, inner_loop, outer_loop_count, inner_loop_count, init_opt)
   print(f"total elapsed = {time.time() - t1}s")
+
+  blt.remember({"history": history})
 
   cost_T_fwd_per_iter = history.x_cost_T_fwd_per_iter + history.u_cost_T_fwd_per_iter
   cost_0_bwd_per_iter = history.x_cost_0_bwd_per_iter + history.u_cost_0_bwd_per_iter
