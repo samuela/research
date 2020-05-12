@@ -4,10 +4,12 @@ issues recovering the initial conditions in reverse pass."""
 
 from operator import itemgetter
 import time
+from typing import NamedTuple
 import control
 import matplotlib.pyplot as plt
 import jax
 from jax import random
+from jax import lax
 from jax import jit
 import jax.numpy as jp
 from jax.experimental import stax
@@ -16,6 +18,7 @@ from jax.experimental import optimizers
 from jax.experimental.stax import Dense
 from jax.experimental.stax import Tanh
 from jax.tree_util import tree_map
+from jax.tree_util import tree_multimap
 from research.utils import make_optimizer
 from research.utils import random_psd
 from research.utils import zeros_like_tree
@@ -66,10 +69,27 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
 
   return eval_from_x0
 
+def fruity_loops(outer_loop_fn, inner_loop_fn, outer_loop_count, inner_loop_count, init):
+  run = jit(lambda carry: lax.scan(inner_loop_fn, carry, jp.arange(inner_loop_count)))
+  last = jit(lambda seq: tree_map(itemgetter(-1), seq))
+
+  history = []
+  carry = init
+  for _ in range(outer_loop_count):
+    t0 = time.time()
+    carry, seq = run(carry)
+    seq_last = tree_map(lambda x: x.block_until_ready(), last(seq))
+    history.append(seq)
+    outer_loop_fn(carry, seq_last, elapsed=time.time() - t0)
+
+  return carry, tree_multimap(lambda *args: jp.concatenate(args), history[0], *history[1:])
+
 def main():
   total_time = 20.0
   gamma = 1.0
   x_dim = 2
+  outer_loop_count = 5
+  inner_loop_count = 1000
   rng = random.PRNGKey(0)
 
   x0 = jp.array([2.0, 1.0])
@@ -96,7 +116,6 @@ def main():
   K, _, _ = control.lqr(A, B, Q, R, N)
   K = jp.array(K)
 
-  t0 = time.time()
   _, (opt_x_cost_fwd, opt_u_cost_fwd,
       opt_xT_fwd), (opt_x_cost_bwd, opt_u_cost_bwd,
                     opt_x0_bwd) = policy_integrate_cost(dynamics_fn, position_cost_fn,
@@ -124,37 +143,32 @@ def main():
 
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (x_dim, ))
-  opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  runny_run = jit(
-      policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy))
+  init_opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
 
-  ### Main optimization loop.
-  x_cost_T_fwd_per_iter = []
-  u_cost_T_fwd_per_iter = []
-  xT_fwd_per_iter = []
-  x_cost_0_bwd_per_iter = []
-  u_cost_0_bwd_per_iter = []
-  x0_bwd_per_iter = []
+  class Record(NamedTuple):
+    x_cost_T_fwd_per_iter: jp.ndarray
+    u_cost_T_fwd_per_iter: jp.ndarray
+    xT_fwd_per_iter: jp.ndarray
+    x_cost_0_bwd_per_iter: jp.ndarray
+    u_cost_0_bwd_per_iter: jp.ndarray
+    x0_bwd_per_iter: jp.ndarray
 
-  t1 = time.time()
-  for i in range(5000):
-    t0 = time.time()
+  def inner_loop(opt, _):
+    runny_run = policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy)
+
     (y0_fwd, yT_fwd, y0_bwd), vjp = jax.vjp(runny_run, opt.value, x0, total_time)
     x_cost_T_fwd, u_cost_T_fwd, xT_fwd = yT_fwd
     x_cost_0_bwd, u_cost_0_bwd, x0_bwd = y0_bwd
 
     yT_fwd_bar = (jp.ones(()), jp.ones(()), jp.zeros_like(x0))
     g, _, _ = vjp((zeros_like_tree(y0_fwd), yT_fwd_bar, zeros_like_tree(y0_bwd)))
-    opt = opt.update(g)
 
-    x_cost_T_fwd_per_iter.append(x_cost_T_fwd)
-    u_cost_T_fwd_per_iter.append(u_cost_T_fwd)
-    xT_fwd_per_iter.append(xT_fwd)
-    x_cost_0_bwd_per_iter.append(x_cost_0_bwd)
-    u_cost_0_bwd_per_iter.append(u_cost_0_bwd)
-    x0_bwd_per_iter.append(x0_bwd)
+    return opt.update(g), Record(x_cost_T_fwd, u_cost_T_fwd, xT_fwd, x_cost_0_bwd, u_cost_0_bwd,
+                                 x0_bwd)
 
-    print(f"Episode {i}:")
+  def outer_loop(opt, last: Record, elapsed=None):
+    x_cost_T_fwd, u_cost_T_fwd, xT_fwd, x_cost_0_bwd, u_cost_0_bwd, x0_bwd = last
+    print(f"Episode {opt.iteration}:")
     print(f"  excess fwd cost = {(x_cost_T_fwd + u_cost_T_fwd) - opt_cost_fwd}")
     print(f"    excess fwd x cost = {x_cost_T_fwd - opt_x_cost_fwd}")
     print(f"    excess fwd u cost = {u_cost_T_fwd - opt_u_cost_fwd}")
@@ -164,19 +178,15 @@ def main():
     print(f"  bwd x0 - x0     = {x0_bwd - x0}")
     print(f"  fwd xT          = {xT_fwd}")
     print(f"  fwd xT norm sq. = {jp.sum(xT_fwd**2)}")
-    print(f"  elapsed         = {time.time() - t0}s")
+    print(f"  elapsed/iter    = {elapsed/inner_loop_count}s")
 
+  ### Main optimization loop.
+  t1 = time.time()
+  _, history = fruity_loops(outer_loop, inner_loop, outer_loop_count, inner_loop_count, init_opt)
   print(f"total elapsed = {time.time() - t1}s")
 
-  x_cost_T_fwd_per_iter = jp.array(x_cost_T_fwd_per_iter)
-  u_cost_T_fwd_per_iter = jp.array(u_cost_T_fwd_per_iter)
-  xT_fwd_per_iter = jp.array(xT_fwd_per_iter)
-  x_cost_0_bwd_per_iter = jp.array(x_cost_0_bwd_per_iter)
-  u_cost_0_bwd_per_iter = jp.array(u_cost_0_bwd_per_iter)
-  x0_bwd_per_iter = jp.array(x0_bwd_per_iter)
-
-  cost_T_fwd_per_iter = x_cost_T_fwd_per_iter + u_cost_T_fwd_per_iter
-  cost_0_bwd_per_iter = x_cost_0_bwd_per_iter + u_cost_0_bwd_per_iter
+  cost_T_fwd_per_iter = history.x_cost_T_fwd_per_iter + history.u_cost_T_fwd_per_iter
+  cost_0_bwd_per_iter = history.x_cost_0_bwd_per_iter + history.u_cost_0_bwd_per_iter
 
   ### Plot performance per iteration, incl. average optimal policy performance.
   _, ax1 = plt.subplots()
@@ -185,8 +195,14 @@ def main():
   ax1.set_yscale("log")
   ax1.tick_params(axis="y", labelcolor="tab:blue")
   ax1.plot(cost_T_fwd_per_iter, color="tab:blue", label="Total rollout cost")
-  ax1.plot(x_cost_T_fwd_per_iter, linestyle="dotted", color="tab:blue", label="Position cost")
-  ax1.plot(u_cost_T_fwd_per_iter, linestyle="dashed", color="tab:blue", label="Control cost")
+  ax1.plot(history.x_cost_T_fwd_per_iter,
+           linestyle="dotted",
+           color="tab:blue",
+           label="Position cost")
+  ax1.plot(history.u_cost_T_fwd_per_iter,
+           linestyle="dashed",
+           color="tab:blue",
+           label="Control cost")
   plt.axhline(opt_cost_fwd, linestyle="--", color="gray")
   ax1.legend(loc="upper left")
 
@@ -195,11 +211,11 @@ def main():
   ax2.set_yscale("log")
   ax2.tick_params(axis="y", labelcolor="tab:red")
   ax2.plot(cost_0_bwd_per_iter**2, alpha=0.5, color="tab:red", label="Cost rewind error")
-  ax2.plot(jp.sum((x0_bwd_per_iter - x0)**2, axis=-1),
+  ax2.plot(jp.sum((history.x0_bwd_per_iter - x0)**2, axis=-1),
            alpha=0.5,
            color="tab:purple",
            label="x(0) rewind error")
-  ax2.plot(jp.sum(xT_fwd_per_iter**2, axis=-1),
+  ax2.plot(jp.sum(history.xT_fwd_per_iter**2, axis=-1),
            alpha=0.5,
            color="tab:brown",
            label="x(T) squared norm")
