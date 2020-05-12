@@ -93,6 +93,7 @@ def show():
 Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b6b38)
 
 ```
+Script/module: {_current_script_path}
 Hostname: {socket.gethostname()}
 Started: {_START_TIME}
 Finished: {finished_time}
@@ -111,7 +112,7 @@ Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
   # explanation of gist file ordering rules. Basically: it's alphabetical.
   create_gist_resp = _create_gist(
       gist_name, {
-          "A_metadata.md": {
+          f"A_{gist_name}_metadata.md": {
               "content": metadata
           },
           f"C_{_current_script_path.name}": {
