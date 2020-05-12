@@ -11,5 +11,13 @@ RUN cd && \
 
 ENV LD_LIBRARY_PATH="/home/circleci/.mujoco/mujoco200/bin:${LD_LIBRARY_PATH}"
 
+# See the README for why each of these packages is required.
 RUN sudo apt-get update && \
-    sudo apt-get install libosmesa6-dev libglew-dev patchelf libglfw3-dev
+    sudo apt-get install \
+    libosmesa6-dev \
+    libglew-dev \
+    patchelf \
+    libglfw3-dev \
+    gfortran \
+    libblas-dev \
+    liblapack-dev
