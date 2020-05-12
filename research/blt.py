@@ -16,6 +16,7 @@ Setup:
 from datetime import datetime
 import os
 import pickle
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -25,23 +26,26 @@ import qrcode
 import requests
 import numpy as np
 
+# The time we got imported... Hopefully about the same time the script was run.
+_START_TIME = datetime.now()
+
 # A global (ugh) store of things that we'd like recorded by blt. Use
 # `blt.remember()` to update entries.
 _STUFF_TO_REMEMBER = {}
 
 # Do this at import time, so foolish hoomans have less of a chance of editing
 # the file while the script is running but before we save plots.
-current_script_path = Path(sys.argv[0])
-current_script_contents = current_script_path.read_text()
+_current_script_path = Path(sys.argv[0])
+_current_script_contents = _current_script_path.read_text()
 
 # Start copying stdout/stderr to a log file.
 # See https://stackoverflow.com/questions/616645/how-to-duplicate-sys-stdout-to-a-log-file.
-logfile = tempfile.NamedTemporaryFile()
-tee = subprocess.Popen(["tee", logfile.name], stdin=subprocess.PIPE)
-# Cause tee's stdin to get a copy of our stdin/stdout (as well as that of any
+_logfile = tempfile.NamedTemporaryFile()
+_tee = subprocess.Popen(["tee", _logfile.name], stdin=subprocess.PIPE)
+# Cause _tee's stdin to get a copy of our stdin/stdout (as well as that of any
 # child processes we spawn).
-os.dup2(tee.stdin.fileno(), sys.stdout.fileno())
-os.dup2(tee.stdin.fileno(), sys.stderr.fileno())
+os.dup2(_tee.stdin.fileno(), sys.stdout.fileno())
+os.dup2(_tee.stdin.fileno(), sys.stderr.fileno())
 
 def _create_gist(description, files):
   """Create a new gist. `description` is basically the name."""
@@ -79,14 +83,22 @@ def remember(kvs):
   _STUFF_TO_REMEMBER.update(kvs)
 
 def show():
-  gist_name = str(datetime.now()) + " " + current_script_path.name
+  finished_time = datetime.now()
+  gist_name = str(finished_time) + " " + _current_script_path.name
 
-  logfile.seek(0)
-  console_output = logfile.read().decode(sys.stdout.encoding)
+  _logfile.seek(0)
+  console_output = _logfile.read().decode(sys.stdout.encoding)
 
   metadata = f"""
 Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b6b38)
 
+```
+Hostname: {socket.gethostname()}
+Started: {_START_TIME}
+Finished: {finished_time}
+Elapsed: {finished_time - _START_TIME}
+Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
+```
 ```
 {subprocess.check_output(["git", "log", "-1"]).decode("utf-8")}
 ```
@@ -102,8 +114,8 @@ Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b
           "A_metadata.md": {
               "content": metadata
           },
-          f"C_{current_script_path.name}": {
-              "content": current_script_contents
+          f"C_{_current_script_path.name}": {
+              "content": _current_script_contents
           },
           "D_console_output.log": {
               "content": console_output
