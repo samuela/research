@@ -79,13 +79,21 @@ def remember(kvs):
   _STUFF_TO_REMEMBER.update(kvs)
 
 def show():
+  gist_name = str(datetime.now()) + " " + current_script_path.name
+
   logfile.seek(0)
   console_output = logfile.read().decode(sys.stdout.encoding)
 
-  # TODO: add git status here to the metadata dump.
-  metadata = "Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b6b38)"
+  metadata = f"""
+Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b6b38)
 
-  gist_name = str(datetime.now()) + " " + current_script_path.name
+```
+{subprocess.check_output(["git", "log", "-1"]).decode("utf-8")}
+```
+```
+{subprocess.check_output(["git", "status"]).decode("utf-8")}
+```
+"""
 
   # See https://gist.github.com/fliedonion/6057f4a3a533f7992c60 for an
   # explanation of gist file ordering rules. Basically: it's alphabetical.
@@ -99,6 +107,9 @@ def show():
           },
           "D_console_output.log": {
               "content": console_output
+          },
+          "E_git_diff.diff": {
+              "content": subprocess.check_output(["git", "--no-pager", "diff"]).decode("utf-8")
           }
       })
   gist_id = create_gist_resp["id"]
@@ -122,7 +133,7 @@ def show():
     pickle.dump(_STUFF_TO_REMEMBER, stuff_file)
     stuff_file.seek(0)
     figs_files = {f"B_fig{fignum}.pdf": path for (fignum, path) in fig_paths.items()}
-    _add_gist_files(gist_id, {"E_remembered_stuff.pkl": stuff_file.name, **figs_files})
+    _add_gist_files(gist_id, {"F_remembered_stuff.pkl": stuff_file.name, **figs_files})
 
   # Updating a gist does not alter its html url.
   print(f"[blt] results dumped: {gist_url}")
