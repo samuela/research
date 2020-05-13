@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "88a07937240bd60010d9f26c50210420b1ceb3bbe943f6e4060ec98753ad1833"
+            "sha256": "8949efb3b338174dac85c796d7a62b3b3cca8a3804c0cc2c015ab5bd26315e81"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -204,8 +204,11 @@
             "version": "==1.6.0"
         },
         "jax": {
-            "editable": true,
-            "path": "./../jax"
+            "hashes": [
+                "sha256:aec8fe6e7996ba82e6aa962fd26c299169dc09fbd3f9a74e59da2d47d1e623af"
+            ],
+            "index": "pypi",
+            "version": "==0.1.67"
         },
         "jaxlib": {
             "hashes": [
@@ -613,10 +616,10 @@
         },
         "libcst": {
             "hashes": [
-                "sha256:449bf67813e4ced937edb9811355e2734ac709b4f36416889c6e169a03b96362",
-                "sha256:625feffa383da08c148539ddb879fadb4090a775d9b97463209a0864a59d4828"
+                "sha256:a6dafcf782fa8093c8a89be6698e7e7546d86465a11f273aa0aec7fae0eb1b87",
+                "sha256:c2a7cd82fd1cb5abb32f8e97fd936977a4fa04864c1d94adf513653a7c6209a4"
             ],
-            "version": "==0.3.4"
+            "version": "==0.3.5"
         },
         "mccabe": {
             "hashes": [

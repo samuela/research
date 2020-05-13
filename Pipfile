@@ -15,7 +15,8 @@ numpy = "*"
 matplotlib = "*"
 scipy = "*"
 tqdm = "*"
-jax = {editable = true,path = "./../jax"}
+# jax = {editable = true,path = "./../jax"}
+jax = "*"
 jaxlib = "*"
 gym = "*"
 mujoco-py = "*"
