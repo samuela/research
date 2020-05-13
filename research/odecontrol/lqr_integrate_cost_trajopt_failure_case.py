@@ -20,7 +20,6 @@ from jax.experimental.stax import Tanh
 from jax.tree_util import tree_map
 from jax.tree_util import tree_multimap
 from research.utils import make_optimizer
-from research.utils import random_psd
 from research.utils import zeros_like_tree
 from research import blt
 
@@ -32,15 +31,6 @@ def fixed_env(n):
   R = jp.eye(n)
   N = jp.zeros((n, n))
   return A, B, Q, R, N
-
-# def random_env(rng):
-#   rngA, rngB, rngQ, rngR = random.split(rng, 4)
-#   A = -1 * random_psd(rngA, 2)
-#   B = random.normal(rngB, (2, 2))
-#   Q = random_psd(rngQ, 2) + 0.1 * jp.eye(2)
-#   R = random_psd(rngR, 2) + 0.1 * jp.eye(2)
-#   N = jp.zeros((2, 2))
-#   return A, B, Q, R, N
 
 def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy):
   # Specialize to the environment.
@@ -96,8 +86,8 @@ def main():
   total_time = 20.0
   gamma = 1.0
   x_dim = 2
-  outer_loop_count = 5
-  inner_loop_count = 3
+  outer_loop_count = 10
+  inner_loop_count = 1000
   rng = random.PRNGKey(0)
 
   x0 = jp.array([2.0, 1.0])
