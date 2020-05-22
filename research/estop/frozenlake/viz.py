@@ -11,12 +11,11 @@ def plot_heatmap(lake: Lake, heat1d):
     for j in range(lake.height):
       tile = lake.lake_map[i, j]
       if tile != "F":
-        im.axes.text(
-            j, i, tile, {
-                "horizontalalignment": "center",
-                "verticalalignment": "center",
-                "color": "white"
-            })
+        im.axes.text(j, i, tile, {
+            "horizontalalignment": "center",
+            "verticalalignment": "center",
+            "color": "white"
+        })
 
   return im
 
