@@ -5,28 +5,29 @@ verify_ssl = true
 
 [dev-packages]
 ipython = "*"
-yapf = "*"
 pylint = "*"
-rope = "*"
 pyre-check = "*"
+rope = "*"
+yapf = "*"
 
 [packages]
-numpy = "*"
+control = "*"
+gym = "*"
 matplotlib = "*"
+mujoco-py = "*"
+numpy = "*"
+qrcode = "*"
+requests = "*"
 scipy = "*"
 tqdm = "*"
+
+# JAX and its related libraries
 # jax = {editable = true,path = "./../jax"}
 jax = "*"
 jaxlib = "*"
-gym = "*"
-mujoco-py = "*"
-taichi-nightly = "*"
-opencv-python-headless = "*"
-control = "*"
+
 # See https://github.com/python-control/Slycot/issues/95. Install via `pipenv shell` instead.
 # slycot = "*"
-qrcode = "*"
-requests = "*"
 
 [requires]
 python_version = "3.7"
