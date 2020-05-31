@@ -18,27 +18,8 @@ from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from jax.experimental.ode import ravel_first_arg
 
-def robust_odeint(func, y0, t, *args, rtol=1.4e-8, atol=1.4e-8, mxstep=jnp.inf, bwd_bias=1e-6):
-  """Adaptive stepsize (Dormand-Prince) Runge-Kutta odeint implementation.
-
-  Args:
-    func: function to evaluate the time derivative of the solution `y` at time
-      `t` as `func(y, t, *args)`, producing the same shape/structure as `y0`.
-    y0: array or pytree of arrays representing the initial value for the state.
-    t: array of float times for evaluation, like `jnp.linspace(0., 10., 101)`,
-      in which the values must be strictly increasing.
-    *args: tuple of additional arguments for `func`, which must be arrays
-      scalars, or (nested) standard Python containers (tuples, lists, dicts,
-      namedtuples, i.e. pytrees) of those types.
-    rtol: float, relative local error tolerance for solver (optional).
-    atol: float, absolute local error tolerance for solver (optional).
-    mxstep: int, maximum number of steps to take for each timepoint (optional).
-
-  Returns:
-    Values of the solution `y` (i.e. integrated system values) at each time
-    point in `t`, represented as an array (or pytree of arrays) with the same
-    shape/structure as `y0` except with a new leading axis of length `len(t)`.
-  """
+def odeint(func, y0, t, *args, rtol=1.4e-8, atol=1.4e-8, mxstep=jnp.inf, bwd_bias=1e-6):
+  """See the jax.experimental.ode.odeint docs."""
   def _check_arg(arg):
     if not isinstance(arg, core.Tracer) and not core.valid_jaxtype(arg):
       msg = ("The contents of odeint *args must be arrays or scalars, but got \n{}.")
@@ -85,14 +66,14 @@ def _odeint_rev(func, rtol, atol, mxstep, bwd_bias, res, g):
     t_bar = jnp.dot(func(ys[i], ts[i], *args), g[i])
     t0_bar = t0_bar - t_bar
     # Run augmented system backwards to previous observation
-    _, y_bar, t0_bar, args_bar = robust_odeint(aug_dynamics, (ys[i], y_bar, t0_bar, args_bar),
-                                               jnp.array([-ts[i], -ts[i - 1]]),
-                                               ys[i - 1],
-                                               *args,
-                                               rtol=rtol,
-                                               atol=atol,
-                                               mxstep=mxstep,
-                                               bwd_bias=bwd_bias)
+    _, y_bar, t0_bar, args_bar = odeint(aug_dynamics, (ys[i], y_bar, t0_bar, args_bar),
+                                        jnp.array([-ts[i], -ts[i - 1]]),
+                                        ys[i - 1],
+                                        *args,
+                                        rtol=rtol,
+                                        atol=atol,
+                                        mxstep=mxstep,
+                                        bwd_bias=bwd_bias)
     y_bar, t0_bar, args_bar = tree_map(op.itemgetter(1), (y_bar, t0_bar, args_bar))
     # Add gradient from current output
     y_bar = y_bar + g[i - 1]
