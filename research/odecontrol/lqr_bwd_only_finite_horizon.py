@@ -1,4 +1,5 @@
 import time
+import operator as op
 import control
 import matplotlib.pyplot as plt
 import jax
@@ -6,20 +7,15 @@ from jax import random
 from jax import jit
 from jax import value_and_grad
 from jax import lax
-from jax import vmap
 import jax.numpy as jp
+from jax.tree_util import tree_map
 from jax.experimental import stax
 from jax.experimental import ode
 from jax.experimental import optimizers
 from jax.experimental.stax import Dense
-from jax.experimental.stax import Relu
 from jax.experimental.stax import Tanh
 from research.utils import make_optimizer
-from research.utils import DenseNoBias
-from research.utils import random_psd
 from research import blt
-from jax.tree_util import tree_map
-import operator as op
 
 def fixed_env(n):
   A = 0 * jp.eye(n)
@@ -74,15 +70,8 @@ def odeint_rev(func, rtol, atol, mxstep, res, g):
   # augemented dynamics. TODO: This may need to be flipped...
   return (y_bar, ts_bar, *args_bar), y_reconstructed
 
-def eval_and_grad_bwd(dynamics_fn, cost_fn, policy, V, gamma):
-  V_vg = value_and_grad(V)
-
-  def value_function_loss(V_params, x0, xT, total_time, discounted_reward):
-    """Calculate the loss of the value function V. `discounted_reward` is the
-    integral of time-discounted rewards between x0 and xT."""
-    return (V(V_params, x0) - (gamma**total_time) * V(V_params, xT) - discounted_reward)**2
-
-  Vloss_vg = value_and_grad(value_function_loss)
+def eval_and_grad_bwd(dynamics_fn, cost_fn, terminal_cost_fn, policy, gamma):
+  terminal_cost_vg = value_and_grad(terminal_cost_fn)
 
   def ofunc(y, t, policy_params):
     # TODO can y just be a pytree thingy?
@@ -90,25 +79,22 @@ def eval_and_grad_bwd(dynamics_fn, cost_fn, policy, V, gamma):
     u = policy(policy_params, x)
     return jp.concatenate((jp.expand_dims((gamma**t) * cost_fn(x, u), axis=0), dynamics_fn(x, u)))
 
-  def fwd_from_x0(params, x0, total_time):
-    policy_params, V_params = params
-
+  def fwd_from_x0(policy_params, x0, T):
     # Zero is necessary because we need both start and ending time points.
-    ts = jp.array([0.0, total_time])
+    ts = jp.array([0.0, T])
     y0 = jp.concatenate((jp.zeros((1, )), x0))
 
     ys = ode.odeint(ofunc, y0, ts, policy_params, mxstep=1e6)
-    discounted_cost = ys[1, 0]
+    integ_cost = ys[1, 0]
     xT = ys[1, 1:]
-    final_value = V(V_params, xT)
-    return discounted_cost - (gamma**total_time) * final_value
+    tc_xT = terminal_cost_fn(xT)
+    return integ_cost + (gamma**T) * tc_xT
 
-  def bwd_from_xT(params, xT, total_time):
-    policy_params, V_params = params
-    V_xT, grad_V_wrt_xT = V_vg(V_params, xT)
+  def bwd_from_xT(policy_params, xT, T):
+    tc_xT, grad_tc_wrt_xT = terminal_cost_vg(xT)
 
     # Zero is necessary because we need both start and ending time points.
-    ts = jp.array([0.0, total_time])
+    ts = jp.array([0.0, T])
     yT = jp.concatenate((jp.zeros((1, )), xT))
 
     # The first row of `ys` and `g` shouldn't matter at all.
@@ -116,10 +102,10 @@ def eval_and_grad_bwd(dynamics_fn, cost_fn, policy, V, gamma):
 
     # We need to multiply by -gamma^T in order to account for the coefficient
     # on V(x(T)) in the final loss.
-    grad_loss_wrt_xT = tree_map(lambda x: -(gamma**total_time) * x, grad_V_wrt_xT)
-    grad_ys = jp.stack((jp.zeros_like(yT), jp.concatenate((jp.ones((1, )), grad_loss_wrt_xT))))
+    grad_tc_wrt_xT_discounted = tree_map(lambda x: (gamma**T) * x, grad_tc_wrt_xT)
+    grad_ys = jp.stack(
+        (jp.zeros_like(yT), jp.concatenate((jp.ones((1, )), grad_tc_wrt_xT_discounted))))
 
-    # pylint: disable=protected-access
     (_, _, grad_policy_params), y_bwd = odeint_rev(ofunc,
                                                    rtol=1e-6,
                                                    atol=1e-6,
@@ -131,19 +117,18 @@ def eval_and_grad_bwd(dynamics_fn, cost_fn, policy, V, gamma):
 
     # These are accumulated in the negative in reverse-time, so they become
     # rewards instead of costs.
-    discounted_rewards = y_bwd[0, 0]
+    integ_cost = -y_bwd[0, 0]
     x0 = y_bwd[0, 1:]
-    total_cost = -discounted_rewards - (gamma**total_time) * V_xT
-    Vloss, grad_V_params = Vloss_vg(V_params, x0, xT, total_time, discounted_rewards)
+    total_cost = integ_cost + (gamma**T) * tc_xT
 
     print(y_bwd)
 
-    return x0, (total_cost, Vloss), (grad_policy_params, grad_V_params)
+    return x0, total_cost, grad_policy_params
 
   return fwd_from_x0, bwd_from_xT
 
 def main():
-  total_time = 20.0
+  T = 20.0
   gamma = 1.0
   x_dim = 2
   rng = random.PRNGKey(0)
@@ -159,14 +144,18 @@ def main():
   A, B, Q, R, N = fixed_env(x_dim)
   dynamics_fn = lambda x, u: A @ x + B @ u
   cost_fn = lambda x, u: x.T @ Q @ x + u.T @ R @ u + 2 * x.T @ N @ u
-  policy_loss = policy_integrate_cost(dynamics_fn, cost_fn, gamma)
+  terminal_cost_fn = lambda x: x.T @ Q @ x
 
   ### Solve the Riccatti equation to get the infinite-horizon optimal solution.
   K, _, _ = control.lqr(A, B, Q, R, N)
   K = jp.array(K)
 
   t0 = time.time()
-  opt_y_fwd, opt_y_bwd = policy_loss(lambda _, x: -K @ x)(None, x0, total_time)
+  _opt_eval_fwd, _ = eval_and_grad_bwd(dynamics_fn,
+                                       cost_fn,
+                                       terminal_cost_fn,
+                                       policy=lambda _, x: -K @ x,
+                                       gamma=gamma)(None, x0, T)
   opt_cost = opt_y_fwd[1, 0]
   print(f"opt_cost = {opt_cost} in {time.time() - t0}s")
   print(opt_y_fwd)
@@ -194,7 +183,7 @@ def main():
   bwd_errors = []
   for i in range(5000):
     t0 = time.time()
-    (y_fwd, y_bwd), vjp = jax.vjp(runny_run, opt.value, x0, total_time)
+    (y_fwd, y_bwd), vjp = jax.vjp(runny_run, opt.value, x0, T)
     cost = y_fwd[1, 0]
 
     y_fwd_bar = jax.ops.index_update(jp.zeros_like(y_fwd), (1, 0), 1)
@@ -204,9 +193,10 @@ def main():
     bwd_err = jp.sqrt(jp.sum((y_fwd - y_bwd)**2))
     bwd_errors.append(bwd_err)
 
-    print(
-        f"Episode {i}: excess cost = {cost - opt_cost}, bwd error = {bwd_err} elapsed = {time.time() - t0}"
-    )
+    print(f"Episode {i}:")
+    print(f"    excess cost = {cost - opt_cost}")
+    print(f"    bwd error = {bwd_err}")
+    print(f"    elapsed = {time.time() - t0}")
     costs.append(float(cost))
 
   print(f"Opt solution cost from starting point: {opt_cost}")
@@ -235,7 +225,7 @@ def main():
   # plt.xlabel("Iteration")
   # plt.ylabel("Cost")
   # plt.legend(["Learned policy", "Direct LQR solution"])
-  plt.title(f"ODE control of LQR problem")
+  plt.title("ODE control of LQR problem")
 
   blt.show()
 
