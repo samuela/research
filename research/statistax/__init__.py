@@ -179,7 +179,7 @@ class MVN(Distribution, NamedTuple):
     renorm = linalg.solve_triangular(self.scale_tril, delta, lower=True)**2
     # renorm will have shape [..., d, 1] so we need to sum over the last two
     # dimensions.
-    return (d * NEG_HALF_LOG_TWO_PI - self._logdet_scale_tril - 0.5 * jp.sum(renorm, axis=(-2, -1)))
+    return d * NEG_HALF_LOG_TWO_PI - self._logdet_scale_tril - 0.5 * jp.sum(renorm, axis=(-2, -1))
 
   def entropy(self) -> jp.ndarray:
     (d, ) = self.event_shape
