@@ -16,6 +16,7 @@ def lqr_continuous_time_infinite_horizon(A, B, Q, R, N):
   # thing in the future.
   x_dim = A.shape[-1]
 
+  # pylint: disable=line-too-long
   # See https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator#Infinite-horizon,_continuous-time_LQR.
   A1 = A - B @ jp.linalg.solve(R, N.T)
   Q1 = Q - N @ jp.linalg.solve(R, N.T)

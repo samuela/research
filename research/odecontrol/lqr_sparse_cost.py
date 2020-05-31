@@ -90,9 +90,10 @@ def main():
     x0 = random.normal(rng_x0, (2, ))
     cost, g = cost_and_grad(opt.value, rng_keypoints, x0, gamma_i)
     opt = opt.update(g)
-    print(
-        f"Episode {i}: excess cost = {cost - opt_cost}, gamma = {gamma_i} elapsed = {time.time() - t0}"
-    )
+    print(f"Episode {i}:")
+    print(f"    excess cost = {cost - opt_cost}")
+    print(f"    gamma = {gamma_i}")
+    print(f"    elapsed = {time.time() - t0}")
     costs.append(float(cost))
 
     if not jp.isfinite(cost):
@@ -104,7 +105,7 @@ def main():
   # Print the identified and optimal policy. Note that layers multiply multipy
   # on the right instead of the left so we need a transpose.
   print(f"Est solution parameters: {opt.value}")
-  print(f"Opt solution parameters: {-K.T}")
+  print(f"Opt solution parameters: {K.T}")
 
   rng_eval_keypoints, rng = random.split(rng)
   est_all_costs = vmap(lambda rng, x0: policy_cost(dynamics_fn, cost_fn, policy, num_keypoints)

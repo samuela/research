@@ -1,4 +1,5 @@
 import time
+import matplotlib.pyplot as plt
 from jax import random, jit, lax, vmap
 from jax.nn import initializers
 import jax.numpy as jp
@@ -9,7 +10,6 @@ from jax.experimental.stax import Dense, Tanh
 from research.odecontrol.pendulum import pendulum_dynamics
 from research.utils import make_optimizer
 from research.estop.pendulum.env import viz_pendulum_rollout
-import matplotlib.pyplot as plt
 
 def policy_cost_and_grad(dynamics, cost, policy, gamma=1.0):
   def ofunc(y, t, policy_params):

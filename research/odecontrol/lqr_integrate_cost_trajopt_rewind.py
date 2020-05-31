@@ -128,9 +128,10 @@ def main():
     bwd_err = jp.sqrt(jp.sum((y_fwd - y_bwd)**2))
     bwd_errors.append(bwd_err)
 
-    print(
-        f"Episode {i}: excess cost = {cost - opt_cost}, bwd error = {bwd_err} elapsed = {time.time() - t0}"
-    )
+    print(f"Episode {i}:")
+    print(f"    excess cost = {cost - opt_cost}")
+    print(f"    bwd error = {bwd_err}")
+    print(f"    elapsed = {time.time() - t0}")
     costs.append(float(cost))
 
   print(f"Opt solution cost from starting point: {opt_cost}")

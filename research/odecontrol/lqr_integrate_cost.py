@@ -110,9 +110,9 @@ def main():
   for i in range(25000):
     t0 = time.time()
     rng, cost, opt = run(rng, opt)
-    print(
-        f"Episode {(i + 1) * multi_steps}: excess cost = {cost - opt_cost}, elapsed = {time.time() - t0}"
-    )
+    print(f"Episode {(i + 1) * multi_steps}:")
+    print(f"    excess cost = {cost - opt_cost}")
+    print(f"    elapsed = {time.time() - t0}")
     costs.append(float(cost))
 
   print(f"Opt solution cost from starting point: {opt_cost}")
@@ -121,7 +121,7 @@ def main():
   # Print the identified and optimal policy. Note that layers multiply multipy
   # on the right instead of the left so we need a transpose.
   print(f"Est solution parameters: {opt.value}")
-  print(f"Opt solution parameters: {-K.T}")
+  print(f"Opt solution parameters: {K.T}")
 
   est_all_costs = vmap(lambda x0: policy_integrate_cost(dynamics_fn, cost_fn, policy, gamma)
                        (opt.value, x0, total_secs))(x0_eval)
