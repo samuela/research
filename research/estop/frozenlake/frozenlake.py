@@ -18,8 +18,8 @@ NUM_ACTIONS = 4
 
 MAP_CORRIDOR_3x1 = np.array([["S", "F", "G"]])
 MAP_CORRIDOR_4x1 = np.array([["S", "F", "F", "G"]])
-MAP_4x4 = np.array([["S", "F", "F", "F"], ["F", "H", "F", "H"],
-                    ["F", "F", "F", "H"], ["H", "F", "F", "G"]])
+MAP_4x4 = np.array([["S", "F", "F", "F"], ["F", "H", "F", "H"], ["F", "F", "F", "H"],
+                    ["H", "F", "F", "G"]])
 MAP_8x8 = np.array([["S", "F", "F", "F", "F", "F", "F", "F"],
                     ["F", "F", "F", "F", "F", "F", "F", "F"],
                     ["F", "F", "F", "H", "F", "F", "F", "F"],
@@ -45,30 +45,22 @@ class Lake:
 
     self.width, self.height = self.lake_map.shape
     self.num_states = self.width * self.height
-    self.ij_states = [(i, j) for i in range(self.width)
-                      for j in range(self.height)]
+    self.ij_states = [(i, j) for i in range(self.width) for j in range(self.height)]
 
     self.estop_states = [
-        si for si, (i, j) in enumerate(self.ij_states)
-        if self.lake_map[i, j] == "E"
+        si for si, (i, j) in enumerate(self.ij_states) if self.lake_map[i, j] == "E"
     ]
     self.goal_states = [
-        si for si, (i, j) in enumerate(self.ij_states)
-        if self.lake_map[i, j] == "G"
+        si for si, (i, j) in enumerate(self.ij_states) if self.lake_map[i, j] == "G"
     ]
     self.hole_states = [
-        si for si, (i, j) in enumerate(self.ij_states)
-        if self.lake_map[i, j] == "H"
+        si for si, (i, j) in enumerate(self.ij_states) if self.lake_map[i, j] == "H"
     ]
     self.frozen_states = [
-        si for si, (i, j) in enumerate(self.ij_states)
-        if self.lake_map[i, j] == "F"
+        si for si, (i, j) in enumerate(self.ij_states) if self.lake_map[i, j] == "F"
     ]
 
-    ss = [
-        si for si, (i, j) in enumerate(self.ij_states)
-        if self.lake_map[i, j] == "S"
-    ]
+    ss = [si for si, (i, j) in enumerate(self.ij_states) if self.lake_map[i, j] == "S"]
     assert len(ss) == 1
     self.start_state = ss[0]
 
@@ -111,9 +103,8 @@ class FrozenLakeEnv:
 
     # E-stop states are always terminal. The hole and goal states are terminal
     # iff the environment is finite-time.
-    self.terminal_states = self.lake.estop_states + (
-        self.lake.goal_states +
-        self.lake.hole_states if not self.infinite_time else [])
+    self.terminal_states = self.lake.estop_states + (self.lake.goal_states + self.lake.hole_states
+                                                     if not self.infinite_time else [])
     self.nonterminal_states = [
         i for i in range(self.lake.num_states) if i not in self.terminal_states
     ]
@@ -171,8 +162,8 @@ class FrozenLakeWithEscapingEnv:
         i for i in range(self.lake.num_states) if i not in self.terminal_states
     ]
 
-    self.transitions = FrozenLakeWithEscapingEnv.build_transitions(
-        self.lake, self.hole_retention_probability)
+    self.transitions = FrozenLakeWithEscapingEnv.build_transitions(self.lake,
+                                                                   self.hole_retention_probability)
     self.rewards = FrozenLakeEnv.build_rewards(self.lake, infinite_time=False)
 
   @staticmethod
@@ -314,16 +305,13 @@ def markov_chain_stats(env: FrozenLakeEnv, policy_transitions):
 
 def rollout(env, policy, max_episode_length: Optional[int] = None):
   # Start off by sampling an initial state from the initial_state distribution.
-  current_state = np.random.choice(env.lake.num_states,
-                                   p=env.initial_state_distribution)
+  current_state = np.random.choice(env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
   t = 0
-  while (max_episode_length is None) or (max_episode_length is not None
-                                         and t < max_episode_length):
+  while (max_episode_length is None) or (max_episode_length is not None and t < max_episode_length):
     action = np.random.choice(NUM_ACTIONS, p=policy[current_state, :])
-    next_state = np.random.choice(env.lake.num_states,
-                                  p=env.transitions[current_state, action, :])
+    next_state = np.random.choice(env.lake.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     episode.append((current_state, action, reward))
@@ -337,8 +325,7 @@ def rollout(env, policy, max_episode_length: Optional[int] = None):
   # to tell which state the episode actually ended on.
   return episode, current_state
 
-def estimate_hitting_probabilities(env: FrozenLakeEnv, policy,
-                                   num_rollouts: int):
+def estimate_hitting_probabilities(env: FrozenLakeEnv, policy, num_rollouts: int):
   def rollout_states():
     episode, final_state = rollout(env, policy)
     # We skip the starting state in order to match what the analytic solution
@@ -349,8 +336,7 @@ def estimate_hitting_probabilities(env: FrozenLakeEnv, policy,
 
   rollouts = [rollout_states() for _ in range(num_rollouts)]
   return np.array([
-      sum((s in rollout) for rollout in rollouts) / num_rollouts
-      for s in range(env.lake.num_states)
+      sum((s in rollout) for rollout in rollouts) / num_rollouts for s in range(env.lake.num_states)
   ])
 
 def num_mdp_states(lake_map):

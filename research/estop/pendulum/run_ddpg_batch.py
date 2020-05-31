@@ -11,8 +11,7 @@ from research.estop.pendulum import config, run_ddpg
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
-os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-                           "intra_op_parallelism_threads=1")
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false " "intra_op_parallelism_threads=1")
 
 num_episodes = 1000
 
@@ -32,8 +31,7 @@ def job(random_seed: int, base_dir: Path):
     params[0] = info["optimizer"].value
     tracking_params[0] = info["tracking_params"]
 
-    policy_value = run_ddpg.eval_policy(callback_rngs[episode],
-                                        info["optimizer"].value[0])
+    policy_value = run_ddpg.eval_policy(callback_rngs[episode], info["optimizer"].value[0])
 
     train_reward_per_episode.append(info["reward"])
     policy_value_per_episode.append(policy_value)
@@ -78,9 +76,8 @@ def main():
 
   # See https://codewithoutrules.com/2018/09/04/python-multiprocessing/.
   with get_context("spawn").Pool() as pool:
-    for _ in tqdm.tqdm(pool.imap_unordered(
-        functools.partial(job, base_dir=full_results_dir),
-        range(num_random_seeds)),
+    for _ in tqdm.tqdm(pool.imap_unordered(functools.partial(job, base_dir=full_results_dir),
+                                           range(num_random_seeds)),
                        desc="full",
                        total=num_random_seeds):
       pass

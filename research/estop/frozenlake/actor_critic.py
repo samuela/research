@@ -11,22 +11,18 @@ def actor_critic_episode(env,
                          critic_optimizer,
                          max_episode_length: Optional[int] = None):
   # Start off by sampling an initial state from the initial_state distribution.
-  current_state = np.random.choice(env.lake.num_states,
-                                   p=env.initial_state_distribution)
+  current_state = np.random.choice(env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
   actor_grad = np.zeros((env.lake.num_states, frozenlake.NUM_ACTIONS))
   critic_grad = np.zeros((env.lake.num_states, ))
 
   t = 0
-  while (max_episode_length is None) or (max_episode_length is not None
-                                         and t < max_episode_length):
+  while (max_episode_length is None) or (max_episode_length is not None and t < max_episode_length):
     # Take a step.
-    action_probs = utils.softmax(actor_optimizer.get()[current_state, :],
-                                 axis=-1)
+    action_probs = utils.softmax(actor_optimizer.get()[current_state, :], axis=-1)
     action = np.random.choice(frozenlake.NUM_ACTIONS, p=action_probs)
-    next_state = np.random.choice(env.lake.num_states,
-                                  p=env.transitions[current_state, action, :])
+    next_state = np.random.choice(env.lake.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     v = critic_optimizer.get()

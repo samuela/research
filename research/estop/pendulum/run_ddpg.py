@@ -55,8 +55,7 @@ eval_policy = jit(
 def train(rng, num_episodes, terminal_criterion, callback):
   actor_init_rng, critic_init_rng, rng = random.split(rng, 3)
   _, init_actor_params = actor_init(actor_init_rng, config.state_shape)
-  _, init_critic_params = critic_init(
-      critic_init_rng, (config.state_shape, config.action_shape))
+  _, init_critic_params = critic_init(critic_init_rng, (config.state_shape, config.action_shape))
   optimizer = opt_init((init_actor_params, init_critic_params))
   tracking_params = optimizer.value
 

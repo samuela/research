@@ -18,8 +18,7 @@ def epsilon_greedy_annealed(epsilon: float):
   def h(action_values, t: int):
     # With prob. epsilon we pick a non-greedy action uniformly at random. There
     # are NUM_ACTIONS - 1 non-greedy actions.
-    p = epsilon / (t + 1) / (frozenlake.NUM_ACTIONS - 1) * np.ones(
-        action_values.shape)
+    p = epsilon / (t + 1) / (frozenlake.NUM_ACTIONS - 1) * np.ones(action_values.shape)
     p[np.argmax(action_values)] = 1 - epsilon / (t + 1)
     return p
 
@@ -32,26 +31,22 @@ def q_learning_episode(env,
                        meta_policy,
                        max_episode_length: Optional[int] = None):
   # Start off by sampling an initial state from the initial_state distribution.
-  current_state = np.random.choice(env.lake.num_states,
-                                   p=env.initial_state_distribution)
+  current_state = np.random.choice(env.lake.num_states, p=env.initial_state_distribution)
   episode = []
 
   t = 0
-  while (max_episode_length is None) or (max_episode_length is not None
-                                         and t < max_episode_length):
+  while (max_episode_length is None) or (max_episode_length is not None and t < max_episode_length):
     # Assert that action_probs is not None in order to avoid a pernicious set of
     # bugs where the meta_policy forgets a return statement.
     action_probs = meta_policy(Q[current_state, :], t)
     assert action_probs is not None
 
     action = np.random.choice(frozenlake.NUM_ACTIONS, p=action_probs)
-    next_state = np.random.choice(env.lake.num_states,
-                                  p=env.transitions[current_state, action, :])
+    next_state = np.random.choice(env.lake.num_states, p=env.transitions[current_state, action, :])
     reward = env.rewards[current_state, action, next_state]
 
     Q[current_state,
-      action] += alpha * (reward + gamma * Q[next_state, :].max() -
-                          Q[current_state, action])
+      action] += alpha * (reward + gamma * Q[next_state, :].max() - Q[current_state, action])
 
     episode.append((current_state, action, reward))
     current_state = next_state
@@ -103,11 +98,7 @@ def run_q_learning(
 
     if episode_num % policy_evaluation_frequency == 0:
       policy = frozenlake.deterministic_policy(env, np.argmax(Q, axis=-1))
-      V, _ = frozenlake.iterative_policy_evaluation(env,
-                                                    gamma,
-                                                    policy,
-                                                    tolerance=1e-6,
-                                                    init_V=V)
+      V, _ = frozenlake.iterative_policy_evaluation(env, gamma, policy, tolerance=1e-6, init_V=V)
       policy_reward = np.dot(V, env.initial_state_distribution)
 
       if verbose:

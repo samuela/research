@@ -13,8 +13,7 @@ from research.estop.gym.hopper import env_name, reward_adjustment
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
-os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-                           "intra_op_parallelism_threads=1")
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false " "intra_op_parallelism_threads=1")
 
 def main():
   num_random_seeds = cpu_count() // 2

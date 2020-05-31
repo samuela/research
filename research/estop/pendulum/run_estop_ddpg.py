@@ -12,24 +12,20 @@ epsilon = 0.5
 max_squared_dist = epsilon**2
 
 def load_best_seed():
-  experiment_metadata = pickle.load(
-      open(f"results/{experiment_folder}/metadata.pkl", "rb"))
+  experiment_metadata = pickle.load(open(f"results/{experiment_folder}/metadata.pkl", "rb"))
   num_random_seeds = experiment_metadata["num_random_seeds"]
 
   data = [
-      pickle.load(
-          open(f"results/{experiment_folder}/stuff/seed={seed}.pkl", "rb"))
+      pickle.load(open(f"results/{experiment_folder}/stuff/seed={seed}.pkl", "rb"))
       for seed in range(num_random_seeds)
   ]
-  final_policy_values = jp.array(
-      [x["policy_value_per_episode"][-1] for x in data])
+  final_policy_values = jp.array([x["policy_value_per_episode"][-1] for x in data])
   best_seed = int(jp.argmax(final_policy_values))
   return data[best_seed]
 
 def build_support_set(rng, actor_params):
   def one_rollout(rollout_rng):
-    states, _, _ = mdp.rollout(rollout_rng, config.env,
-                               run_ddpg.policy(actor_params),
+    states, _, _ = mdp.rollout(rollout_rng, config.env, run_ddpg.policy(actor_params),
                                config.episode_length)
     return states
 
@@ -68,8 +64,7 @@ def main():
     reward = info['reward']
 
     current_actor_params = info["optimizer"].value[0]
-    policy_value = run_ddpg.eval_policy(callback_rngs[episode],
-                                        current_actor_params)
+    policy_value = run_ddpg.eval_policy(callback_rngs[episode], current_actor_params)
 
     print(f"Episode {episode}, "
           f"episode_length = {info['episode_length']}, "
@@ -109,10 +104,8 @@ def main():
       #                    lax.ge(jp.abs(s[0] - jp.pi), 0.5))),
       lambda loop_state: lax.bitwise_or(
           lax.ge(loop_state.episode_length, config.episode_length),
-          lax.ge(
-              jp.min(
-                  jp.sum((support_set_flat[:, :2] - loop_state.state[:2])**2,
-                         axis=1)), max_squared_dist)),
+          lax.ge(jp.min(jp.sum(
+              (support_set_flat[:, :2] - loop_state.state[:2])**2, axis=1)), max_squared_dist)),
       callback,
   )
 

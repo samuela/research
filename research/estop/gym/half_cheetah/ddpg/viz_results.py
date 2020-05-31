@@ -30,12 +30,10 @@ def load_policy_evaluations(results_dir):
 
 if __name__ == "__main__":
   print("Loading full results...")
-  full_steps_seen, full_policy_evaluations = load_policy_evaluations(
-      full_results_dir)
+  full_steps_seen, full_policy_evaluations = load_policy_evaluations(full_results_dir)
 
   print("Loading e-stop results...")
-  estop_steps_seen, estop_policy_evaluations = load_policy_evaluations(
-      estop_results_dir)
+  estop_steps_seen, estop_policy_evaluations = load_policy_evaluations(estop_results_dir)
 
   num_steps_seen_to_plot = 1000 * 10000
   freq = 100
@@ -44,15 +42,13 @@ if __name__ == "__main__":
       np.interp(x,
                 full_steps_seen[i, :],
                 full_policy_evaluations[i, :],
-                right=full_policy_evaluations[i, -1])
-      for i in range(num_random_seeds)
+                right=full_policy_evaluations[i, -1]) for i in range(num_random_seeds)
   ])
   estop_policy_values_interp = np.array([
       np.interp(x,
                 estop_steps_seen[i, :],
                 estop_policy_evaluations[i, :],
-                right=estop_policy_evaluations[i, -1])
-      for i in range(num_random_seeds)
+                right=estop_policy_evaluations[i, -1]) for i in range(num_random_seeds)
   ])
 
   plt.rcParams.update({"font.size": 16})

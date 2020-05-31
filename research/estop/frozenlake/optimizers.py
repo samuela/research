@@ -3,8 +3,7 @@ import numpy as np
 
 class JaxAdam:
   def __init__(self, x0, learning_rate):
-    self.opt_init, self.opt_update, self.get_params = optimizers.adam(
-        step_size=learning_rate)
+    self.opt_init, self.opt_update, self.get_params = optimizers.adam(step_size=learning_rate)
 
     self.opt_state = self.opt_init(x0)
     self.iteration = 0

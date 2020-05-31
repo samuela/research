@@ -5,15 +5,13 @@ import numpy as np
 from research.estop.frozenlake import frozenlake
 from research.estop.frozenlake import utils
 
-def reinforce_episode(env,
-                      gamma: float,
-                      optimizer,
-                      max_episode_length: Optional[int] = None):
+def reinforce_episode(env, gamma: float, optimizer, max_episode_length: Optional[int] = None):
   raw_policy = utils.softmax(optimizer.get(), axis=-1)
   # epsilon_greedy_policy = 0.9 * raw_policy + 0.1 * np.ones(
   #     (env.lake.num_states, frozenlake.NUM_ACTIONS)) / frozenlake.NUM_ACTIONS
-  episode, final_state = frozenlake.rollout(
-      env, policy=raw_policy, max_episode_length=max_episode_length)
+  episode, final_state = frozenlake.rollout(env,
+                                            policy=raw_policy,
+                                            max_episode_length=max_episode_length)
   weighted_rewards = [(gamma**t) * r for t, (_, _, r) in enumerate(episode)]
 
   # pylint: disable=line-too-long
@@ -46,10 +44,7 @@ def run_reinforce(env,
   states_seen_log = []
   policy_rewards_log = []
   for episode_num in range(num_episodes):
-    episode, _ = reinforce_episode(env,
-                                   gamma,
-                                   optimizer,
-                                   max_episode_length=None)
+    episode, _ = reinforce_episode(env, gamma, optimizer, max_episode_length=None)
     # print(f"episode length {len(episode)}")
     states_seen += len(episode)
 

@@ -20,25 +20,20 @@ def load_policy_values(results_dir):
 
   # The full results were not saved with episode_lengths. We should probably
   # rectify this in the future and remove this bandaid.
-  episode_lengths = np.array([
-      x.get("episode_lengths", [1001] * metadata["num_episodes"])
-      for x in all_seeds
-  ])
-  policy_value_per_episode = np.array(
-      [x["policy_value_per_episode"] for x in all_seeds])
+  episode_lengths = np.array(
+      [x.get("episode_lengths", [1001] * metadata["num_episodes"]) for x in all_seeds])
+  policy_value_per_episode = np.array([x["policy_value_per_episode"] for x in all_seeds])
 
   return episode_lengths, policy_value_per_episode
 
 if __name__ == "__main__":
   print("Loading full results...")
-  full_episode_lengths, full_policy_values = load_policy_values(
-      full_results_dir)
+  full_episode_lengths, full_policy_values = load_policy_values(full_results_dir)
   full_steps_seen = np.cumsum(full_episode_lengths, axis=-1)
   print("... done")
 
   print("Loading e-stop results...")
-  estop_episode_lengths, estop_policy_values = load_policy_values(
-      estop_results_dir)
+  estop_episode_lengths, estop_policy_values = load_policy_values(estop_results_dir)
   estop_steps_seen = np.cumsum(estop_episode_lengths, axis=-1)
   print("... done")
 
@@ -49,14 +44,10 @@ if __name__ == "__main__":
       np.interp(x,
                 estop_steps_seen[i, :],
                 estop_policy_values[i, :],
-                right=estop_policy_values[i, -1])
-      for i in range(num_random_seeds)
+                right=estop_policy_values[i, -1]) for i in range(num_random_seeds)
   ])
   full_policy_values_interp = np.array([
-      np.interp(x,
-                full_steps_seen[i, :],
-                full_policy_values[i, :],
-                right=full_policy_values[i, -1])
+      np.interp(x, full_steps_seen[i, :], full_policy_values[i, :], right=full_policy_values[i, -1])
       for i in range(num_random_seeds)
   ])
 

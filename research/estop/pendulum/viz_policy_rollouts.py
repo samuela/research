@@ -10,16 +10,14 @@ from research.statistax import Deterministic
 from research.estop.mdp import rollout
 
 experiment_folder = "ddpg_pendulum"
-experiment_metadata = pickle.load(
-    open(f"results/{experiment_folder}/metadata.pkl", "rb"))
+experiment_metadata = pickle.load(open(f"results/{experiment_folder}/metadata.pkl", "rb"))
 num_random_seeds = experiment_metadata["num_random_seeds"]
 
 data = [
-    pickle.load(open(f"results/{experiment_folder}/full/seed={seed}.pkl",
-                     "rb")) for seed in range(num_random_seeds)
+    pickle.load(open(f"results/{experiment_folder}/full/seed={seed}.pkl", "rb"))
+    for seed in range(num_random_seeds)
 ]
-final_policy_values = jp.array(
-    [x["policy_value_per_episode"][-1] for x in data])
+final_policy_values = jp.array([x["policy_value_per_episode"][-1] for x in data])
 best_seed = int(jp.argmax(final_policy_values))
 
 print(f"Best seed: {best_seed}")

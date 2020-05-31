@@ -8,8 +8,7 @@ from research.estop.frozenlake import viz
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)
-  return frozenlake.FrozenLakeWithEscapingEnv(lake,
-                                              hole_retention_probability=0.99)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake, hole_retention_probability=0.99)
 
 def main():
   np.random.seed(0)
@@ -21,9 +20,7 @@ def main():
 
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
-  print(
-      f"Optimal policy reward on full env: {frozenlake.optimal_policy_reward(env, gamma)}"
-  )
+  print(f"Optimal policy reward on full env: {frozenlake.optimal_policy_reward(env, gamma)}")
 
   # Estimate hitting probabilities.
   state_action_values, _ = frozenlake.value_iteration(
@@ -31,8 +28,7 @@ def main():
       gamma,
       tolerance=1e-6,
   )
-  optimal_policy = frozenlake.deterministic_policy(
-      env, np.argmax(state_action_values, axis=-1))
+  optimal_policy = frozenlake.deterministic_policy(env, np.argmax(state_action_values, axis=-1))
   estimated_hp = frozenlake.estimate_hitting_probabilities(
       env,
       optimal_policy,
@@ -48,9 +44,7 @@ def main():
 
   estop_lake = frozenlake.Lake(estop_map)
   estop_env = build_env(estop_lake)
-  print(
-      f"Optimal policy reward on e-stop: {frozenlake.optimal_policy_reward(estop_env, gamma)}"
-  )
+  print(f"Optimal policy reward on e-stop: {frozenlake.optimal_policy_reward(estop_env, gamma)}")
 
   plt.figure()
   viz.plot_heatmap(estop_lake, np.zeros(estop_lake.num_states))
@@ -66,8 +60,7 @@ def main():
   for seed in range(1):
     np.random.seed(seed)
 
-    x0 = 1e-2 * np.random.randn(estop_env.lake.num_states,
-                                frozenlake.NUM_ACTIONS)
+    x0 = 1e-2 * np.random.randn(estop_env.lake.num_states, frozenlake.NUM_ACTIONS)
     optimizer = optimizers.Adam(x0, learning_rate=1e-3)
     # optimizer = reinforce.Momentum(x0, learning_rate=1e-2, mass=0.0)
     states_seen, policy_rewards = reinforce.run_reinforce(
@@ -79,12 +72,8 @@ def main():
 
     plt.plot(states_seen, policy_rewards)
 
-  plt.axhline(frozenlake.optimal_policy_reward(env, gamma),
-              color="grey",
-              linestyle="--")
-  plt.axhline(frozenlake.optimal_policy_reward(estop_env, gamma),
-              color="grey",
-              linestyle="--")
+  plt.axhline(frozenlake.optimal_policy_reward(env, gamma), color="grey", linestyle="--")
+  plt.axhline(frozenlake.optimal_policy_reward(estop_env, gamma), color="grey", linestyle="--")
   plt.title(f"Learning rate={optimizer.learning_rate}")
   plt.show()
 

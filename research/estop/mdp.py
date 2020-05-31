@@ -29,8 +29,7 @@ def rollout_from_state(rng, env: Env, policy, num_timesteps: int, state):
   _, res = lax.scan(step, state, random.split(rng, num_timesteps))
   return res
 
-def evaluate_policy(env: Env, policy, num_timesteps: int, num_rollouts: int,
-                    gamma: float):
+def evaluate_policy(env: Env, policy, num_timesteps: int, num_rollouts: int, gamma: float):
   def one_rollout(rollout_rng, p):
     _, _, rewards = rollout(rollout_rng, env, policy(p), num_timesteps)
     return jp.dot(rewards, jp.power(gamma, jp.arange(num_timesteps)))

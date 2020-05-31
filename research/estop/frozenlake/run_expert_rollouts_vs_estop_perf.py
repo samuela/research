@@ -7,8 +7,7 @@ from research.estop.frozenlake import frozenlake, viz
 nums_of_rollouts = range(1, 10)
 
 def build_env(l: frozenlake.Lake):
-  return frozenlake.FrozenLakeWithEscapingEnv(l,
-                                              hole_retention_probability=0.99)
+  return frozenlake.FrozenLakeWithEscapingEnv(l, hole_retention_probability=0.99)
 
 if __name__ == "__main__":
   np.random.seed(0)
@@ -36,17 +35,17 @@ if __name__ == "__main__":
     estop_env = build_env(frozenlake.Lake(estop_map))
     return frozenlake.optimal_policy_reward(estop_env, gamma)
 
-  state_action_values, optimal_policy_values = frozenlake.value_iteration(
-      env, gamma, tolerance=1e-6)
+  state_action_values, optimal_policy_values = frozenlake.value_iteration(env,
+                                                                          gamma,
+                                                                          tolerance=1e-6)
 
   # The value of the optimal policy in the full environment.
   opt_full_policy_value = optimal_policy_values[-1]
   policy_actions = np.argmax(state_action_values, axis=-1)
 
   # Calculate the value of the optimal policy in the exact e-stop environment.
-  policy_transitions = np.array([
-      env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)
-  ])
+  policy_transitions = np.array(
+      [env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)])
   exact_hp, _ = frozenlake.markov_chain_stats(env, policy_transitions)
   opt_estop_policy_value = estop_map_optimal_policy_value(exact_hp)
 
@@ -55,8 +54,7 @@ if __name__ == "__main__":
     while len(policy_values) < 64:
       # Estimated hitting probabilities
       estimated_hp = frozenlake.estimate_hitting_probabilities(
-          env, frozenlake.deterministic_policy(env, policy_actions),
-          num_rollouts)
+          env, frozenlake.deterministic_policy(env, policy_actions), num_rollouts)
       v = estop_map_optimal_policy_value(estimated_hp)
       if v is not None:
         policy_values.append(v)
@@ -69,10 +67,7 @@ if __name__ == "__main__":
 
   plt.figure()
   viz.plot_errorfill(nums_of_rollouts, results, "blue")
-  plt.axhline(opt_estop_policy_value,
-              color="grey",
-              linestyle="--",
-              label="Optimal e-stop MDP")
+  plt.axhline(opt_estop_policy_value, color="grey", linestyle="--", label="Optimal e-stop MDP")
   plt.xlabel("Expert trajectories observed")
   plt.ylabel("E-stop cumulative policy reward")
   plt.legend(loc="lower right")

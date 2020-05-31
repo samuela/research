@@ -7,8 +7,7 @@ from research.estop.frozenlake import frozenlake
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
-  return frozenlake.FrozenLakeWithEscapingEnv(lake,
-                                              hole_retention_probability=0.99)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake, hole_retention_probability=0.99)
 
 def main():
   np.random.seed(0)
@@ -19,14 +18,11 @@ def main():
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
 
-  state_action_values, _ = frozenlake.value_iteration(env,
-                                                      gamma,
-                                                      tolerance=1e-6)
+  state_action_values, _ = frozenlake.value_iteration(env, gamma, tolerance=1e-6)
   policy_actions = np.argmax(state_action_values, axis=-1)
 
-  policy_transitions = np.array([
-      env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)
-  ])
+  policy_transitions = np.array(
+      [env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)])
   hp, _ = frozenlake.markov_chain_stats(env, policy_transitions)
 
   # # Ensure that we don't remove the start state!
@@ -82,26 +78,21 @@ def main():
     #   * adding expected_rewards
     #   * max'ing over state_action_values
     flops_per_iter = 4 * (frozenlake.NUM_ACTIONS *
-                          (num_states**2)) * np.arange(
-                              len(policy_rewards_per_iter))
+                          (num_states**2)) * np.arange(len(policy_rewards_per_iter))
     return flops_per_iter, policy_rewards_per_iter
 
   results = [run(i) for i in tqdm.trange(lake.num_states)]
 
   # Some of the maps don't have a feasible path to the goal so they're just zero
   # the whole time.
-  noncrappy_results = [
-      i for i, res in enumerate(results) if res is not None and res[1][-1] > 0
-  ]
+  noncrappy_results = [i for i, res in enumerate(results) if res is not None and res[1][-1] > 0]
 
   plt.rcParams.update({"font.size": 16})
   cmap = plt.get_cmap("YlOrRd")
 
   plt.figure()
   for i, ix in enumerate(noncrappy_results):
-    plt.plot(results[ix][0] / 1000.0,
-             results[ix][1],
-             color=cmap(i / len(noncrappy_results)))
+    plt.plot(results[ix][0] / 1000.0, results[ix][1], color=cmap(i / len(noncrappy_results)))
 
   plt.xlim(0, 5e3)
   plt.xlabel("FLOPs (thousands)")
@@ -110,8 +101,7 @@ def main():
       matplotlib.cm.ScalarMappable(
           cmap=cmap,
           norm=matplotlib.colors.Normalize(vmin=0,
-                                           vmax=100 * max(noncrappy_results) /
-                                           lake.num_states)))
+                                           vmax=100 * max(noncrappy_results) / lake.num_states)))
   colorbar.set_label("E-stop states (%)", rotation=270, labelpad=25)
   plt.tight_layout()
   plt.savefig("figs/value_iteration_sweep.pdf")

@@ -13,8 +13,7 @@ from .utils import Dampen, normal_kl
 
 theta = 0.5
 # eigenvectors are column vectors stacked.
-eigenvectors = jp.array([[jp.cos(theta), -jp.sin(theta)],
-                         [jp.sin(theta), jp.cos(theta)]])
+eigenvectors = jp.array([[jp.cos(theta), -jp.sin(theta)], [jp.sin(theta), jp.cos(theta)]])
 eigenvalues = jp.array([5, 0.1])
 true_dist = MVN(jp.zeros((2, )), eigenvectors @ jp.diag(jp.sqrt(eigenvalues)))
 
@@ -62,8 +61,7 @@ def elbo(rng, params, x, num_mc_samples: int = 1):
 
   # Average over the z samples used to estimate the expectation. Note that we
   # need to pull the normal distribution out of the Independent one.
-  return jp.mean(vmap(loglik)(zs)) - normal_kl(
-      approx_posterior.base_distribution)
+  return jp.mean(vmap(loglik)(zs)) - normal_kl(approx_posterior.base_distribution)
 
 opt_init, opt_update, get_params = optimizers.adam(learning_rate)
 
@@ -106,8 +104,7 @@ def main(rng):
     sample_rng, elbo_rng = random.split(rngs[i])
     batch = true_dist.sample(sample_rng, sample_shape=(batch_size, ))
     loss_val, _, opt_state = step(elbo_rng, i, opt_state, batch)
-    print(
-        f"Iteration {i}\tELBO: {-1 * loss_val}\telapsed: {time.time() - tic}")
+    print(f"Iteration {i}\tELBO: {-1 * loss_val}\telapsed: {time.time() - tic}")
 
     elbo_per_iter.append(-loss_val.item())
 

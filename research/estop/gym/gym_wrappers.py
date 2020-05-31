@@ -23,8 +23,7 @@ def openai_gym_env(gym_env, reward_adjustment: float = 0.0) -> Env:
 
     obs_before = state
     obs_after, reward, _done, _info = gym_env.step(action)
-    observed_rewards[(str(obs_before), str(action),
-                      str(obs_after))] = reward + reward_adjustment
+    observed_rewards[(str(obs_before), str(action), str(obs_after))] = reward + reward_adjustment
     return Deterministic(obs_after)
 
   def reward(s1, a, s2):

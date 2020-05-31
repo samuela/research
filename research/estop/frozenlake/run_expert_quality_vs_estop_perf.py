@@ -5,8 +5,7 @@ import numpy as np
 from research.estop.frozenlake import frozenlake
 
 def build_env(l: frozenlake.Lake):
-  return frozenlake.FrozenLakeWithEscapingEnv(l,
-                                              hole_retention_probability=0.99)
+  return frozenlake.FrozenLakeWithEscapingEnv(l, hole_retention_probability=0.99)
 
 if __name__ == "__main__":
   np.random.seed(0)
@@ -38,20 +37,14 @@ if __name__ == "__main__":
     return frozenlake.optimal_policy_reward(estop_env, gamma)
 
   def one(noise_scale: float):
-    policy_actions = np.argmax(Q + noise_scale * np.random.randn(*Q.shape),
-                               axis=-1)
+    policy_actions = np.argmax(Q + noise_scale * np.random.randn(*Q.shape), axis=-1)
     policy = frozenlake.deterministic_policy(env, policy_actions)
-    V, _ = frozenlake.iterative_policy_evaluation(env,
-                                                  gamma,
-                                                  policy,
-                                                  tolerance=1e-6)
+    V, _ = frozenlake.iterative_policy_evaluation(env, gamma, policy, tolerance=1e-6)
     policy_value = np.dot(V, env.initial_state_distribution)
 
     # Calculate the value of the optimal policy in the exact e-stop environment.
-    policy_transitions = np.array([
-        env.transitions[i, policy_actions[i], :]
-        for i in range(lake.num_states)
-    ])
+    policy_transitions = np.array(
+        [env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)])
     try:
       exact_hp, _ = frozenlake.markov_chain_stats(env, policy_transitions)
     except np.linalg.LinAlgError:
@@ -65,18 +58,14 @@ if __name__ == "__main__":
     return policy_value, estop_policy_value
 
   results = np.array([
-      x for x in [
-          one(s)
-          for s in tqdm.tqdm(np.linspace(0, 0.1, num=num_random_policies))
-      ] if x is not None
+      x for x in [one(s) for s in tqdm.tqdm(np.linspace(0, 0.1, num=num_random_policies))]
+      if x is not None
   ])
 
   plt.rcParams.update({"font.size": 16})
   plt.figure()
   plt.scatter(results[:, 0], results[:, 1], alpha=0.5)
-  plt.plot([0, np.max(results)], [0, np.max(results)],
-           color="grey",
-           linestyle="--")
+  plt.plot([0, np.max(results)], [0, np.max(results)], color="grey", linestyle="--")
   plt.xlabel("Expert policy cumulative reward")
   plt.ylabel("E-stop policy cumulative reward")
   plt.tight_layout()

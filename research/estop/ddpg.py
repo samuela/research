@@ -42,8 +42,7 @@ def step_and_update_replay_buffer(
   """
   actor_params, _ = params
   rng_noise, rng_transition = random.split(rng)
-  action, action_noise = noisy_actor(rng_noise, actor_params, state, actor,
-                                     noise)
+  action, action_noise = noisy_actor(rng_noise, actor_params, state, actor, noise)
   next_state = env.step(state, action).sample(rng_transition)
   reward = env.reward(state, action, next_state)
   done = terminal_criterion(next_state)
@@ -76,8 +75,7 @@ def ddpg_gradients(
   mu_track = lambda s: actor(tracking_actor_params, s)
   replay_states, replay_actions, replay_rewards, replay_next_states, replay_done = replay_minibatch
 
-  replay_ys = vmap(lambda r, ns, d: r + gamma * lax.bitwise_not(d) * Q_track(
-      ns, mu_track(ns)),
+  replay_ys = vmap(lambda r, ns, d: r + gamma * lax.bitwise_not(d) * Q_track(ns, mu_track(ns)),
                    in_axes=(0, 0, 0))(
                        replay_rewards,
                        replay_next_states,
@@ -85,8 +83,8 @@ def ddpg_gradients(
                    )
 
   def critic_loss(p):
-    replay_pred_ys = vmap(lambda s, a: critic(p, (s, a)),
-                          in_axes=(0, 0))(replay_states, replay_actions)
+    replay_pred_ys = vmap(lambda s, a: critic(p, (s, a)), in_axes=(0, 0))(replay_states,
+                                                                          replay_actions)
     return jp.mean((replay_ys - replay_pred_ys)**2.0)
 
   critic_grad = grad(critic_loss)(critic_params)
@@ -200,8 +198,8 @@ def ddpg_step(
       critic,
   )
 
-  return DDPGStepOut(action_noise, reward, next_state, done, new_rb,
-                     new_optimizer, new_tracking_params)
+  return DDPGStepOut(action_noise, reward, next_state, done, new_rb, new_optimizer,
+                     new_tracking_params)
 
 class LoopState(Generic[State], NamedTuple):
   episode_length: int
@@ -273,8 +271,8 @@ def ddpg_episode(
 
       new_discounted_cumulative_reward = loop_state.discounted_cumulative_reward + (
           gamma**t) * step_out.reward
-      new_undiscounted_cumulative_reward = (
-          loop_state.undiscounted_cumulative_reward + step_out.reward)
+      new_undiscounted_cumulative_reward = (loop_state.undiscounted_cumulative_reward +
+                                            step_out.reward)
       return LoopState(
           episode_length=loop_state.episode_length + 1,
           optimizer=step_out.optimizer,

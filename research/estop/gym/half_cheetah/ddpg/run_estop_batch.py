@@ -7,16 +7,14 @@ import pickle
 import tqdm
 from jax import random
 
-from research.estop.gym.ddpg_training import (batch_job,
-                                              make_default_ddpg_train_config,
+from research.estop.gym.ddpg_training import (batch_job, make_default_ddpg_train_config,
                                               build_env_spec)
 from research.estop.gym.half_cheetah import env_name, reward_adjustment
 from research.estop.gym.half_cheetah.ddpg import debug_run_estop
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
-os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-                           "intra_op_parallelism_threads=1")
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false " "intra_op_parallelism_threads=1")
 
 output_results_dir = Path("results/estop_ddpg_half_cheetah")
 
@@ -63,16 +61,14 @@ if __name__ == "__main__":
   # separately and we can't really control its parallelism.
   with get_context("spawn").Pool(processes=cpu_count() // 2) as pool:
     for _ in tqdm.tqdm(pool.imap_unordered(
-        functools.partial(
-            batch_job,
-            env_name=env_name,
-            reward_adjustment=reward_adjustment,
-            num_episodes=num_episodes,
-            state_min=state_min,
-            state_max=state_max,
-            out_dir=output_results_dir,
-            policy_evaluation_frequency=policy_evaluation_frequency,
-            policy_video_frequency=policy_video_frequency),
-        range(num_random_seeds)),
+        functools.partial(batch_job,
+                          env_name=env_name,
+                          reward_adjustment=reward_adjustment,
+                          num_episodes=num_episodes,
+                          state_min=state_min,
+                          state_max=state_max,
+                          out_dir=output_results_dir,
+                          policy_evaluation_frequency=policy_evaluation_frequency,
+                          policy_video_frequency=policy_video_frequency), range(num_random_seeds)),
                        total=num_random_seeds):
       pass

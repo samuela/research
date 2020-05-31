@@ -37,8 +37,7 @@ class Normal(Distribution, NamedTuple):
     return lax.broadcast_shapes(self.loc.shape, self.scale.shape)
 
   def sample(self, rng, sample_shape=()) -> jp.ndarray:
-    return self.loc + self.scale * random.normal(
-        rng, shape=sample_shape + self.batch_shape)
+    return self.loc + self.scale * random.normal(rng, shape=sample_shape + self.batch_shape)
 
   def log_prob(self, x) -> jp.ndarray:
     dists = 0.5 * ((x - self.loc) / self.scale)**2.0
@@ -180,8 +179,7 @@ class MVN(Distribution, NamedTuple):
     renorm = linalg.solve_triangular(self.scale_tril, delta, lower=True)**2
     # renorm will have shape [..., d, 1] so we need to sum over the last two
     # dimensions.
-    return (d * NEG_HALF_LOG_TWO_PI - self._logdet_scale_tril -
-            0.5 * jp.sum(renorm, axis=(-2, -1)))
+    return (d * NEG_HALF_LOG_TWO_PI - self._logdet_scale_tril - 0.5 * jp.sum(renorm, axis=(-2, -1)))
 
   def entropy(self) -> jp.ndarray:
     (d, ) = self.event_shape
@@ -190,5 +188,4 @@ class MVN(Distribution, NamedTuple):
   @property
   def _logdet_scale_tril(self):
     # The determinant of a triangular matrix is the product of its diagonal.
-    return jp.sum(jp.log(jp.diagonal(self.scale_tril, axis1=-2, axis2=-1)),
-                  axis=-1)
+    return jp.sum(jp.log(jp.diagonal(self.scale_tril, axis1=-2, axis2=-1)), axis=-1)

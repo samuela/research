@@ -14,10 +14,7 @@ def Scalarify():
 
 Scalarify = Scalarify()
 
-def ornstein_uhlenbeck_noise(mu: float,
-                             sigma: float = 0.1,
-                             theta: float = 0.15,
-                             dt: float = 1e-2):
+def ornstein_uhlenbeck_noise(mu: float, sigma: float = 0.1, theta: float = 0.15, dt: float = 1e-2):
   scale = sigma * jp.sqrt(dt)
 
   def step(_, x_prev):

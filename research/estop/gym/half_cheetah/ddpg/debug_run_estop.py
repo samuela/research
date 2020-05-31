@@ -6,10 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from jax import random
 
-from research.estop.gym.ddpg_training import (deterministic_policy,
-                                              make_default_ddpg_train_config,
-                                              build_env_spec, rollout,
-                                              debug_run)
+from research.estop.gym.ddpg_training import (deterministic_policy, make_default_ddpg_train_config,
+                                              build_env_spec, rollout, debug_run)
 from research.estop.gym.half_cheetah import env_name, reward_adjustment
 
 input_results_dir = Path("results/13_ed7ee131_ddpg_half_cheetah")
@@ -27,8 +25,7 @@ train_config = make_default_ddpg_train_config(env_spec)
 
 def run_expert_rollouts(rng) -> np.ndarray:
   print("Loading vanilla DDPG results...")
-  experiment_metadata = pickle.load(
-      (input_results_dir / "metadata.pkl").open("rb"))
+  experiment_metadata = pickle.load((input_results_dir / "metadata.pkl").open("rb"))
 
   data = [
       pickle.load((input_results_dir / f"seed={seed}" / "data.pkl").open("rb"))
@@ -56,14 +53,10 @@ def get_estop_bounds(expert_rollouts):
   #    the max end. And on the min end we cannot trim anything off since we get
   #    initialized at zero.
   percentiles = [1, 5, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1]
-  state_min = np.array([
-      np.percentile(expert_rollouts[:, :, i], p)
-      for i, p in enumerate(percentiles)
-  ])
-  state_max = np.array([
-      np.percentile(expert_rollouts[:, :, i], 100 - p)
-      for i, p in enumerate(percentiles)
-  ])
+  state_min = np.array(
+      [np.percentile(expert_rollouts[:, :, i], p) for i, p in enumerate(percentiles)])
+  state_max = np.array(
+      [np.percentile(expert_rollouts[:, :, i], 100 - p) for i, p in enumerate(percentiles)])
   std = np.std(expert_rollouts, axis=(0, 1))
   return state_min - std, state_max + std
 
@@ -71,8 +64,7 @@ def main():
   rng = random.PRNGKey(0)
 
   expert_rollouts = run_expert_rollouts(rng)
-  expert_rollouts_flat = np.reshape(expert_rollouts,
-                                    (-1, expert_rollouts.shape[-1]))
+  expert_rollouts_flat = np.reshape(expert_rollouts, (-1, expert_rollouts.shape[-1]))
   state_min, state_max = get_estop_bounds(expert_rollouts)
 
   # Debug plot!
@@ -87,11 +79,7 @@ def main():
 
   plt.show()
 
-  debug_run(env_spec,
-            train_config,
-            seed=0,
-            state_min=state_min,
-            state_max=state_max)
+  debug_run(env_spec, train_config, seed=0, state_min=state_min, state_max=state_max)
 
 if __name__ == "__main__":
   main()

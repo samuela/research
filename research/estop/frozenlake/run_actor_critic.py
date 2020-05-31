@@ -18,15 +18,14 @@ from research.estop.frozenlake import frozenlake
 from research.estop.frozenlake import optimizers
 # pylint: enable=wrong-import-position
 
-def actor_critic_job(random_seed: int, env, gamma: float,
-                     policy_evaluation_frequency: int, folder: Path):
+def actor_critic_job(random_seed: int, env, gamma: float, policy_evaluation_frequency: int,
+                     folder: Path):
   np.random.seed(random_seed)
 
-  actor_optimizer = optimizers.Adam(
-      x0=1e-2 * np.random.randn(env.lake.num_states, frozenlake.NUM_ACTIONS),
-      learning_rate=1e-3)
-  critic_optimizer = optimizers.Adam(x0=np.zeros(env.lake.num_states),
-                                     learning_rate=1e-3)
+  actor_optimizer = optimizers.Adam(x0=1e-2 *
+                                    np.random.randn(env.lake.num_states, frozenlake.NUM_ACTIONS),
+                                    learning_rate=1e-3)
+  critic_optimizer = optimizers.Adam(x0=np.zeros(env.lake.num_states), learning_rate=1e-3)
   # optimizer = reinforce.Momentum(x0, learning_rate=1e-2, mass=0.0)
   states_seen, policy_rewards = actor_critic.run_actor_critic(
       env,
@@ -38,18 +37,14 @@ def actor_critic_job(random_seed: int, env, gamma: float,
       verbose=False)
 
   with (folder / f"seed={random_seed}.pkl").open(mode="wb") as f:
-    pickle.dump({
-        "states_seen": states_seen,
-        "policy_rewards": policy_rewards
-    }, f)
+    pickle.dump({"states_seen": states_seen, "policy_rewards": policy_rewards}, f)
 
 def main():
   np.random.seed(0)
 
   def build_env(lake: frozenlake.Lake):
     # return frozenlake.FrozenLakeEnv(lake, infinite_time=True)
-    return frozenlake.FrozenLakeWithEscapingEnv(
-        lake, hole_retention_probability=0.99)
+    return frozenlake.FrozenLakeWithEscapingEnv(lake, hole_retention_probability=0.99)
 
   lake_map = frozenlake.MAP_8x8
   policy_evaluation_frequency = 10
@@ -66,9 +61,7 @@ def main():
 
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
-  state_action_values, _ = frozenlake.value_iteration(env,
-                                                      gamma,
-                                                      tolerance=1e-6)
+  state_action_values, _ = frozenlake.value_iteration(env, gamma, tolerance=1e-6)
   state_values = np.max(state_action_values, axis=-1)
   optimal_policy_reward = np.dot(state_values, env.initial_state_distribution)
 
@@ -78,8 +71,7 @@ def main():
       gamma,
       tolerance=1e-6,
   )
-  optimal_policy = frozenlake.deterministic_policy(
-      env, np.argmax(state_action_values, axis=-1))
+  optimal_policy = frozenlake.deterministic_policy(env, np.argmax(state_action_values, axis=-1))
   estimated_hp = frozenlake.estimate_hitting_probabilities(
       env,
       optimal_policy,

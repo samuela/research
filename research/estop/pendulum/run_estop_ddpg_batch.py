@@ -12,8 +12,7 @@ from research.estop.pendulum import config, run_ddpg, run_estop_ddpg
 
 # Limit ourselves to single-threaded jax/xla operations to avoid thrashing. See
 # https://github.com/google/jax/issues/743.
-os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-                           "intra_op_parallelism_threads=1")
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false " "intra_op_parallelism_threads=1")
 
 num_episodes = 10000
 
@@ -44,8 +43,7 @@ def job(
     params[0] = info["optimizer"].value
     tracking_params[0] = info["tracking_params"]
 
-    policy_value = run_ddpg.eval_policy(callback_rngs[episode],
-                                        info["optimizer"].value[0])
+    policy_value = run_ddpg.eval_policy(callback_rngs[episode], info["optimizer"].value[0])
 
     train_reward_per_episode.append(info['reward'])
     policy_value_per_episode.append(policy_value)
@@ -61,8 +59,7 @@ def job(
               lax.le(s[0], theta_min),
               lax.bitwise_or(
                   lax.ge(s[0], theta_max),
-                  lax.bitwise_or(lax.le(s[1], theta_dot_min),
-                                 lax.ge(s[1], theta_dot_max))))),
+                  lax.bitwise_or(lax.le(s[1], theta_dot_min), lax.ge(s[1], theta_dot_max))))),
       callback,
   )
   with (base_dir / f"seed={random_seed}.pkl").open(mode="wb") as f:
@@ -97,13 +94,11 @@ def main():
           "buffer_size": run_ddpg.buffer_size,
           "batch_size": run_ddpg.batch_size,
           "run_estop_ddpg.experiment_folder": run_estop_ddpg.experiment_folder,
-          "run_estop_ddpg.num_support_set_rollouts":
-          run_estop_ddpg.num_support_set_rollouts,
+          "run_estop_ddpg.num_support_set_rollouts": run_estop_ddpg.num_support_set_rollouts,
           "run_estop_ddpg.epsilon": run_estop_ddpg.epsilon,
       }, (results_dir / "metadata.pkl").open(mode="wb"))
 
-  print(f"Loading best seed from {run_estop_ddpg.experiment_folder}... ",
-        end="")
+  print(f"Loading best seed from {run_estop_ddpg.experiment_folder}... ", end="")
   best_seed_data = run_estop_ddpg.load_best_seed()
   print("done")
 

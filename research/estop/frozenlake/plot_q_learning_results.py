@@ -23,10 +23,8 @@ if __name__ == "__main__":
       for seed in range(num_random_seeds)
   ]
 
-  estop_policy_rewards = np.array(
-      [run["policy_rewards"] for run in estop_results])
-  full_policy_rewards = np.array(
-      [run["policy_rewards"] for run in full_results])
+  estop_policy_rewards = np.array([run["policy_rewards"] for run in estop_results])
+  full_policy_rewards = np.array([run["policy_rewards"] for run in full_results])
 
   estop_states_seen = np.array([run["states_seen"] for run in estop_results])
   full_states_seen = np.array([run["states_seen"] for run in full_results])
@@ -39,10 +37,8 @@ if __name__ == "__main__":
 
   plt.figure()
   x = policy_evaluation_frequency * np.arange(num_points_to_plot)
-  viz.plot_errorfill(x, full_policy_rewards[:, :num_points_to_plot],
-                     "slategrey")
-  viz.plot_errorfill(x, estop_policy_rewards[:, :num_points_to_plot],
-                     "crimson")
+  viz.plot_errorfill(x, full_policy_rewards[:, :num_points_to_plot], "slategrey")
+  viz.plot_errorfill(x, estop_policy_rewards[:, :num_points_to_plot], "crimson")
   plt.axhline(optimal_policy_reward, color="grey", linestyle="--")
   plt.legend(["Full env. Q-learning", "E-stop Q-learning", "Optimal policy"])
   plt.xlabel("Episode")
@@ -60,15 +56,13 @@ if __name__ == "__main__":
       np.interp(x,
                 estop_states_seen[i, :],
                 estop_policy_rewards[i, :],
-                right=estop_policy_rewards[i, -1])
-      for i in range(num_random_seeds)
+                right=estop_policy_rewards[i, -1]) for i in range(num_random_seeds)
   ])
   full_policy_rewards_interp = np.array([
       np.interp(x,
                 full_states_seen[i, :],
                 full_policy_rewards[i, :],
-                right=full_policy_rewards[i, -1])
-      for i in range(num_random_seeds)
+                right=full_policy_rewards[i, -1]) for i in range(num_random_seeds)
   ])
 
   plt.figure()

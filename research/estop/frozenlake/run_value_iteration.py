@@ -6,8 +6,7 @@ from research.estop.frozenlake import viz
 
 def build_env(lake: frozenlake.Lake):
   # return frozenlake.FrozenLakeEnv(lake, infinite_time=False)
-  return frozenlake.FrozenLakeWithEscapingEnv(lake,
-                                              hole_retention_probability=0.99)
+  return frozenlake.FrozenLakeWithEscapingEnv(lake, hole_retention_probability=0.99)
 
 def main():
   # pylint: disable=too-many-statements
@@ -18,8 +17,9 @@ def main():
 
   lake = frozenlake.Lake(lake_map)
   env = build_env(lake)
-  state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(
-      env, gamma, tolerance=1e-6)
+  state_action_values, policy_rewards_per_iter = frozenlake.value_iteration(env,
+                                                                            gamma,
+                                                                            tolerance=1e-6)
   policy_actions = np.argmax(state_action_values, axis=-1)
   state_values = np.max(state_action_values, axis=-1)
 
@@ -43,9 +43,8 @@ def main():
   plt.savefig("figs/value_function_full_env.pdf")
 
   # Show hitting probability map.
-  policy_transitions = np.array([
-      env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)
-  ])
+  policy_transitions = np.array(
+      [env.transitions[i, policy_actions[i], :] for i in range(lake.num_states)])
   hp, esta = frozenlake.markov_chain_stats(env, policy_transitions)
   hp2d = lake.reshape(hp)
 
@@ -55,10 +54,10 @@ def main():
   plt.savefig("figs/hitting_probabilities.pdf")
 
   # Show estimated hitting probability map.
-  estimated_hp = frozenlake.estimate_hitting_probabilities(
-      env,
-      frozenlake.deterministic_policy(env, policy_actions),
-      num_rollouts=1000)
+  estimated_hp = frozenlake.estimate_hitting_probabilities(env,
+                                                           frozenlake.deterministic_policy(
+                                                               env, policy_actions),
+                                                           num_rollouts=1000)
   plt.figure()
   viz.plot_heatmap(lake, estimated_hp)
   plt.title("Estimated hitting probabilities")
@@ -83,10 +82,7 @@ def main():
     else:
       raise Exception("bad bad bad")
 
-    im.axes.text(j, i, arrow, {
-        "horizontalalignment": "center",
-        "verticalalignment": "center"
-    })
+    im.axes.text(j, i, arrow, {"horizontalalignment": "center", "verticalalignment": "center"})
   plt.title("Optimal policy overlayed on hitting probabilities")
   plt.savefig("figs/optimal_policy.pdf")
 
@@ -132,19 +128,15 @@ def main():
       4 * (frozenlake.NUM_ACTIONS * (frozenlake.num_mdp_states(lake_map)**2)) *
       np.arange(len(policy_rewards_per_iter)), policy_rewards_per_iter)
   plt.plot(
-      4 * (frozenlake.NUM_ACTIONS *
-           (frozenlake.num_mdp_states(estop_map)**2)) *
-      np.arange(len(estop_policy_rewards_per_iter)),
-      estop_policy_rewards_per_iter)
+      4 * (frozenlake.NUM_ACTIONS * (frozenlake.num_mdp_states(estop_map)**2)) *
+      np.arange(len(estop_policy_rewards_per_iter)), estop_policy_rewards_per_iter)
   plt.xlabel("FLOPS")
   plt.ylabel("Policy reward")
   plt.legend(["Full MDP", "E-stop MDP"])
   plt.title("Convergence comparison")
   plt.savefig("figs/convergence_comparison.pdf")
 
-  print(
-      f"Exact solution, policy value: {np.dot(env.initial_state_distribution, state_values)}"
-  )
+  print(f"Exact solution, policy value: {np.dot(env.initial_state_distribution, state_values)}")
   print(
       f"E-stop solution, policy value: {np.dot(env.initial_state_distribution, estop_state_values)}"
   )

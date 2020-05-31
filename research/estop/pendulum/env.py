@@ -37,12 +37,11 @@ def pendulum_environment(mass: float,
     theta_dot = state[1]
     u = action[0]
 
-    theta_dotdot = (-gravity / length * jp.sin(theta) - friction * theta_dot +
-                    u / (mass * length**2))
+    theta_dotdot = (-gravity / length * jp.sin(theta) - friction * theta_dot + u /
+                    (mass * length**2))
 
     # Slightly different from OpenAI gym since we clip before adding to theta.
-    new_theta_dot = jp.clip(theta_dot + dt * theta_dotdot, -max_speed,
-                            max_speed)
+    new_theta_dot = jp.clip(theta_dot + dt * theta_dotdot, -max_speed, max_speed)
     new_theta = (theta + dt * new_theta_dot) % (2 * jp.pi)
     return Deterministic(
         jp.array([
