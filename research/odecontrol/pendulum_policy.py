@@ -1,6 +1,6 @@
 import time
 import matplotlib.pyplot as plt
-from jax import random, jit, lax, vmap
+from jax import random, jit, lax, vmap, value_and_grad
 from jax.nn import initializers
 import jax.numpy as jp
 from jax.experimental import stax
@@ -17,17 +17,16 @@ def policy_cost_and_grad(dynamics, cost, policy, gamma=1.0):
     u = policy(policy_params, x)
     return jp.concatenate((jp.expand_dims((gamma**t) * cost(x, u), axis=0), dynamics(x, u)))
 
-  def value_and_grad(policy_params, x0, total_time):
+  def run(policy_params, x0, total_time):
     y0 = jp.concatenate((jp.zeros((1, )), x0))
 
     # Zero is necessary for some reason...
     t = jp.array([0.0, total_time])
 
-    primals, vjp = ode.vjp_odeint(ofunc, y0, t, policy_params)
-    _, _, g = vjp(jp.expand_dims(jp.concatenate((jp.ones((1, )), jp.zeros_like(x0))), axis=0))
-    return primals[1, 0], g
+    primals = ode.odeint(ofunc, y0, t, policy_params)
+    return primals[1, 0]
 
-  return value_and_grad
+  return value_and_grad(run)
 
 def main():
   total_secs = 3.0
