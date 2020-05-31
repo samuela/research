@@ -19,7 +19,7 @@ if __name__ == "__main__":
                  y0=jp.array([jp.pi - 1e-1, 0.0]),
                  t=jp.linspace(0, total_secs, num=num)) for num in [2, 10, 100]
   ]
-  print(f"... and done")
+  print("... and done")
 
   plt.figure()
   for states in states_sequences:
