@@ -3,10 +3,10 @@ greater than `max_torque / (mass * length)` and can overpower gravity
 otherwise."""
 
 import time
+import matplotlib.pyplot as plt
 import jax.numpy as jp
 from jax.experimental import ode
 from research.estop.pendulum.env import viz_pendulum_rollout
-import matplotlib.pyplot as plt
 
 def pendulum_dynamics(mass: float, length: float, gravity: float, friction: float):
   def f(state, action):

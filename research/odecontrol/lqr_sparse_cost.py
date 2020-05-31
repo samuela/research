@@ -2,9 +2,7 @@ import time
 import control
 import matplotlib.pyplot as plt
 from jax import random
-from jax import jit
 from jax import value_and_grad
-from jax import lax
 from jax import vmap
 import jax.numpy as jp
 from jax.experimental import stax
@@ -12,10 +10,7 @@ from jax.experimental import ode
 from jax.experimental import optimizers
 from jax.experimental.stax import Dense
 from jax.experimental.stax import Relu
-from jax.experimental.stax import Tanh
 from research.utils import make_optimizer
-from research.utils import DenseNoBias
-from research.utils import random_psd
 from research import blt
 
 def policy_cost(dynamics_fn, cost_fn, policy, num_keypoints):
@@ -100,7 +95,8 @@ def main():
     )
     costs.append(float(cost))
 
-    if not jp.isfinite(cost): break
+    if not jp.isfinite(cost):
+      break
 
   print(f"Opt solution cost from starting point: {opt_cost}")
   # print(f"Gradient at opt solution: {opt_g}")

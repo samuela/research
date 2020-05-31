@@ -12,10 +12,7 @@ from jax.experimental import ode
 from jax.experimental import optimizers
 from jax.experimental.stax import Dense
 from jax.experimental.stax import Relu
-from jax.experimental.stax import Tanh
 from research.utils import make_optimizer
-from research.utils import DenseNoBias
-from research.utils import random_psd
 
 def policy_integrate_cost(dynamics_fn, cost_fn, policy, gamma):
   def ofunc(y, t, policy_params):

@@ -213,7 +213,7 @@ def main():
            label="x(T) squared norm")
   ax2.legend(loc="upper right")
 
-  plt.title(f"ODE control of LQR problem")
+  plt.title("ODE control of LQR problem")
 
   blt.show()
 

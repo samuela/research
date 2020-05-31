@@ -149,7 +149,7 @@ def main():
   ax2.set_yscale("log")
   ax2.tick_params(axis="y", labelcolor="tab:red")
   ax2.plot(bwd_errors, color="tab:red")
-  plt.title(f"ODE control of LQR problem")
+  plt.title("ODE control of LQR problem")
 
   blt.show()
 
