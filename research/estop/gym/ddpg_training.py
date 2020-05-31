@@ -132,16 +132,13 @@ def train(
 ):
   """Generic DDPG training loop that offers a callback for extensibility."""
   actor_init_rng, critic_init_rng, rng = random.split(rng, 3)
-  _, init_actor_params = train_config.actor_init(actor_init_rng,
-                                                 env_spec.state_shape)
-  _, init_critic_params = train_config.critic_init(
-      critic_init_rng, (env_spec.state_shape, env_spec.action_shape))
-  optimizer = train_config.optimizer_init(
-      (init_actor_params, init_critic_params))
+  _, init_actor_params = train_config.actor_init(actor_init_rng, env_spec.state_shape)
+  _, init_critic_params = train_config.critic_init(critic_init_rng,
+                                                   (env_spec.state_shape, env_spec.action_shape))
+  optimizer = train_config.optimizer_init((init_actor_params, init_critic_params))
   tracking_params = optimizer.value
 
-  replay_buffer = replay_buffers.NumpyReplayBuffer(train_config.buffer_size,
-                                                   env_spec.state_shape,
+  replay_buffer = replay_buffers.NumpyReplayBuffer(train_config.buffer_size, env_spec.state_shape,
                                                    env_spec.action_shape)
 
   run = ddpg.ddpg_episode(
@@ -176,10 +173,8 @@ def train(
         "episode_length": final_state.episode_length,
         "optimizer": final_state.optimizer,
         "tracking_params": final_state.tracking_params,
-        "discounted_cumulative_reward":
-        final_state.discounted_cumulative_reward,
-        "undiscounted_cumulative_reward":
-        final_state.undiscounted_cumulative_reward,
+        "discounted_cumulative_reward": final_state.discounted_cumulative_reward,
+        "undiscounted_cumulative_reward": final_state.undiscounted_cumulative_reward,
         "elapsed": time.time() - t0,
     })
 
@@ -207,8 +202,7 @@ def debug_run(
   train_rng, rng = random.split(rng)
   callback_rngs = random.split(rng, num_episodes)
 
-  results_dir = Path(
-      f"results/debug_ddpg_{env_spec.env_name}_{datetime.datetime.utcnow()}/")
+  results_dir = Path(f"results/debug_ddpg_{env_spec.env_name}_{datetime.datetime.utcnow()}/")
   results_dir.mkdir()
 
   def callback(info):
@@ -222,19 +216,15 @@ def debug_run(
     print("  disc. reward = {0:.4f}".format(discounted_cumulative_reward))
     print("  undisc. reward = {0:.4f}".format(undiscounted_cumulative_reward))
     print("  ep. length = {}".format(episode_length))
-    print("  reward/step = {0:.4f}".format(undiscounted_cumulative_reward /
-                                           episode_length))
+    print("  reward/step = {0:.4f}".format(undiscounted_cumulative_reward / episode_length))
     print("  elapsed = {0:.4f}".format(info["elapsed"]))
 
     # Periodically evaluate the policy without any action noise.
     if episode % policy_evaluation_frequency == 0:
       curr_policy = deterministic_policy(train_config, current_actor_params)
       tic = time.time()
-      policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
-                                 num_eval_rollouts)
-      print(
-          f".. policy value (undisc.) = {policy_value}, elapsed = {time.time() - tic}"
-      )
+      policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy, num_eval_rollouts)
+      print(f".. policy value (undisc.) = {policy_value}, elapsed = {time.time() - tic}")
 
     if (episode + 1) % policy_video_frequency == 0:
       curr_policy = deterministic_policy(train_config, current_actor_params)
@@ -245,10 +235,8 @@ def debug_run(
                   filepath=results_dir / f"episode_{episode}.mp4")
       print(f".. saved episode video, elapsed = {time.time() - tic}")
 
-  state_min = state_min if state_min is not None else -np.inf * np.ones(
-      env_spec.state_shape)
-  state_max = state_max if state_max is not None else np.inf * np.ones(
-      env_spec.state_shape)
+  state_min = state_min if state_min is not None else -np.inf * np.ones(env_spec.state_shape)
+  state_max = state_max if state_max is not None else np.inf * np.ones(env_spec.state_shape)
 
   train(
       train_config=train_config,
@@ -256,8 +244,8 @@ def debug_run(
       rng=train_rng,
       num_episodes=num_episodes,
       terminal_criterion=lambda t, s:
-      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(
-          s > state_max) or (respect_gym_done and env_spec.gym_env.done)),
+      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(s > state_max) or
+       (respect_gym_done and env_spec.gym_env.done)),
       callback=callback,
   )
 
@@ -307,17 +295,14 @@ def batch_job(
 
     current_actor_params, _ = info["optimizer"].value
 
-    discounted_cumulative_reward_per_episode.append(
-        info["discounted_cumulative_reward"])
-    undiscounted_cumulative_reward_per_episode.append(
-        info["undiscounted_cumulative_reward"])
+    discounted_cumulative_reward_per_episode.append(info["discounted_cumulative_reward"])
+    undiscounted_cumulative_reward_per_episode.append(info["undiscounted_cumulative_reward"])
     episode_lengths.append(info["episode_length"])
     elapsed_per_episode.append(info["elapsed"])
 
     if episode % policy_evaluation_frequency == 0:
       curr_policy = deterministic_policy(train_config, current_actor_params)
-      policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy,
-                                 num_eval_rollouts)
+      policy_value = eval_policy(env_spec, callback_rngs[episode], curr_policy, num_eval_rollouts)
       policy_evaluations.append(policy_value)
 
     if (episode + 1) % policy_video_frequency == 0:
@@ -333,19 +318,18 @@ def batch_job(
       train_rng,
       num_episodes,
       lambda t, s:
-      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(
-          s > state_max) or (respect_gym_done and env_spec.gym_env.done)),
+      ((t >= env_spec.max_episode_steps) or np.any(s < state_min) or np.any(s > state_max) or
+       (respect_gym_done and env_spec.gym_env.done)),
       callback,
   )
-  with (job_dir / f"data.pkl").open(mode="wb") as f:
+  with (job_dir / "data.pkl").open(mode="wb") as f:
     pickle.dump(
         {
             "env_name": env_name,
             "reward_adjustment": reward_adjustment,
             "final_params": params[0],
             "final_tracking_params": tracking_params[0],
-            "discounted_cumulative_reward_per_episode":
-            discounted_cumulative_reward_per_episode,
+            "discounted_cumulative_reward_per_episode": discounted_cumulative_reward_per_episode,
             "undiscounted_cumulative_reward_per_episode":
             undiscounted_cumulative_reward_per_episode,
             "policy_evaluations": policy_evaluations,
