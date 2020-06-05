@@ -11,7 +11,7 @@ import jax
 from jax import random
 from jax import lax
 from jax import jit
-import jax.numpy as jp
+import jax.numpy as jnp
 from jax.experimental import stax
 from jax.experimental import ode
 from jax.experimental import optimizers
@@ -24,12 +24,12 @@ from research.utils import zeros_like_tree
 from research import blt
 
 def fixed_env(n):
-  A = 0 * jp.eye(n)
-  # A = jp.diag(jp.array([-1.0, 1.0]))
-  B = jp.eye(n)
-  Q = jp.eye(n)
-  R = jp.eye(n)
-  N = jp.zeros((n, n))
+  A = 0 * jnp.eye(n)
+  # A = jnp.diag(jnp.array([-1.0, 1.0]))
+  B = jnp.eye(n)
+  Q = jnp.eye(n)
+  R = jnp.eye(n)
+  N = jnp.zeros((n, n))
   return A, B, Q, R, N
 
 def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma, policy):
@@ -42,8 +42,8 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
 
   def eval_from_x0(policy_params, x0, total_time):
     # Zero is necessary for some reason...
-    ts = jp.array([0.0, total_time])
-    y0 = (jp.zeros(()), jp.zeros(()), x0)
+    ts = jnp.array([0.0, total_time])
+    y0 = (jnp.zeros(()), jnp.zeros(()), x0)
     odeint_kwargs = {"mxstep": 1e6}
     y_fwd = ode.odeint(ofunc, y0, ts, policy_params, **odeint_kwargs)
     yT = tree_map(itemgetter(1), y_fwd)
@@ -51,7 +51,7 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
     # This is similar but not exactly the same as the place that the rev-mode
     # solution since the step sizes can vary when using all the other
     # parameters.
-    y_bwd = ode.odeint(lambda y, t, *args: tree_map(jp.negative, ofunc(y, -t, *args)), yT,
+    y_bwd = ode.odeint(lambda y, t, *args: tree_map(jnp.negative, ofunc(y, -t, *args)), yT,
                        -ts[::-1], policy_params, **odeint_kwargs)
     y0_bwd = tree_map(itemgetter(1), y_bwd)
 
@@ -60,7 +60,7 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
   return eval_from_x0
 
 def fruity_loops(outer_loop_fn, inner_loop_fn, outer_loop_count, inner_loop_count, init):
-  run = jit(lambda carry: lax.scan(inner_loop_fn, carry, jp.arange(inner_loop_count)))
+  run = jit(lambda carry: lax.scan(inner_loop_fn, carry, jnp.arange(inner_loop_count)))
   last = jit(lambda seq: tree_map(itemgetter(-1), seq))
 
   history = []
@@ -72,15 +72,15 @@ def fruity_loops(outer_loop_fn, inner_loop_fn, outer_loop_count, inner_loop_coun
     history.append(seq)
     outer_loop_fn(carry, seq_last, elapsed=time.time() - t0)
 
-  return carry, tree_multimap(lambda *args: jp.concatenate(args), history[0], *history[1:])
+  return carry, tree_multimap(lambda *args: jnp.concatenate(args), history[0], *history[1:])
 
 class Record(NamedTuple):
-  x_cost_T_fwd_per_iter: jp.ndarray
-  u_cost_T_fwd_per_iter: jp.ndarray
-  xT_fwd_per_iter: jp.ndarray
-  x_cost_0_bwd_per_iter: jp.ndarray
-  u_cost_0_bwd_per_iter: jp.ndarray
-  x0_bwd_per_iter: jp.ndarray
+  x_cost_T_fwd_per_iter: jnp.ndarray
+  u_cost_T_fwd_per_iter: jnp.ndarray
+  xT_fwd_per_iter: jnp.ndarray
+  x_cost_0_bwd_per_iter: jnp.ndarray
+  u_cost_0_bwd_per_iter: jnp.ndarray
+  x0_bwd_per_iter: jnp.ndarray
 
 def main():
   total_time = 20.0
@@ -90,7 +90,7 @@ def main():
   inner_loop_count = 1000
   rng = random.PRNGKey(0)
 
-  x0 = jp.array([2.0, 1.0])
+  x0 = jnp.array([2.0, 1.0])
 
   ### Set up the problem/environment
   # xdot = Ax + Bu
@@ -112,7 +112,7 @@ def main():
 
   ### Solve the Riccatti equation to get the infinite-horizon optimal solution.
   K, _, _ = control.lqr(A, B, Q, R, N)
-  K = jp.array(K)
+  K = jnp.array(K)
 
   _, (opt_x_cost_fwd, opt_u_cost_fwd,
       opt_xT_fwd), (opt_x_cost_bwd, opt_u_cost_bwd,
@@ -129,7 +129,7 @@ def main():
   print(f"  opt_cost_fwd          = {opt_cost_fwd}")
   print(f"  opt_xT_fwd            = {opt_xT_fwd}")
   print(f"  opt_x0_bwd            = {opt_x0_bwd}")
-  print(f"  ||x0 - opt_x0_bwd||^2 = {jp.sum((x0 - opt_x0_bwd)**2)}")
+  print(f"  ||x0 - opt_x0_bwd||^2 = {jnp.sum((x0 - opt_x0_bwd)**2)}")
   print()
 
   ### Set up the learned policy model.
@@ -150,7 +150,7 @@ def main():
     x_cost_T_fwd, u_cost_T_fwd, xT_fwd = yT_fwd
     x_cost_0_bwd, u_cost_0_bwd, x0_bwd = y0_bwd
 
-    yT_fwd_bar = (jp.ones(()), jp.ones(()), jp.zeros_like(x0))
+    yT_fwd_bar = (jnp.ones(()), jnp.ones(()), jnp.zeros_like(x0))
     g, _, _ = vjp((zeros_like_tree(y0_fwd), yT_fwd_bar, zeros_like_tree(y0_bwd)))
 
     return opt.update(g), Record(x_cost_T_fwd, u_cost_T_fwd, xT_fwd, x_cost_0_bwd, u_cost_0_bwd,
@@ -167,7 +167,7 @@ def main():
     print(f"    bwd u cost        = {u_cost_0_bwd}")
     print(f"  bwd x0 - x0     = {x0_bwd - x0}")
     print(f"  fwd xT          = {xT_fwd}")
-    print(f"  fwd xT norm sq. = {jp.sum(xT_fwd**2)}")
+    print(f"  fwd xT norm sq. = {jnp.sum(xT_fwd**2)}")
     print(f"  elapsed/iter    = {elapsed/inner_loop_count}s")
 
   ### Main optimization loop.
@@ -203,11 +203,11 @@ def main():
   ax2.set_yscale("log")
   ax2.tick_params(axis="y", labelcolor="tab:red")
   ax2.plot(cost_0_bwd_per_iter**2, alpha=0.5, color="tab:red", label="Cost rewind error")
-  ax2.plot(jp.sum((history.x0_bwd_per_iter - x0)**2, axis=-1),
+  ax2.plot(jnp.sum((history.x0_bwd_per_iter - x0)**2, axis=-1),
            alpha=0.5,
            color="tab:purple",
            label="x(0) rewind error")
-  ax2.plot(jp.sum(history.xT_fwd_per_iter**2, axis=-1),
+  ax2.plot(jnp.sum(history.xT_fwd_per_iter**2, axis=-1),
            alpha=0.5,
            color="tab:brown",
            label="x(T) squared norm")
