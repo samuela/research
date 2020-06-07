@@ -54,6 +54,10 @@ def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1):
     return jnp.transpose(vmap(dynamics_one_jac, in_axes=(0, 1, None))(ts, augs, args),
                          axes=(1, 2, 0))
 
+  # If fun_jac isn't provided then the number of nodes blows up, and we reach
+  # memory errors, even on a machine with 90G. See the full error for more info:
+  # https://gist.github.com/samuela/8c5f6463e08d15c9ffad1f352d1a5513.
+
   # Adding the bc_jac is super important for numerical stability.
   bvp_soln = solve_bvp(lambda ts, augs: dynamics_many_flat(ts, augs, f_args),
                        bc_flat, [t0, t1],
