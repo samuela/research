@@ -34,7 +34,7 @@ def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1):
     return flat
 
   @jit
-  def dynamics(ts, augs, args):
+  def dynamics_many_flat(ts, augs, args):
     return vmap(dynamics_one_flat, in_axes=(0, 1, None))(ts, augs, args).T
 
   def bc(aug_t0, aug_t1):
@@ -55,7 +55,7 @@ def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1):
                          axes=(1, 2, 0))
 
   # Adding the bc_jac is super important for numerical stability.
-  bvp_soln = solve_bvp(lambda ts, augs: dynamics(ts, augs, f_args),
+  bvp_soln = solve_bvp(lambda ts, augs: dynamics_many_flat(ts, augs, f_args),
                        bc_flat, [t0, t1],
                        jnp.array([z_bc_flat, z_bc_flat]).T,
                        fun_jac=lambda ts, augs: dynamics_jac(ts, augs, f_args),
