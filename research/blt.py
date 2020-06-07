@@ -47,6 +47,11 @@ _tee = subprocess.Popen(["tee", _logfile.name], stdin=subprocess.PIPE)
 os.dup2(_tee.stdin.fileno(), sys.stdout.fileno())
 os.dup2(_tee.stdin.fileno(), sys.stderr.fileno())
 
+# Look this up here, so that we fail fast at import time if the necessary env
+# vars are not present. This way a job doesn't run for days only to fail at the
+# end on `blt.show()`. That would be sad.
+GITHUB_GIST_TOKEN = os.environ["GITHUB_GIST_TOKEN"]
+
 def _create_gist(description, files):
   """Create a new gist. `description` is basically the name."""
 
@@ -57,7 +62,7 @@ def _create_gist(description, files):
                            "description": description,
                            "files": files
                        },
-                       headers={"Authorization": "token " + os.environ["GITHUB_GIST_TOKEN"]})
+                       headers={"Authorization": "token " + GITHUB_GIST_TOKEN})
   resp.raise_for_status()
   return resp.json()
 
