@@ -127,7 +127,7 @@ def main():
 
   loss_per_iter = []
   elapsed_per_iter = []
-  for iteration in range(5000):
+  for iteration in range(10000):
     t0 = time.time()
     loss, g = loss_and_grad(x0, opt.value)
     opt = opt.update(g)
