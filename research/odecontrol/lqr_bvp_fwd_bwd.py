@@ -20,7 +20,7 @@ from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import fixed_en
 from research.utils import make_optimizer
 from research import blt
 
-def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1):
+def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1, init_num_nodes=2):
   z_bc = (y0, adj_y_t1, 0.0, zeros_like_tree(f_args))
   z_bc_flat, unravel = ravel_pytree(z_bc)
 
@@ -60,8 +60,9 @@ def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1):
 
   # Adding the bc_jac is super important for numerical stability.
   bvp_soln = solve_bvp(lambda ts, augs: dynamics_many_flat(ts, augs, f_args),
-                       bc_flat, [t0, t1],
-                       jnp.array([z_bc_flat, z_bc_flat]).T,
+                       bc_flat,
+                       jnp.linspace(t0, t1, num=init_num_nodes),
+                       jnp.array([z_bc_flat] * init_num_nodes).T,
                        fun_jac=lambda ts, augs: dynamics_jac(ts, augs, f_args),
                        bc_jac=jit(jacrev(bc_flat, argnums=(0, 1))))
 
