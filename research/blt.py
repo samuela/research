@@ -26,17 +26,25 @@ import qrcode
 import requests
 import numpy as np
 
+### Setup
 # The time we got imported... Hopefully about the same time the script was run.
-_START_TIME = datetime.now()
+_start_time = datetime.now()
 
-# A global (ugh) store of things that we'd like recorded by blt. Use
-# `blt.remember()` to update entries.
-_STUFF_TO_REMEMBER = {}
+# For long running jobs, we can't trust these things to be the same when the job
+# ends vs when it began!
+_git_log = subprocess.check_output(["git", "log", "-1"]).decode("utf-8")
+_git_status = subprocess.check_output(["git", "status"]).decode("utf-8")
+_git_diff = subprocess.check_output(["git", "--no-pager", "diff"]).decode("utf-8")
 
 # Do this at import time, so foolish hoomans have less of a chance of editing
 # the file while the script is running but before we save plots.
 _current_script_path = Path(sys.argv[0])
 _current_script_contents = _current_script_path.read_text()
+
+### Mutable pieces
+# A global (ugh) store of things that we'd like recorded by blt. Use
+# `blt.remember()` to update entries.
+_STUFF_TO_REMEMBER = {}
 
 # Start copying stdout/stderr to a log file.
 # See https://stackoverflow.com/questions/616645/how-to-duplicate-sys-stdout-to-a-log-file.
@@ -100,16 +108,16 @@ Powered by [blt.py](https://gist.github.com/samuela/fb2af385b46ab8640bbb54e25f6b
 ```
 Script/module: {_current_script_path}
 Hostname: {socket.gethostname()}
-Started: {_START_TIME}
+Started: {_start_time}
 Finished: {finished_time}
-Elapsed: {finished_time - _START_TIME}
+Elapsed: {finished_time - _start_time}
 Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
 ```
 ```
-{subprocess.check_output(["git", "log", "-1"]).decode("utf-8")}
+{_git_log}
 ```
 ```
-{subprocess.check_output(["git", "status"]).decode("utf-8")}
+{_git_status}
 ```
 """
 
@@ -117,8 +125,7 @@ Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
   # explanation of gist file ordering rules. Basically: it's alphabetical.
   # Note that GitHub gists do not support empty files, so we need to
   # conditionally include the diff file.
-  git_diff_output = subprocess.check_output(["git", "--no-pager", "diff"]).decode("utf-8")
-  diff_entry = {"E_git_diff.diff": {"content": git_diff_output}} if git_diff_output != "" else {}
+  diff_entry = {"E_git_diff.diff": {"content": _git_diff}} if _git_diff != "" else {}
   create_gist_resp = _create_gist(
       gist_name, {
           f"A_{gist_name}_metadata.md": {
