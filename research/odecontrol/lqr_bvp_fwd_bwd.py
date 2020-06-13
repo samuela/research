@@ -1,24 +1,19 @@
 import time
+
 import control
-from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
-from jax import vjp
-from jax import vmap
-from jax import jit
-from jax import jacrev
-from jax import random
+from scipy.integrate import solve_bvp
+
 import jax.numpy as jnp
+from jax import jacrev, jit, random, vjp, vmap
+from jax.experimental import optimizers, stax
+from jax.experimental.stax import Dense, Tanh
 from jax.flatten_util import ravel_pytree
-from jax.tree_util import tree_map
-from jax.tree_util import tree_multimap
-from jax.experimental.stax import Dense
-from jax.experimental.stax import Tanh
-from jax.experimental import optimizers
-from jax.experimental import stax
-from research.utils import zeros_like_tree
-from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import fixed_env
-from research.utils import make_optimizer
+from jax.tree_util import tree_map, tree_multimap
 from research import blt
+from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import \
+    fixed_env
+from research.utils import make_optimizer, zeros_like_tree
 
 def bvp_fwd_bwd(f, y0, t0, t1, f_args, adj_y_t1, init_num_nodes=2):
   z_bc = (y0, adj_y_t1, 0.0, zeros_like_tree(f_args))
