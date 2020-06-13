@@ -46,14 +46,14 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
     y0 = (jnp.zeros(()), jnp.zeros(()), x0)
     odeint_kwargs = {"mxstep": 1e6}
     y_fwd = ode.odeint(ofunc, y0, ts, policy_params, **odeint_kwargs)
-    yT = tree_map(itemgetter(1), y_fwd)
+    yT = tree_map(itemgetter(-1), y_fwd)
 
     # This is similar but not exactly the same as the place that the rev-mode
     # solution since the step sizes can vary when using all the other
     # parameters.
     y_bwd = ode.odeint(lambda y, t, *args: tree_map(jnp.negative, ofunc(y, -t, *args)), yT,
                        -ts[::-1], policy_params, **odeint_kwargs)
-    y0_bwd = tree_map(itemgetter(1), y_bwd)
+    y0_bwd = tree_map(itemgetter(-1), y_bwd)
 
     return y0, yT, y0_bwd
 
