@@ -146,8 +146,6 @@ def main():
 
   loss_per_iter = []
   elapsed_per_iter = []
-  # import jax
-  # with jax.disable_jit():
   for iteration in range(10000):
     t0 = time.time()
     loss, g = loss_and_grad(opt.value, x0, T)
