@@ -59,6 +59,7 @@ def policy_integrate_cost(dynamics_fn, position_cost_fn, control_cost_fn, gamma,
 
   return eval_from_x0
 
+# TODO: this can be replaced by https://jax.readthedocs.io/en/latest/jax.experimental.host_callback.html
 def fruity_loops(outer_loop_fn, inner_loop_fn, outer_loop_count, inner_loop_count, init):
   run = jit(lambda carry: lax.scan(inner_loop_fn, carry, jnp.arange(inner_loop_count)))
   last = jit(lambda seq: tree_map(itemgetter(-1), seq))
