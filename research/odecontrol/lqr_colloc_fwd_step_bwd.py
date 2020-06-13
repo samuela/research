@@ -1,18 +1,21 @@
 import time
 from operator import itemgetter
 from typing import NamedTuple
+
 import control
 import matplotlib.pyplot as plt
 from scipy import integrate
-from jax import core, jit
+
+from jax import jit
 from jax import numpy as jnp
-from jax import random, value_and_grad, vjp
+from jax import random, vjp
 from jax.experimental import ode, optimizers, stax
 from jax.experimental.stax import Dense, Tanh
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
 from research import blt
-from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import fixed_env
+from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import \
+    fixed_env
 from research.utils import make_optimizer, zeros_like_tree
 
 # import os
