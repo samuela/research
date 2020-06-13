@@ -2,26 +2,21 @@
 over a finite time horizon. This script shows that it fails miserably due to
 issues recovering the initial conditions in reverse pass."""
 
-from operator import itemgetter
 import time
+from operator import itemgetter
 from typing import NamedTuple
+
 import control
 import matplotlib.pyplot as plt
+
 import jax
-from jax import random
-from jax import lax
-from jax import jit
 import jax.numpy as jnp
-from jax.experimental import stax
-from jax.experimental import ode
-from jax.experimental import optimizers
-from jax.experimental.stax import Dense
-from jax.experimental.stax import Tanh
-from jax.tree_util import tree_map
-from jax.tree_util import tree_multimap
-from research.utils import make_optimizer
-from research.utils import zeros_like_tree
+from jax import jit, lax, random
+from jax.experimental import ode, optimizers, stax
+from jax.experimental.stax import Dense, Tanh
+from jax.tree_util import tree_map, tree_multimap
 from research import blt
+from research.utils import make_optimizer, zeros_like_tree
 
 def fixed_env(n):
   A = 0 * jnp.eye(n)
