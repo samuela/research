@@ -27,6 +27,10 @@ from research.utils import make_optimizer, zeros_like_tree
 # TODO: test that our JAX version of RadauDenseOutput agrees with the scipy
 # version.
 
+def eval_spline(ta, tb, Q, y_old, t):
+  t_local = (t - ta) / (tb - ta)
+  return y_old + Q @ jnp.power(t_local, jnp.arange(1, Q.shape[-1] + 1))
+
 class RadauDenseOutput(NamedTuple):
   ts: jnp.array
   Q: jnp.array
@@ -37,8 +41,7 @@ class RadauDenseOutput(NamedTuple):
     ix = jnp.searchsorted(self.ts, t) - 1
     # In case t is before the beginning or after the end.
     ix = jnp.clip(ix, 0, self.Q.shape[0] - 1)
-    t_local = (t - self.ts[ix]) / (self.ts[ix + 1] - self.ts[ix])
-    return self.y_old[ix] + self.Q[ix] @ jnp.power(t_local, jnp.arange(1, self.Q.shape[-1] + 1))
+    return eval_spline(self.ts[ix], self.ts[ix + 1], self.Q[ix], self.y_old[ix], t)
 
 def as_jax_rdo(scipy_rdo):
   """Convert a scipy RadauDenseOutput to a JAX-friendly version."""
@@ -46,59 +49,73 @@ def as_jax_rdo(scipy_rdo):
                           Q=jnp.array([interp.Q for interp in scipy_rdo.interpolants]),
                           y_old=jnp.array([interp.y_old for interp in scipy_rdo.interpolants]))
 
-def solve_ivp_vjp(fun, ta, tb, y0, args):
+def solve_ivp_op(fun, example_y):
   """A collocation-forward, explicit RK-backward solve_ivp.
 
   `fun` follows the scipy convention: fun(t, y, args)."""
-  y0_flat, unravel = ravel_pytree(y0)
+  _, unravel = ravel_pytree(example_y)
 
   @jit
-  def fun_wrapped(t, y):
+  def fun_wrapped(t, y, args):
     ydot, _ = ravel_pytree(fun(t, unravel(y), args))
     return ydot
 
-  # t0 = time.time()
-  solve_ivp_soln = integrate.solve_ivp(fun_wrapped, (ta, tb),
-                                       y0_flat,
-                                       method="Radau",
-                                       dense_output=True)
-  # print(f"Forward solve took {time.time() - t0}s")
-  assert solve_ivp_soln.success
+  def fwd(ta, tb, y0, args):
+    y0_flat, _ = ravel_pytree(y0)
 
-  yT = unravel(solve_ivp_soln.y[:, -1])
-  y_fn = as_jax_rdo(solve_ivp_soln.sol)
+    solve_ivp_soln = integrate.solve_ivp(lambda t, y: fun_wrapped(t, y, args), (ta, tb),
+                                         y0_flat,
+                                         method="Radau",
+                                         dense_output=True)
+    assert solve_ivp_soln.success
 
-  def adj_dynamics(aug, t, y_fn, args):
-    _, y_bar, _ = aug
-    y = unravel(y_fn.eval(-t))
-    _, vjpfun = vjp(fun, -t, y, args)
-    return vjpfun(y_bar)
+    yT = unravel(solve_ivp_soln.y[:, -1])
+    y_fn = as_jax_rdo(solve_ivp_soln.sol)
 
-  def _vjp(g, args):
-    adj_path = ode.odeint(adj_dynamics, (jnp.zeros(()), g, zeros_like_tree(args)),
-                          jnp.array([-tb, -ta]), y_fn, args)
-    (_, _, adj_args) = tree_map(itemgetter(-1), adj_path)
+    return yT, y_fn
+
+  @jit
+  def bwd_spline_segment(ta, tb, args, Q, y_old, aug_tb):
+    """Run the backwards RK on just one segment of the spline."""
+    def adj_dynamics(aug, t, args, Q, y_old):
+      _, y_bar, _ = aug
+      y = unravel(eval_spline(ta, tb, Q, y_old, -t))
+      _, vjpfun = vjp(fun, -t, y, args)
+      return vjpfun(y_bar)
+
+    adj_path = ode.odeint(adj_dynamics, aug_tb, jnp.array([-tb, -ta]), args, Q, y_old)
+    return tree_map(itemgetter(-1), adj_path)
+
+  def bwd(args, y_fn, g):
+    aug = (jnp.zeros(()), g, zeros_like_tree(args))
+    for i in range(y_fn.Q.shape[0])[::-1]:
+      aug = bwd_spline_segment(y_fn.ts[i], y_fn.ts[i + 1], args, y_fn.Q[i], y_fn.y_old[i], aug)
+    (_, _, adj_args) = aug
     return adj_args
 
-  return yT, lambda g: _vjp(g, args)
+  return fwd, bwd
 
 ################################################################################
-def policy_cost_and_grad(dynamics_fn, cost_fn, policy):
+def policy_cost_and_grad(dynamics_fn, cost_fn, policy, example_x):
   def f(_t, y, policy_params):
     _, x = y
     u = policy(policy_params, x)
     return (cost_fn(x, u), dynamics_fn(x, u))
 
+  solve_ivp_fwd, solve_ivp_bwd = solve_ivp_op(f, example_y=(jnp.zeros(()), example_x))
+
   def run(policy_params, x0, total_time):
+    # Run the forward pass.
     y0 = (jnp.zeros(()), x0)
-    yT, ivp_vjp = solve_ivp_vjp(f, 0.0, total_time, y0, policy_params)
-    cost, _ = yT
+    t0 = time.time()
+    (cost, _), y_fn = solve_ivp_fwd(0.0, total_time, y0, policy_params)
+    print(f"      Forward pass took {time.time() - t0}s")
 
     # Run the backward pass.
-    # t0 = time.time()
+    t0 = time.time()
     g = (jnp.ones(()), zeros_like_tree(x0))
-    g = ivp_vjp(g)
-    # print(f"Backward pass took {time.time() - t0}s")
+    g = solve_ivp_bwd(policy_params, y_fn, g)
+    print(f"      Backward pass took {time.time() - t0}s")
     return cost, g
 
   return run
@@ -131,7 +148,10 @@ def main():
   ### Evaluate LQR solution to get a sense of optimal cost.
   K, _, _ = control.lqr(A, B, Q, R, N)
   K = jnp.array(K)
-  opt_policy_cost_fn = policy_cost_and_grad(dynamics_fn, cost_fn, lambda KK, x: -KK @ x)
+  opt_policy_cost_fn = policy_cost_and_grad(dynamics_fn,
+                                            cost_fn,
+                                            lambda KK, x: -KK @ x,
+                                            example_x=x0)
   opt_loss, _opt_K_grad = opt_policy_cost_fn(K, x0, T)
 
   # This is true for longer time horizons, but not true for shorter time
@@ -142,7 +162,7 @@ def main():
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (x_dim, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  loss_and_grad = policy_cost_and_grad(dynamics_fn, cost_fn, policy)
+  loss_and_grad = policy_cost_and_grad(dynamics_fn, cost_fn, policy, example_x=x0)
 
   loss_per_iter = []
   elapsed_per_iter = []
