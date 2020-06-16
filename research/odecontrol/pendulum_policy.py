@@ -1,88 +1,68 @@
 import time
-import matplotlib.pyplot as plt
-from jax import random, jit, lax, vmap, value_and_grad
-from jax.nn import initializers
+
 import jax.numpy as jp
-from jax.experimental import stax
-from jax.experimental import ode
-from jax.experimental import optimizers
+import matplotlib.pyplot as plt
+from jax import jit, lax, random, value_and_grad, vmap
+from jax.experimental import ode, optimizers, stax
 from jax.experimental.stax import Dense, Tanh
-from research.odecontrol.pendulum import pendulum_dynamics
-from research.utils import make_optimizer
+from jax.nn import initializers
+
+from research import blt
 from research.estop.pendulum.env import viz_pendulum_rollout
-
-def policy_cost_and_grad(dynamics, cost, policy, gamma=1.0):
-  def ofunc(y, t, policy_params):
-    x = y[1:]
-    u = policy(policy_params, x)
-    return jp.concatenate((jp.expand_dims((gamma**t) * cost(x, u), axis=0), dynamics(x, u)))
-
-  def run(policy_params, x0, total_time):
-    y0 = jp.concatenate((jp.zeros((1, )), x0))
-
-    # Zero is necessary for some reason...
-    t = jp.array([0.0, total_time])
-
-    primals = ode.odeint(ofunc, y0, t, policy_params)
-    return primals[1, 0]
-
-  return value_and_grad(run)
+from research.odecontrol.pendulum import pendulum_dynamics
+from research.odecontrol.radau_ode import policy_cost_and_grad
+from research.utils import make_optimizer
 
 def main():
-  total_secs = 3.0
+  x0 = jp.array([jp.pi, 0.01])
+  total_secs = 5.0
   rng = random.PRNGKey(0)
 
   dynamics = pendulum_dynamics(
       mass=0.1,
       length=1.0,
       gravity=9.8,
-      friction=0.1,
+      friction=0.0,
   )
 
   def cost(x, u):
     assert x.shape == (2, )
     assert u.shape == (1, )
+    # This is equivalent to OpenAI gym cost defined here: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L51.
     theta = x[0] % (2 * jp.pi)
     return (theta - jp.pi)**2 + 0.1 * (x[1]**2) + 0.001 * (u[0]**2)
 
   policy_init, policy_nn = stax.serial(
       Dense(64),
       Tanh,
-      Dense(64),
-      Tanh,
-      Dense(1, W_init=initializers.normal(stddev=1e-3), b_init=initializers.normal(stddev=1e-3)),
+      # Dense(1, W_init=initializers.normal(stddev=1e-3), b_init=initializers.normal(stddev=1e-3)),
+      Dense(1),
   )
-  # policy_init, policy_nn = Dense(1,
-  #                                W_init=initializers.normal(stddev=1e-3),
-  #                                b_init=initializers.normal(stddev=1e-3))
+
   # Should it matter whether theta is wrapped into [0, 2pi]?
   policy = lambda params, x: policy_nn(
       params, jp.array([x[0] % (2 * jp.pi), x[1],
                         jp.cos(x[0]), jp.sin(x[0])]))
 
-  cost_and_grad = jit(policy_cost_and_grad(dynamics, cost, policy, gamma=0.9))
+  # Note that rng is not split here!
   _, init_policy_params = policy_init(rng, (4, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
+  loss_and_grad = policy_cost_and_grad(dynamics, cost, policy, example_x=x0)
 
-  def multiple_steps(num_steps):
-    def body(_, stuff):
-      _, opt = stuff
-      cost, g = cost_and_grad(opt.value, jp.array([jp.pi, 0.01]), total_secs)
-      return cost, opt.update(g)
-
-    return lambda opt: lax.fori_loop(0, num_steps, body, (jp.zeros(()), opt))
-
-  multi_steps = 1000
-  run = jit(multiple_steps(multi_steps))
-
-  costs = []
-  for i in range(10):
+  loss_per_iter = []
+  elapsed_per_iter = []
+  for i in range(10000):
     t0 = time.time()
-    cost, opt = run(opt)
-    # cost, g = cost_and_grad(opt.value, jp.array([jp.pi, 0.01]), total_secs)
-    # opt = opt.update(g)
-    print(f"Episode {(i + 1) * multi_steps}: cost = {cost}, elapsed = {time.time() - t0}")
-    costs.append(float(cost))
+    loss, g = loss_and_grad(opt.value, x0, total_secs)
+    opt = opt.update(g)
+    elapsed = time.time() - t0
+
+    loss_per_iter.append(loss)
+    elapsed_per_iter.append(elapsed)
+
+    print(f"Episode {i}")
+    print(f"    loss = {loss}")
+    print(f"    elapsed = {elapsed}")
 
     # plot_control_contour(lambda x: policy(opt.value, x))
     # plt.title(f"Policy controls (episode = {(i + 1) * multi_steps})")
@@ -93,7 +73,7 @@ def main():
     # plt.show()
 
   plt.figure()
-  plt.plot(costs)
+  plt.plot(loss_per_iter)
   plt.title("ODE control of an inverted pendulum (linear policy)")
   plt.xlabel("Iteration")
   plt.ylabel(f"Policy cost (T = {total_secs}s)")
@@ -102,11 +82,11 @@ def main():
   # viz
   framerate = 30
   # timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
-  timesteps = jp.linspace(0, 10, num=int(10 * framerate))
+  timesteps = jp.linspace(0, total_secs, num=int(10 * framerate))
   states = ode.odeint(
       lambda x, _: dynamics(x, policy(opt.value, x)),
       # y0=jp.zeros((2, )),
-      y0=jp.array([jp.pi, 0.001]),
+      y0=x0,
       t=timesteps)
   controls = vmap(lambda x: policy(opt.value, x))(states)
 
@@ -123,11 +103,11 @@ def main():
   plt.title("Policy control over time")
 
   plot_control_contour(lambda x: policy(opt.value, x))
-  # plot_policy_dynamics(dynamics, lambda x: policy(opt.value, x))
+  plot_policy_dynamics(dynamics, lambda x: policy(opt.value, x))
 
-  plt.show()
+  blt.show()
 
-  viz_pendulum_rollout(states, controls)
+  # viz_pendulum_rollout(states, controls)
 
 def plot_control_contour(policy):
   t0 = time.time()
