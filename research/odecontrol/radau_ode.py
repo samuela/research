@@ -70,7 +70,14 @@ def solve_ivp_op(fun, example_y):
       _, vjpfun = vjp(fun, -t, y, args)
       return vjpfun(y_bar)
 
-    adj_path = ode.odeint(adj_dynamics, aug_tb, jnp.array([-tb, -ta]), args, Q, y_old)
+    adj_path = ode.odeint(adj_dynamics,
+                          aug_tb,
+                          jnp.array([-tb, -ta]),
+                          args,
+                          Q,
+                          y_old,
+                          rtol=1e-3,
+                          atol=1e-3)
     return tree_map(itemgetter(-1), adj_path)
 
   def bwd(args, y_fn, g):
