@@ -4,8 +4,6 @@ from typing import NamedTuple
 
 import control
 import matplotlib.pyplot as plt
-from scipy import integrate
-
 from jax import jit
 from jax import numpy as jnp
 from jax import random, vjp
@@ -13,6 +11,8 @@ from jax.experimental import ode, optimizers, stax
 from jax.experimental.stax import Dense, Tanh
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
+from scipy import integrate
+
 from research import blt
 from research.odecontrol.lqr_integrate_cost_trajopt_failure_case import \
     fixed_env
@@ -89,7 +89,14 @@ def solve_ivp_op(fun, example_y):
   def bwd(args, y_fn, g):
     aug = (jnp.zeros(()), g, zeros_like_tree(args))
     for i in range(y_fn.Q.shape[0])[::-1]:
-      aug = bwd_spline_segment(y_fn.ts[i], y_fn.ts[i + 1], args, y_fn.Q[i], y_fn.y_old[i], aug)
+      # Believe it or not it's faster to pull these out into variables.
+      ta = y_fn.ts[i]
+      tb = y_fn.ts[i + 1]
+
+      # Believe it or not solve_ivp hands us shit like time steps that are only
+      # 1e-16 apart. And those don't play nicely with Runge-Kutta.
+      if tb - ta > 1e-8:
+        aug = bwd_spline_segment(ta, tb, args, y_fn.Q[i], y_fn.y_old[i], aug)
     (_, _, adj_args) = aug
     return adj_args
 
@@ -109,13 +116,13 @@ def policy_cost_and_grad(dynamics_fn, cost_fn, policy, example_x):
     y0 = (jnp.zeros(()), x0)
     t0 = time.time()
     (cost, _), y_fn = solve_ivp_fwd(0.0, total_time, y0, policy_params)
-    print(f"      Forward pass took {time.time() - t0}s")
+    print(f"... Forward pass took {time.time() - t0}s")
 
     # Run the backward pass.
     t0 = time.time()
     g = (jnp.ones(()), zeros_like_tree(x0))
     g = solve_ivp_bwd(policy_params, y_fn, g)
-    print(f"      Backward pass took {time.time() - t0}s")
+    print(f"... Backward pass took {time.time() - t0}s")
     return cost, g
 
   return run
