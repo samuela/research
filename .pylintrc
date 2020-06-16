@@ -75,7 +75,9 @@ disable=missing-docstring,
         len-as-condition,
         unsubscriptable-object,
         # These we are trying to get rid of:
-        too-many-statements
+        too-many-statements,
+        # VSCode sometimes disagrees with pylint's order.
+        wrong-import-order
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
