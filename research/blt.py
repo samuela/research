@@ -13,18 +13,20 @@ Setup:
  * GitHub SSH git pulls and pushes from this machine must be set up.
 """
 
-from datetime import datetime
 import os
 import pickle
 import socket
 import subprocess
 import sys
-from pathlib import Path
 import tempfile
+import warnings
+from datetime import datetime
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 import qrcode
 import requests
-import numpy as np
 
 ### Setup
 # The time we got imported... Hopefully about the same time the script was run.
@@ -59,6 +61,30 @@ os.dup2(_tee.stdin.fileno(), sys.stderr.fileno())
 # vars are not present. This way a job doesn't run for days only to fail at the
 # end on `blt.show()`. That would be sad.
 GITHUB_GIST_TOKEN = os.environ["GITHUB_GIST_TOKEN"]
+
+# The set of environment variables that are secret and should not be recorded.
+# Users should append things to this list that they would like redacted from blt
+# reports.
+SECRET_ENV_VARS = ["GITHUB_GIST_TOKEN"]
+
+# Lower-case words that are suspect if found in env vars.
+_suspect_env_var_words = ["token", "pass", "password", "secret", "key"]
+
+def _get_environ():
+  env = dict(os.environ)
+  secret_keys_lower = [k.lower() for k in SECRET_ENV_VARS]
+  for k in env:
+    k_lower = k.lower()
+    if k_lower in secret_keys_lower:
+      env[k] = "***REDACTED***"
+    elif any(word in k_lower for word in _suspect_env_var_words):
+      env[k] = "***REDACTED***"
+      warnings.warn(f"Env var {k} looks suspicious, so it's been redacted.")
+  return env
+
+# It's technically possible for Python to modify its own environ, so we do this
+# at module load time.
+_environ = _get_environ()
 
 def _create_gist(description, files):
   """Create a new gist. `description` is basically the name."""
@@ -112,6 +138,8 @@ Started: {_start_time}
 Finished: {finished_time}
 Elapsed: {finished_time - _start_time}
 Remembered keys: {list(_STUFF_TO_REMEMBER.keys())}
+Command: {sys.argv}
+Env vars: {_environ}
 ```
 ```
 {_git_log}
