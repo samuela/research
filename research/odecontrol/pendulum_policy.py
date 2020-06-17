@@ -1,6 +1,6 @@
 import time
 
-import jax.numpy as jp
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import random, vmap
 from jax.experimental import ode, optimizers, stax
@@ -14,13 +14,13 @@ from research.utils import make_optimizer
 
 def sample_x0(rng):
   rng_theta, rng_thetadot = random.split(rng)
-  return jp.array([
-      random.uniform(rng_theta, minval=0, maxval=2 * jp.pi),
+  return jnp.array([
+      random.uniform(rng_theta, minval=0, maxval=2 * jnp.pi),
       random.uniform(rng_thetadot, minval=-1, maxval=1)
   ])
 
 def main():
-  num_iter = 10000
+  num_iter = 10
   # Most people run 1000 steps and the OpenAI gym pendulum is 0.05s per step.
   # The max torque that can be applied is also 2 in their setup.
   total_secs = 5.0
@@ -38,8 +38,8 @@ def main():
     assert x.shape == (2, )
     assert u.shape == (1, )
     # This is equivalent to OpenAI gym cost defined here: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L51.
-    theta = x[0] % (2 * jp.pi)
-    return (theta - jp.pi)**2 + 0.1 * (x[1]**2) + 0.001 * (u[0]**2)
+    theta = x[0] % (2 * jnp.pi)
+    return (theta - jnp.pi)**2 + 0.1 * (x[1]**2) + 0.001 * (u[0]**2)
 
   policy_init, policy_nn = stax.serial(
       Dense(64),
@@ -53,13 +53,13 @@ def main():
 
   # Should it matter whether theta is wrapped into [0, 2pi]?
   policy = lambda params, x: policy_nn(
-      params, jp.array([x[0] % (2 * jp.pi), x[1],
-                        jp.cos(x[0]), jp.sin(x[0])]))
+      params, jnp.array([x[0] % (2 * jnp.pi), x[1],
+                         jnp.cos(x[0]), jnp.sin(x[0])]))
 
   rng_init_params, rng = random.split(rng)
   _, init_policy_params = policy_init(rng_init_params, (4, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  loss_and_grad = policy_cost_and_grad(dynamics, cost, policy, example_x=jp.zeros(2))
+  loss_and_grad = policy_cost_and_grad(dynamics, cost, policy, example_x=jnp.zeros(2))
 
   loss_per_iter = []
   elapsed_per_iter = []
@@ -92,7 +92,7 @@ def main():
 
   # viz
   framerate = 30
-  timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
+  timesteps = jnp.linspace(0, total_secs, num=int(total_secs * framerate))
   states = ode.odeint(lambda x, _: dynamics(x, policy(opt.value, x)), y0=x0s[0], t=timesteps)
   controls = vmap(lambda x: policy(opt.value, x))(states)
 
@@ -118,10 +118,10 @@ def main():
 def plot_control_contour(policy):
   t0 = time.time()
   plt.figure()
-  thetas = jp.linspace(0, 2 * jp.pi, num=100)
-  theta_dots = jp.linspace(-5, 5, num=100)
-  z = vmap(policy)(jp.array([[th, thdot] for th in thetas for thdot in theta_dots]))
-  plt.contourf(thetas, theta_dots, jp.reshape(z, (len(thetas), len(theta_dots))))
+  thetas = jnp.linspace(0, 2 * jnp.pi, num=100)
+  theta_dots = jnp.linspace(-5, 5, num=100)
+  z = vmap(policy)(jnp.array([[th, thdot] for th in thetas for thdot in theta_dots]))
+  plt.contourf(thetas, theta_dots, jnp.reshape(z, (len(thetas), len(theta_dots))))
   plt.colorbar()
   plt.xlabel("theta")
   plt.ylabel("theta dot")
@@ -131,11 +131,11 @@ def plot_control_contour(policy):
 def plot_policy_dynamics(dynamics, policy):
   t0 = time.time()
   plt.figure()
-  thetas = jp.linspace(0, 2 * jp.pi, num=100)
-  theta_dots = jp.linspace(-10, 10, num=100)
-  uv = vmap(lambda x: dynamics(x, policy(x)))(jp.array([[th, thdot] for th in thetas
-                                                        for thdot in theta_dots]))
-  uv_grid = jp.reshape(uv, (len(thetas), len(theta_dots), 2))
+  thetas = jnp.linspace(0, 2 * jnp.pi, num=100)
+  theta_dots = jnp.linspace(-10, 10, num=100)
+  uv = vmap(lambda x: dynamics(x, policy(x)))(jnp.array([[th, thdot] for th in thetas
+                                                         for thdot in theta_dots]))
+  uv_grid = jnp.reshape(uv, (len(thetas), len(theta_dots), 2))
   plt.streamplot(thetas, theta_dots, uv_grid[:, :, 0], uv_grid[:, :, 1])
   plt.xlabel("theta")
   plt.ylabel("theta dot")
