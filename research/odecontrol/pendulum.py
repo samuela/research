@@ -3,9 +3,11 @@ greater than `max_torque / (mass * length)` and can overpower gravity
 otherwise."""
 
 import time
-import matplotlib.pyplot as plt
+
 import jax.numpy as jp
+import matplotlib.pyplot as plt
 from jax.experimental import ode
+
 from research.estop.pendulum.env import viz_pendulum_rollout
 
 def pendulum_dynamics(mass: float, length: float, gravity: float, friction: float):
@@ -29,6 +31,8 @@ def pendulum_dynamics(mass: float, length: float, gravity: float, friction: floa
     theta_dot = state[1]
     u = action[0]
 
+    # There's a very mysterious factor of 3 in the OpenAI definition of these
+    # dynamics: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L53.
     theta_dotdot = (-gravity / length * jp.sin(theta) - friction * theta_dot + u /
                     (mass * length**2))
 
