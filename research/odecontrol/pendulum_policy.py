@@ -20,12 +20,15 @@ def sample_x0(rng):
   ])
 
 def main():
-  total_secs = 5.0
   num_iter = 10000
+  # Most people run 1000 steps and the OpenAI gym pendulum is 0.05s per step.
+  # The max torque that can be applied is also 2 in their setup.
+  total_secs = 5.0
+  max_torque = 2.0
   rng = random.PRNGKey(0)
 
   dynamics = pendulum_dynamics(
-      mass=0.1,
+      mass=1.0,
       length=1.0,
       gravity=9.8,
       friction=0.0,
@@ -41,7 +44,11 @@ def main():
   policy_init, policy_nn = stax.serial(
       Dense(64),
       Tanh,
+      Dense(64),
+      Tanh,
       Dense(1),
+      Tanh,
+      stax.elementwise(lambda x: max_torque * x),
   )
 
   # Should it matter whether theta is wrapped into [0, 2pi]?
@@ -70,25 +77,22 @@ def main():
     print(f"    loss = {loss}")
     print(f"    elapsed = {elapsed}")
 
-    # plot_control_contour(lambda x: policy(opt.value, x))
-    # plt.title(f"Policy controls (episode = {(i + 1) * multi_steps})")
-
-    # plot_policy_dynamics(dynamics, lambda x: policy(opt.value, x))
-    # plt.title(f"Dynamics under the current policy (episode = {(i + 1) * multi_steps})")
-
-    # plt.show()
+  blt.remember({
+      "loss_per_iter": loss_per_iter,
+      "elapsed_per_iter": elapsed_per_iter,
+      "final_params": opt.value
+  })
 
   plt.figure()
   plt.plot(loss_per_iter)
-  plt.title("ODE control of an inverted pendulum (linear policy)")
+  plt.yscale("log")
+  plt.title("ODE control of an inverted pendulum")
   plt.xlabel("Iteration")
   plt.ylabel(f"Policy cost (T = {total_secs}s)")
-  # plt.savefig("ode_control_pendulum_linear.png")
 
   # viz
   framerate = 30
-  # timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
-  timesteps = jp.linspace(0, total_secs, num=int(10 * framerate))
+  timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
   states = ode.odeint(lambda x, _: dynamics(x, policy(opt.value, x)), y0=x0s[0], t=timesteps)
   controls = vmap(lambda x: policy(opt.value, x))(states)
 
