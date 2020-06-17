@@ -2,20 +2,26 @@ import time
 
 import jax.numpy as jp
 import matplotlib.pyplot as plt
-from jax import jit, lax, random, value_and_grad, vmap
+from jax import random, vmap
 from jax.experimental import ode, optimizers, stax
 from jax.experimental.stax import Dense, Tanh
-from jax.nn import initializers
 
 from research import blt
-from research.estop.pendulum.env import viz_pendulum_rollout
+# from research.estop.pendulum.env import viz_pendulum_rollout
 from research.odecontrol.pendulum import pendulum_dynamics
 from research.odecontrol.radau_ode import policy_cost_and_grad
 from research.utils import make_optimizer
 
+def sample_x0(rng):
+  rng_theta, rng_thetadot = random.split(rng)
+  return jp.array([
+      random.uniform(rng_theta, minval=0, maxval=2 * jp.pi),
+      random.uniform(rng_thetadot, minval=-1, maxval=1)
+  ])
+
 def main():
-  x0 = jp.array([jp.pi, 0.01])
   total_secs = 5.0
+  num_iter = 10000
   rng = random.PRNGKey(0)
 
   dynamics = pendulum_dynamics(
@@ -35,7 +41,6 @@ def main():
   policy_init, policy_nn = stax.serial(
       Dense(64),
       Tanh,
-      # Dense(1, W_init=initializers.normal(stddev=1e-3), b_init=initializers.normal(stddev=1e-3)),
       Dense(1),
   )
 
@@ -44,16 +49,17 @@ def main():
       params, jp.array([x[0] % (2 * jp.pi), x[1],
                         jp.cos(x[0]), jp.sin(x[0])]))
 
-  # Note that rng is not split here!
-  _, init_policy_params = policy_init(rng, (4, ))
+  rng_init_params, rng = random.split(rng)
+  _, init_policy_params = policy_init(rng_init_params, (4, ))
   opt = make_optimizer(optimizers.adam(1e-3))(init_policy_params)
-  loss_and_grad = policy_cost_and_grad(dynamics, cost, policy, example_x=x0)
+  loss_and_grad = policy_cost_and_grad(dynamics, cost, policy, example_x=jp.zeros(2))
 
   loss_per_iter = []
   elapsed_per_iter = []
-  for i in range(10000):
+  x0s = vmap(sample_x0)(random.split(rng, num_iter))
+  for i in range(num_iter):
     t0 = time.time()
-    loss, g = loss_and_grad(opt.value, x0, total_secs)
+    loss, g = loss_and_grad(opt.value, x0s[i], total_secs)
     opt = opt.update(g)
     elapsed = time.time() - t0
 
@@ -83,11 +89,7 @@ def main():
   framerate = 30
   # timesteps = jp.linspace(0, total_secs, num=int(total_secs * framerate))
   timesteps = jp.linspace(0, total_secs, num=int(10 * framerate))
-  states = ode.odeint(
-      lambda x, _: dynamics(x, policy(opt.value, x)),
-      # y0=jp.zeros((2, )),
-      y0=x0,
-      t=timesteps)
+  states = ode.odeint(lambda x, _: dynamics(x, policy(opt.value, x)), y0=x0s[0], t=timesteps)
   controls = vmap(lambda x: policy(opt.value, x))(states)
 
   plt.figure()
