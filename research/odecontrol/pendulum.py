@@ -4,7 +4,7 @@ otherwise."""
 
 import time
 
-import jax.numpy as jp
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax.experimental import ode
 
@@ -33,12 +33,12 @@ def pendulum_dynamics(mass: float, length: float, gravity: float, friction: floa
 
     # There's a very mysterious factor of 3 in the OpenAI definition of these
     # dynamics: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L53.
-    theta_dotdot = (-gravity / length * jp.sin(theta) - friction * theta_dot + u /
+    theta_dotdot = (-gravity / length * jnp.sin(theta) - friction * theta_dot + u /
                     (mass * length**2))
 
     # theta_dotdot = theta_dotdot * (theta_dot < 10) * (theta_dot > -10)
 
-    return jp.array([theta_dot, theta_dotdot])
+    return jnp.array([theta_dot, theta_dotdot])
 
   return f
 
@@ -55,9 +55,9 @@ if __name__ == "__main__":
 
   print("Solving ODE...")
   t0 = time.time()
-  states = ode.odeint(lambda state, t: dynamics(state, jp.zeros((1, ))),
-                      y0=jp.array([jp.pi - 1e-1, 0.0]),
-                      t=jp.linspace(0, total_secs, num=total_secs * framerate))
+  states = ode.odeint(lambda state, t: dynamics(state, jnp.zeros((1, ))),
+                      y0=jnp.array([jnp.pi - 1e-1, 0.0]),
+                      t=jnp.linspace(0, total_secs, num=total_secs * framerate))
   print(f"... and done in {time.time() - t0}s")
 
   plt.figure()
@@ -66,4 +66,4 @@ if __name__ == "__main__":
   plt.ylabel("theta dot")
   plt.show()
 
-  viz_pendulum_rollout(states, jp.zeros((states.shape[0], )))
+  viz_pendulum_rollout(states, jnp.zeros((states.shape[0], )))
