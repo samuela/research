@@ -130,16 +130,27 @@ def plot_control_contour(policy):
 
 def plot_policy_dynamics(dynamics, policy):
   t0 = time.time()
-  plt.figure()
   thetas = jnp.linspace(0, 2 * jnp.pi, num=100)
   theta_dots = jnp.linspace(-10, 10, num=100)
-  uv = vmap(lambda x: dynamics(x, policy(x)))(jnp.array([[th, thdot] for th in thetas
-                                                         for thdot in theta_dots]))
-  uv_grid = jnp.reshape(uv, (len(thetas), len(theta_dots), 2))
-  plt.streamplot(thetas, theta_dots, uv_grid[:, :, 0], uv_grid[:, :, 1])
+
+  dyn = lambda x: dynamics(x, policy(x))
+  uv = vmap(lambda th: vmap(lambda thdot: dyn(jnp.array([th, thdot])))(theta_dots))(thetas)
+  uv = jnp.transpose(uv, (1, 0, 2))
+
+  # Quiver plot.
+  plt.figure()
+  plt.quiver(thetas, theta_dots, uv[:, :, 0], uv[:, :, 1])
   plt.xlabel("theta")
   plt.ylabel("theta dot")
   plt.title("Dynamics under policy")
+
+  # Stream plot is way slower.
+  plt.figure()
+  plt.streamplot(thetas, theta_dots, uv[:, :, 0], uv[:, :, 1])
+  plt.xlabel("theta")
+  plt.ylabel("theta dot")
+  plt.title("Dynamics under policy")
+
   print(f"[timing] Plotting control dynamics took {time.time() - t0}s")
 
 if __name__ == "__main__":
