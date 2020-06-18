@@ -20,7 +20,7 @@ def sample_x0(rng):
   ])
 
 def main():
-  num_iter = 10
+  num_iter = 10000
   # Most people run 1000 steps and the OpenAI gym pendulum is 0.05s per step.
   # The max torque that can be applied is also 2 in their setup.
   total_secs = 5.0
@@ -90,23 +90,27 @@ def main():
   plt.xlabel("Iteration")
   plt.ylabel(f"Policy cost (T = {total_secs}s)")
 
-  # viz
+  # Viz
+  num_viz_rollouts = 50
   framerate = 30
   timesteps = jnp.linspace(0, total_secs, num=int(total_secs * framerate))
-  states = ode.odeint(lambda x, _: dynamics(x, policy(opt.value, x)), y0=x0s[0], t=timesteps)
-  controls = vmap(lambda x: policy(opt.value, x))(states)
+  rollout = lambda x0: ode.odeint(
+      lambda x, _: dynamics(x, policy(opt.value, x)), y0=x0, t=timesteps)
 
   plt.figure()
-  plt.plot(states[:, 0], states[:, 1], marker='.')
+  states = rollout(jnp.zeros(2))
+  plt.plot(states[:, 0], states[:, 1], marker=".")
+  plt.xlabel("theta")
+  plt.ylabel("theta dot")
+  plt.title("Swing up trajectory")
+
+  plt.figure()
+  states = vmap(rollout)(x0s[:num_viz_rollouts])
+  for i in range(num_viz_rollouts):
+    plt.plot(states[i, :, 0], states[i, :, 1], marker='.', alpha=0.5)
   plt.xlabel("theta")
   plt.ylabel("theta dot")
   plt.title("Phase space trajectory")
-
-  plt.figure()
-  plt.plot(timesteps, controls)
-  plt.xlabel("time")
-  plt.ylabel("control input")
-  plt.title("Policy control over time")
 
   plot_control_contour(lambda x: policy(opt.value, x))
   plot_policy_dynamics(dynamics, lambda x: policy(opt.value, x))
