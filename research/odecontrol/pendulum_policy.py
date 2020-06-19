@@ -20,10 +20,10 @@ def sample_x0(rng):
   ])
 
 def main():
-  num_iter = 10000
+  num_iter = 50000
   # Most people run 1000 steps and the OpenAI gym pendulum is 0.05s per step.
   # The max torque that can be applied is also 2 in their setup.
-  total_secs = 5.0
+  total_secs = 20.0
   max_torque = 2.0
   rng = random.PRNGKey(0)
 
