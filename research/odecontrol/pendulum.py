@@ -65,7 +65,7 @@ def record_pendulum_rollout(filepath, states, actions):
 
 if __name__ == "__main__":
   total_secs = 10
-  framerate = 60
+  framerate = PendulumEnv.metadata["video.frames_per_second"]
 
   dynamics = pendulum_dynamics(
       mass=1.0,
