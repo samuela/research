@@ -6,6 +6,8 @@ import time
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+from gym.envs.classic_control import PendulumEnv
+from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from jax.experimental import ode
 
 from research.estop.pendulum.env import viz_pendulum_rollout
@@ -42,12 +44,31 @@ def pendulum_dynamics(mass: float, length: float, gravity: float, friction: floa
 
   return f
 
+def record_pendulum_rollout(filepath, states, actions):
+  assert states.shape[0] == actions.shape[0]
+
+  eps = jnp.finfo(float).eps
+
+  gymenv = PendulumEnv()
+  gymenv.reset()
+  video = VideoRecorder(gymenv, path=filepath)
+
+  for t in range(states.shape[0]):
+    gymenv.state = states[t] + jnp.pi
+    # array(0.0) is False-y which causes problems.
+    gymenv.last_u = actions[t] + eps
+    # gymenv.step()
+    gymenv.render()
+    video.capture_frame()
+
+  video.close()
+
 if __name__ == "__main__":
   total_secs = 10
   framerate = 60
 
   dynamics = pendulum_dynamics(
-      mass=0.1,
+      mass=1.0,
       length=1.0,
       gravity=9.8,
       friction=0.1,
@@ -66,4 +87,4 @@ if __name__ == "__main__":
   plt.ylabel("theta dot")
   plt.show()
 
-  viz_pendulum_rollout(states, jnp.zeros((states.shape[0], )))
+  record_pendulum_rollout("example_rollout.mp4", states, jnp.zeros((states.shape[0], )))
