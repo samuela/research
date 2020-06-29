@@ -8,19 +8,12 @@ from jax.experimental.stax import Dense, Tanh
 
 from research import blt
 # from research.estop.pendulum.env import viz_pendulum_rollout
-from research.odecontrol.pendulum import pendulum_dynamics
+from research.odecontrol.pendulum.dynamics import (cost, pendulum_dynamics, sample_x0)
 from research.odecontrol.radau_ode import policy_cost_and_grad
 from research.utils import make_optimizer
 
-def sample_x0(rng):
-  rng_theta, rng_thetadot = random.split(rng)
-  return jnp.array([
-      random.uniform(rng_theta, minval=0, maxval=2 * jnp.pi),
-      random.uniform(rng_thetadot, minval=-1, maxval=1)
-  ])
-
 def main():
-  num_iter = 50000
+  num_iter = 25000
   # Most people run 1000 steps and the OpenAI gym pendulum is 0.05s per step.
   # The max torque that can be applied is also 2 in their setup.
   total_secs = 20.0
@@ -33,13 +26,6 @@ def main():
       gravity=9.8,
       friction=0.0,
   )
-
-  def cost(x, u):
-    assert x.shape == (2, )
-    assert u.shape == (1, )
-    # This is equivalent to OpenAI gym cost defined here: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L51.
-    theta = x[0] % (2 * jnp.pi)
-    return (theta - jnp.pi)**2 + 0.1 * (x[1]**2) + 0.001 * (u[0]**2)
 
   policy_init, policy_nn = stax.serial(
       Dense(64),

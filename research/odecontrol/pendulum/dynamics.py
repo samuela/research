@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from gym.envs.classic_control import PendulumEnv
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
+from jax import random
 from jax.experimental import ode
 
 from research.estop.pendulum.env import viz_pendulum_rollout
@@ -43,6 +44,20 @@ def pendulum_dynamics(mass: float, length: float, gravity: float, friction: floa
     return jnp.array([theta_dot, theta_dotdot])
 
   return f
+
+def cost(x, u):
+  assert x.shape == (2, )
+  assert u.shape == (1, )
+  # This is equivalent to OpenAI gym cost defined here: https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py#L51.
+  theta = x[0] % (2 * jnp.pi)
+  return (theta - jnp.pi)**2 + 0.1 * (x[1]**2) + 0.001 * (u[0]**2)
+
+def sample_x0(rng):
+  rng_theta, rng_thetadot = random.split(rng)
+  return jnp.array([
+      random.uniform(rng_theta, minval=0, maxval=2 * jnp.pi),
+      random.uniform(rng_thetadot, minval=-10, maxval=10)
+  ])
 
 def record_pendulum_rollout(filepath, states, actions):
   assert states.shape[0] == actions.shape[0]
