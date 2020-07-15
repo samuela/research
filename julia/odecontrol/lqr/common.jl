@@ -11,7 +11,6 @@ function linear_env(floatT, x_dim, A, B, Q, R)
 
     function sample_x0()
         randn(floatT, x_dim)
-        # ones(floatT, x_dim)
     end
 
     dynamics, cost, sample_x0
