@@ -30,13 +30,21 @@ num_samples = 10
 # A linear policy. Use this when operating with lqr_params below.
 policy = FastDense(x_dim, x_dim)
 
-A, B, Q, R = 0 * I, I, I, I
+# A = Matrix{floatT}(0 * I, x_dim, x_dim)
+# B = Matrix{floatT}(I, x_dim, x_dim)
+# Q = Matrix{floatT}(I, x_dim, x_dim)
+# R = Matrix{floatT}(I, x_dim, x_dim)
+
+const A = 0 * I
+const B = I
+const Q = I
+const R = I
 dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, A, B, Q, R)
 
 # lqr needs to be able to infer the dimension. See https://stackoverflow.com/questions/57270276/identity-matrix-in-julia.
-K = ControlSystems.lqr(Matrix{Float64}(A, x_dim, x_dim), B, Q, R)
+const K = ControlSystems.lqr(Matrix{Float64}(A, x_dim, x_dim), B, Q, R)
 # We need to add zeros at the end for the bias term. See also https://github.com/SciML/DiffEqFlux.jl/blob/fa5d1678def49b0f0f3bad99e646f78c9a2a9d71/src/fast_layers.jl#L43.
-lqr_params = vcat(convert(Array{floatT}, -K[:]), zeros(floatT, x_dim))
+const lqr_params = vcat(convert(Array{floatT}, -K[:]), zeros(floatT, x_dim))
 
 function policy_dynamics!(dx, x, policy_params, t)
     u = policy(x, policy_params)
