@@ -19,7 +19,7 @@ seed!(123)
 floatT = Float32
 x_dim = 2
 T = 10.0
-num_samples = 64
+num_samples = 256
 
 # num_hidden = 64
 # policy = FastChain(
@@ -97,8 +97,9 @@ function gold_standard_gradient(x0, policy_params)
     @assert typeof(bwd_sol.u) == Array{Array{Float64,1},1}
 
     # Note that the backwards solution includes the gradient on x0, as well as
-    # policy_params.
-    (fwd = fwd_sol, bwd = bwd_sol)
+    # policy_params. The full ODESolution things can't be serialized easily
+    # since they `policy_dynamics!` and shit...
+    (xT = fwd_sol.u[end], g = bwd_sol.u[end])
 end
 
 function eval_interp(x0, policy_params, abstol, reltol)
@@ -131,8 +132,7 @@ function eval_interp(x0, policy_params, abstol, reltol)
     # We do exactly as many f calls as there are function calls in the forward
     # pass, and in the backward pass we don't need to call f, but instead we
     # call ∇f.
-    (fwd = fwd_sol,
-        bwd = bwd_sol,
+    (xT = fwd_sol.u[end],
         g = bwd_sol.u[end],
         nf = fwd_sol.destats.nf,
         n∇f = bwd_sol.destats.nf,)
@@ -168,8 +168,7 @@ function eval_backsolve(x0, policy_params, abstol, reltol, checkpointing)
     # reconstructed x state.
     # When running the backsolve adjoint we have additional f evaluations every
     # step of the backwards pass, since we need -f to reconstruct the x path.
-    (fwd = fwd_sol,
-        bwd = bwd_sol,
+    (xT = fwd_sol.u[end],
         g = bwd_sol.u[end][1:end - x_dim],
         nf = fwd_sol.destats.nf + bwd_sol.destats.nf,
         n∇f = bwd_sol.destats.nf,)
