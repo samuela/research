@@ -19,7 +19,7 @@ seed!(123)
 floatT = Float32
 x_dim = 2
 T = 10.0
-num_samples = 5
+num_samples = 64
 
 # num_hidden = 64
 # policy = FastChain(
@@ -175,41 +175,26 @@ function eval_backsolve(x0, policy_params, abstol, reltol, checkpointing)
         n∇f = bwd_sol.destats.nf,)
 end
 
-function eval_euler_bptt(x0, policy_params)
-    fwd_sol = solve(
-        ODEProblem(policy_dynamics!, x0, (0, T), policy_params),
-        Tsit5(),
-        u0=x0,
-        p=policy_params,
-        abstol=abstol,
-        reltol=reltol,
-    )
-    bwd_sol = solve(
-        ODEAdjointProblem(
-            fwd_sol,
-            BacksolveAdjoint(checkpointing=checkpointing),
-            cost_functional,
-            nothing,
-            dcost_tuple,
-        ),
-        Tsit5(),
-        dense=false,
-        save_everystep=false,
-        abstol=abstol,
-        reltol=reltol,
-    )
-    @assert typeof(fwd_sol.u) == Array{Array{floatT,1},1}
-    @assert typeof(bwd_sol.u) == Array{Array{floatT,1},1}
+function euler_with_cost(x0, policy_params, dt, num_steps)
+    x = x0
+    cost_accum = 0.0
+    for _ in 1:num_steps
+        u = policy(x, policy_params)
+        cost_accum += dt * cost(x, u)
+        x += dt * dynamics(x, u)
+    end
+    cost_accum
+end
 
-    # In the backsolve adjoint, the last x_dim dimensions are for the
-    # reconstructed x state.
-    # When running the backsolve adjoint we have additional f evaluations every
-    # step of the backwards pass, since we need -f to reconstruct the x path.
-    (fwd = fwd_sol,
-        bwd = bwd_sol,
-        g = bwd_sol.u[end][1:end - x_dim],
-        nf = fwd_sol.destats.nf + bwd_sol.destats.nf,
-        n∇f = bwd_sol.destats.nf,)
+function eval_euler_bptt(x0, policy_params, dt)
+    # Julia seems to do auto-rounding with floor when doing 1:num_steps. That's
+    # fine for our purposes.
+    num_steps = T / dt
+    g_x0, g_θ = Zygote.gradient((x0, θ) -> euler_with_cost(x0, θ, dt, num_steps), x0, policy_params)
+    # We require gradients on both x0 and θ, vcat'd together.
+    (g = vcat(g_x0, g_θ),
+        nf = num_steps,
+        n∇f = num_steps,)
 end
 
 # See https://github.com/SciML/DiffEqSensitivity.jl/issues/304 for why this
@@ -257,24 +242,32 @@ init_conditions = [(sample_x0(), lqr_params) for _ = 1:num_samples]
 
 force(thunk) = thunk()
 
+@info "euler bptt"
+# 1e-6 is too small and exhausts the memory available.
+@time euler_bptt_results = qmap(force, [
+    () -> (dt, eval_euler_bptt(x0, θ, dt))
+    for (x0, θ) in init_conditions
+    for dt in [1e-5, 1e-4, 0.001, 0.01, 0.1, 1.0]
+])
+
 @info "interp"
 # @benchmark eval_interp(sample_x0(), lqr_params, 1e-12, 1e-9)
 @time interp_results = qmap(force, [
-    () -> (atol, rtol, eval_interp(x0, θ, atol, rtol))
+    () -> ((atol, rtol), eval_interp(x0, θ, atol, rtol))
     for (x0, θ) in init_conditions
     for (atol, rtol) in zip(abstols, reltols)
 ])
 
 @info "backsolve"
 @time backsolve_results = qmap(force, [
-    () -> (atol, rtol, eval_backsolve(x0, θ, atol, rtol, false))
+    () -> ((atol, rtol), eval_backsolve(x0, θ, atol, rtol, false))
     for (x0, θ) in init_conditions
     for (atol, rtol) in zip(abstols, reltols)
 ])
 
 @info "backsolve with checkpoints"
 @time backsolve_checkpointing_results = qmap(force, [
-    () -> (atol, rtol, eval_backsolve(x0, θ, atol, rtol, true))
+    () -> ((atol, rtol), eval_backsolve(x0, θ, atol, rtol, true))
     for (x0, θ) in init_conditions
     for (atol, rtol) in zip(abstols, reltols)
 ])
@@ -286,13 +279,24 @@ force(thunk) = thunk()
 
 JLSO.save("lqr_gradient_error_results.jlso",
     :gold_standard_results => gold_standard_results,
+    :euler_bptt_results => euler_bptt_results,
     :interp_results => interp_results,
     :backsolve_results => backsolve_results,
     :backsolve_checkpointing_results => backsolve_checkpointing_results)
 
 # function plot_results!(results_flat, label)
-#     results = [[t for (a, r, t) in results_flat if (a, r) == (atol, rtol)]
-#                 for (atol, rtol) in zip(abstols, reltols)]
+#     # An array where rows correspond to each (x0, θ) pair, and columns
+#     # correspond to each tolerance level. Use the map to drop the descriptive
+#     # tolerance key value.
+#     results = reshape(map((t) -> t[end], results_flat), :, num_samples)
+#     # results = reshape(results_flat, :, num_samples)
+#     # @show size(results)
+#     # Back to array of arrays, with outer arrays being tolerance levels.
+#     results = collect(eachrow(results))
+#     # @show size(results)
+#     # @show typeof(results)
+#     # @show map(first, results[1])
+#     # @assert false
 
 #     nf_calls = [[sol.nf + sol.n∇f for sol in res] for res in results]
 #     g_errors = [
@@ -324,7 +328,7 @@ JLSO.save("lqr_gradient_error_results.jlso",
 #         yaxis=:log10,
 #         # xerror=safe_error_bars(nf_calls),
 #         yerror=safe_error_bars(g_errors),
-#         label=label,
+#         # label=label,
 #     )
 # end
 
@@ -334,6 +338,7 @@ JLSO.save("lqr_gradient_error_results.jlso",
 
 # # Doing plot() clears the current figure.
 # Plots.plot(title="Compute/accuracy tradeoff")
+# plot_results!(euler_bptt_results, "Euler, BPTT")
 # plot_results!(backsolve_results, "Neural ODE")
 # plot_results!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
 # plot_results!(interp_results, "Ours")
