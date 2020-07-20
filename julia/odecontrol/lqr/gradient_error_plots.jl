@@ -16,10 +16,12 @@ include("common.jl")
 
 seed!(123)
 
+# Float32 is representative of the numerical accurary available on GPUs and the
+# vast majority of neural network frameworks. Float64 is rarely supported.
 floatT = Float32
 x_dim = 2
 T = 10.0
-num_samples = 256
+num_samples = 2500
 
 # num_hidden = 64
 # policy = FastChain(
@@ -190,8 +192,9 @@ function eval_euler_bptt(x0, policy_params, dt)
     # fine for our purposes.
     num_steps = T / dt
     g_x0, g_θ = Zygote.gradient((x0, θ) -> euler_with_cost(x0, θ, dt, num_steps), x0, policy_params)
-    # We require gradients on both x0 and θ, vcat'd together.
-    (g = vcat(g_x0, g_θ),
+    # We require gradients on both x0 and θ, vcat'd together. For some reason
+    # the DifferentialEquations.jl convention is to negate the x0 gradients.
+    (g = vcat(-g_x0, g_θ),
         nf = num_steps,
         n∇f = num_steps,)
 end
@@ -225,53 +228,52 @@ end
 #     # (fwd = fwd_sol, bwd = estbwd_sol, g = estbwd_sol.u[end][1:end-x_dim])
 # end
 
-# Absolute error tolerances should generally be smaller than relative
-# tolerances.
-reltols = 0.1.^(0:9)
-abstols = 1e-3 * reltols
-
 # init_conditions = [(sample_x0(), initial_params(policy)) for _ = 1:num_samples]
-init_conditions = [(sample_x0(), lqr_params) for _ = 1:num_samples]
+x0_samples = [sample_x0() for _ = 1:num_samples]
+θ_samples = [lqr_params for _ = 1:num_samples]
+
+force(thunk) = thunk()
 
 # Must be before plot_results! since that depends on this...
 @info "gold standard"
 # @benchmark gold_standard_gradient(sample_x0(), lqr_params)
-@time gold_standard_results =
-    [gold_standard_gradient(x0, θ) for (x0, θ) in init_conditions]
-
-force(thunk) = thunk()
+@time gold_standard_results = qmap(force,
+    [()->gold_standard_gradient(x0, θ) for (x0, θ) in zip(x0_samples, θ_samples)])
 
 @info "euler bptt"
 # 1e-6 is too small and exhausts the memory available.
 @time euler_bptt_results = qmap(force, [
-    () -> (dt, eval_euler_bptt(x0, θ, dt))
-    for (x0, θ) in init_conditions
-    for dt in [1e-5, 1e-4, 0.001, 0.01, 0.1, 1.0]
+    () -> eval_euler_bptt(x0, θ, dt)
+    for (x0, θ, dt) in zip(x0_samples, θ_samples, 10 .^ range(-5,0,length=num_samples))
 ])
+
+# Absolute error tolerances should generally be smaller than relative
+# tolerances. Do the smallest ones first in order to hit memory issues sooner
+# rather than later.
+# reltols = 0.1.^(0:9)
+reltols = 10 .^ range(-9, 0, length=num_samples)
+abstols = 1e-3 * reltols
 
 @info "interp"
 # @benchmark eval_interp(sample_x0(), lqr_params, 1e-12, 1e-9)
 @time interp_results = qmap(force, [
-    () -> ((atol, rtol), eval_interp(x0, θ, atol, rtol))
-    for (x0, θ) in init_conditions
-    for (atol, rtol) in zip(abstols, reltols)
+    () -> eval_interp(x0, θ, atol, rtol)
+    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
 ])
 
 @info "backsolve"
 @time backsolve_results = qmap(force, [
-    () -> ((atol, rtol), eval_backsolve(x0, θ, atol, rtol, false))
-    for (x0, θ) in init_conditions
-    for (atol, rtol) in zip(abstols, reltols)
+    () -> eval_backsolve(x0, θ, atol, rtol, false)
+    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
 ])
 
 @info "backsolve with checkpoints"
 @time backsolve_checkpointing_results = qmap(force, [
-    () -> ((atol, rtol), eval_backsolve(x0, θ, atol, rtol, true))
-    for (x0, θ) in init_conditions
-    for (atol, rtol) in zip(abstols, reltols)
+    () -> eval_backsolve(x0, θ, atol, rtol, true)
+    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
 ])
 
-# The rest is useless...
+# See https://github.com/SciML/DiffEqSensitivity.jl/issues/304.
 # quadrature_results = [
 #     [eval_quadrature(x0, θ, atol, rtol) for (x0, θ) in init_conditions] for (atol, rtol) in zip(abstols, reltols)
 # ]
@@ -282,63 +284,3 @@ JLSO.save("lqr_gradient_error_results.jlso",
     :interp_results => interp_results,
     :backsolve_results => backsolve_results,
     :backsolve_checkpointing_results => backsolve_checkpointing_results)
-
-# function plot_results!(results_flat, label)
-#     # An array where rows correspond to each (x0, θ) pair, and columns
-#     # correspond to each tolerance level. Use the map to drop the descriptive
-#     # tolerance key value.
-#     results = reshape(map((t) -> t[end], results_flat), :, num_samples)
-#     # results = reshape(results_flat, :, num_samples)
-#     # @show size(results)
-#     # Back to array of arrays, with outer arrays being tolerance levels.
-#     results = collect(eachrow(results))
-#     # @show size(results)
-#     # @show typeof(results)
-#     # @show map(first, results[1])
-#     # @assert false
-
-#     nf_calls = [[sol.nf + sol.n∇f for sol in res] for res in results]
-#     g_errors = [
-#         [
-#             norm(gold.bwd.u[end] - est.g)
-#             for (gold, est) in zip(gold_standard_results, res)
-#         ] for res in results
-#     ]
-
-#     function safe_error_bars(vs)
-#         vs_median = map(median, vs)
-#         vs_mean = map(mean, vs)
-#         vs_std = map(std, vs)
-#         collect(zip(
-#             [
-#                 min(ṽ - 1e-12, σ + ṽ - μ)
-#                 for (ṽ, μ, σ) in zip(vs_median, vs_mean, vs_std)
-#             ],
-#             vs_std + vs_mean - vs_median,
-#         ))
-#     end
-
-#     Plots.plot!(
-#         map(median, nf_calls),
-#         map(median, g_errors),
-#         xlabel="Function evaluations",
-#         ylabel="L2 error in the gradient",
-#         xaxis=:log10,
-#         yaxis=:log10,
-#         # xerror=safe_error_bars(nf_calls),
-#         yerror=safe_error_bars(g_errors),
-#         # label=label,
-#     )
-# end
-
-# # Plots.pyplot()
-# # Plots.PyPlotBackend()
-# # pgfplotsx()
-
-# # Doing plot() clears the current figure.
-# Plots.plot(title="Compute/accuracy tradeoff")
-# plot_results!(euler_bptt_results, "Euler, BPTT")
-# plot_results!(backsolve_results, "Neural ODE")
-# plot_results!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
-# plot_results!(interp_results, "Ours")
-# Plots.savefig("lqr_tradeoff.pdf")
