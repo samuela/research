@@ -56,14 +56,16 @@ function cost_functional(x, policy_params, t)
 end
 
 # See https://github.com/SciML/DiffEqSensitivity.jl/issues/302 for context.
-dcost_tuple = ((out, u, p, t) -> begin
-    ū, _, _ = Zygote.gradient(cost_functional, u, p, t)
-    out .= ū
-end,
+dcost_tuple = (
     (out, u, p, t) -> begin
-    _, p̄, _ = Zygote.gradient(cost_functional, u, p, t)
-    out .= p̄
-end,)
+        ū, _, _ = Zygote.gradient(cost_functional, u, p, t)
+        out .= ū
+    end,
+    (out, u, p, t) -> begin
+        _, p̄, _ = Zygote.gradient(cost_functional, u, p, t)
+        out .= p̄
+    end,
+)
 
 function gold_standard_gradient(x0, policy_params)
     # Actual/gold standard evaluation. Using high-fidelity Vern9 method with
@@ -74,10 +76,10 @@ function gold_standard_gradient(x0, policy_params)
     fwd_sol = solve(
         ODEProblem(policy_dynamics!, x0, (0, T), policy_params),
         Vern9(),
-        u0=x0_f64,
-        p=policy_params_f64,
-        abstol=1e-14,
-        reltol=1e-14,
+        u0 = x0_f64,
+        p = policy_params_f64,
+        abstol = 1e-14,
+        reltol = 1e-14,
     )
     # Note that specifying dense = false is essential for getting acceptable
     # performance. save_everystep = false is another small win.
@@ -90,10 +92,10 @@ function gold_standard_gradient(x0, policy_params)
             dcost_tuple,
         ),
         Vern9(),
-        dense=false,
-        save_everystep=false,
-        abstol=1e-14,
-        reltol=1e-14,
+        dense = false,
+        save_everystep = false,
+        abstol = 1e-14,
+        reltol = 1e-14,
     )
     @assert typeof(fwd_sol.u) == Array{Array{Float64,1},1}
     @assert typeof(bwd_sol.u) == Array{Array{Float64,1},1}
@@ -108,10 +110,10 @@ function eval_interp(x0, policy_params, abstol, reltol)
     fwd_sol = solve(
         ODEProblem(policy_dynamics!, x0, (0, T), policy_params),
         Tsit5(),
-        u0=x0,
-        p=policy_params,
-        abstol=abstol,
-        reltol=reltol,
+        u0 = x0,
+        p = policy_params,
+        abstol = abstol,
+        reltol = reltol,
     )
     bwd_sol = solve(
         ODEAdjointProblem(
@@ -122,10 +124,10 @@ function eval_interp(x0, policy_params, abstol, reltol)
             dcost_tuple,
         ),
         Tsit5(),
-        dense=false,
-        save_everystep=false,
-        abstol=abstol,
-        reltol=reltol,
+        dense = false,
+        save_everystep = false,
+        abstol = abstol,
+        reltol = reltol,
     )
     @assert typeof(fwd_sol.u) == Array{Array{floatT,1},1}
     @assert typeof(bwd_sol.u) == Array{Array{floatT,1},1}
@@ -134,34 +136,36 @@ function eval_interp(x0, policy_params, abstol, reltol)
     # We do exactly as many f calls as there are function calls in the forward
     # pass, and in the backward pass we don't need to call f, but instead we
     # call ∇f.
-    (xT = fwd_sol.u[end],
+    (
+        xT = fwd_sol.u[end],
         g = bwd_sol.u[end],
         nf = fwd_sol.destats.nf,
-        n∇f = bwd_sol.destats.nf,)
+        n∇f = bwd_sol.destats.nf,
+    )
 end
 
 function eval_backsolve(x0, policy_params, abstol, reltol, checkpointing)
     fwd_sol = solve(
         ODEProblem(policy_dynamics!, x0, (0, T), policy_params),
         Tsit5(),
-        u0=x0,
-        p=policy_params,
-        abstol=abstol,
-        reltol=reltol,
+        u0 = x0,
+        p = policy_params,
+        abstol = abstol,
+        reltol = reltol,
     )
     bwd_sol = solve(
         ODEAdjointProblem(
             fwd_sol,
-            BacksolveAdjoint(checkpointing=checkpointing),
+            BacksolveAdjoint(checkpointing = checkpointing),
             cost_functional,
             nothing,
             dcost_tuple,
         ),
         Tsit5(),
-        dense=false,
-        save_everystep=false,
-        abstol=abstol,
-        reltol=reltol,
+        dense = false,
+        save_everystep = false,
+        abstol = abstol,
+        reltol = reltol,
     )
     @assert typeof(fwd_sol.u) == Array{Array{floatT,1},1}
     @assert typeof(bwd_sol.u) == Array{Array{floatT,1},1}
@@ -170,16 +174,18 @@ function eval_backsolve(x0, policy_params, abstol, reltol, checkpointing)
     # reconstructed x state.
     # When running the backsolve adjoint we have additional f evaluations every
     # step of the backwards pass, since we need -f to reconstruct the x path.
-    (xT = fwd_sol.u[end],
-        g = bwd_sol.u[end][1:end - x_dim],
+    (
+        xT = fwd_sol.u[end],
+        g = bwd_sol.u[end][1:end-x_dim],
         nf = fwd_sol.destats.nf + bwd_sol.destats.nf,
-        n∇f = bwd_sol.destats.nf,)
+        n∇f = bwd_sol.destats.nf,
+    )
 end
 
 function euler_with_cost(x0, policy_params, dt, num_steps)
     x = x0
     cost_accum = 0.0
-    for _ in 1:num_steps
+    for _ = 1:num_steps
         u = policy(x, policy_params)
         cost_accum += dt * cost(x, u)
         x += dt * dynamics(x, u)
@@ -191,12 +197,14 @@ function eval_euler_bptt(x0, policy_params, dt)
     # Julia seems to do auto-rounding with floor when doing 1:num_steps. That's
     # fine for our purposes.
     num_steps = T / dt
-    g_x0, g_θ = Zygote.gradient((x0, θ) -> euler_with_cost(x0, θ, dt, num_steps), x0, policy_params)
+    g_x0, g_θ = Zygote.gradient(
+        (x0, θ) -> euler_with_cost(x0, θ, dt, num_steps),
+        x0,
+        policy_params,
+    )
     # We require gradients on both x0 and θ, vcat'd together. For some reason
     # the DifferentialEquations.jl convention is to negate the x0 gradients.
-    (g = vcat(-g_x0, g_θ),
-        nf = num_steps,
-        n∇f = num_steps,)
+    (g = vcat(-g_x0, g_θ), nf = num_steps, n∇f = num_steps)
 end
 
 # See https://github.com/SciML/DiffEqSensitivity.jl/issues/304 for why this
@@ -237,50 +245,74 @@ force(thunk) = thunk()
 # Must be before plot_results! since that depends on this...
 @info "gold standard"
 # @benchmark gold_standard_gradient(sample_x0(), lqr_params)
-@time gold_standard_results = qmap(force,
-    [()->gold_standard_gradient(x0, θ) for (x0, θ) in zip(x0_samples, θ_samples)])
+@time gold_standard_results = qmap(
+    force,
+    [
+        () -> gold_standard_gradient(x0, θ)
+        for (x0, θ) in zip(x0_samples, θ_samples)
+    ],
+)
 
 @info "euler bptt"
 # 1e-6 is too small and exhausts the memory available.
-@time euler_bptt_results = qmap(force, [
-    () -> eval_euler_bptt(x0, θ, dt)
-    for (x0, θ, dt) in zip(x0_samples, θ_samples, 10 .^ range(-5,0,length=num_samples))
-])
+@time euler_bptt_results = qmap(
+    force,
+    [
+        () -> eval_euler_bptt(x0, θ, dt)
+        for
+        (x0, θ, dt) in
+        zip(x0_samples, θ_samples, 10 .^ range(-5, 0, length = num_samples))
+    ],
+)
 
 # Absolute error tolerances should generally be smaller than relative
 # tolerances. Do the smallest ones first in order to hit memory issues sooner
 # rather than later.
 # reltols = 0.1.^(0:9)
-reltols = 10 .^ range(-9, 0, length=num_samples)
+reltols = 10 .^ range(-9, 0, length = num_samples)
 abstols = 1e-3 * reltols
 
 @info "interp"
 # @benchmark eval_interp(sample_x0(), lqr_params, 1e-12, 1e-9)
-@time interp_results = qmap(force, [
-    () -> eval_interp(x0, θ, atol, rtol)
-    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
-])
+@time interp_results = qmap(
+    force,
+    [
+        () -> eval_interp(x0, θ, atol, rtol)
+        for
+        (x0, θ, rtol, atol) in zip(x0_samples, θ_samples, reltols, abstols)
+    ],
+)
 
 @info "backsolve"
-@time backsolve_results = qmap(force, [
-    () -> eval_backsolve(x0, θ, atol, rtol, false)
-    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
-])
+@time backsolve_results = qmap(
+    force,
+    [
+        () -> eval_backsolve(x0, θ, atol, rtol, false)
+        for
+        (x0, θ, rtol, atol) in zip(x0_samples, θ_samples, reltols, abstols)
+    ],
+)
 
 @info "backsolve with checkpoints"
-@time backsolve_checkpointing_results = qmap(force, [
-    () -> eval_backsolve(x0, θ, atol, rtol, true)
-    for (x0, θ, rtol, atol) in zip(x0_samples,θ_samples,reltols,abstols)
-])
+@time backsolve_checkpointing_results = qmap(
+    force,
+    [
+        () -> eval_backsolve(x0, θ, atol, rtol, true)
+        for
+        (x0, θ, rtol, atol) in zip(x0_samples, θ_samples, reltols, abstols)
+    ],
+)
 
 # See https://github.com/SciML/DiffEqSensitivity.jl/issues/304.
 # quadrature_results = [
 #     [eval_quadrature(x0, θ, atol, rtol) for (x0, θ) in init_conditions] for (atol, rtol) in zip(abstols, reltols)
 # ]
 
-JLSO.save("lqr_gradient_error_results.jlso",
+JLSO.save(
+    "lqr_gradient_error_results.jlso",
     :gold_standard_results => gold_standard_results,
     :euler_bptt_results => euler_bptt_results,
     :interp_results => interp_results,
     :backsolve_results => backsolve_results,
-    :backsolve_checkpointing_results => backsolve_checkpointing_results)
+    :backsolve_checkpointing_results => backsolve_checkpointing_results,
+)
