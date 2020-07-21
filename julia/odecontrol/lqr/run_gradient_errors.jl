@@ -7,7 +7,6 @@ import DiffEqSensitivity:
     InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint, ODEAdjointProblem
 import LinearAlgebra: I, norm
 import Plots
-# import PyPlot
 import ControlSystems
 import ThreadPools: qmap
 import JLSO
