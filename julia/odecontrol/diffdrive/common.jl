@@ -6,6 +6,8 @@ See http://planning.cs.uiuc.edu/node659.html.
 module DiffDriveEnv
 
 function diffdrive_env(floatT, wheelbase, wheel_radius)
+    twopi = convert(floatT, 2π)
+
     function dynamics(state, u)
         x, y, θ, ω_l, ω_r = state
         sinθ, cosθ = sincos(θ)
@@ -27,13 +29,19 @@ function diffdrive_env(floatT, wheelbase, wheel_radius)
         [
             rand(floatT) * 10 - 5,
             rand(floatT) * 10 - 5,
-            rand(floatT) * 2π,
+            rand(floatT) * twopi,
             randn(floatT),
             randn(floatT),
-        ]
+        ]::Array{floatT}
     end
 
-    dynamics, cost, sample_x0
+    function observation(state)
+        x, y, θ, ω_l, ω_r = state
+        sinθ, cosθ = sincos(θ)
+        [x, y, θ % twopi, ω_l, ω_r, sinθ, cosθ]
+    end
+
+    dynamics, cost, sample_x0, observation
 end
 
 end
