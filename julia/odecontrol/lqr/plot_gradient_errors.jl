@@ -88,14 +88,44 @@ function plot_scatter!(results_flat, label)
     )
 end
 
+function plot_ribbon!(results_flat, label)
+    # An array where rows correspond to each (x0, θ) pair, and columns
+    # correspond to each tolerance level. Use the map to drop the descriptive
+    # tolerance key value.
+    results = reshape(map((t) -> t[end], results_flat), :, num_samples)
+    results = collect(eachrow(results))
+
+    nf_calls = [[sol.nf + sol.n∇f for sol in res] for res in results]
+    g_errors = [
+        [
+            norm(gold.g - est.g)
+            for (gold, est) in zip(gold_standard_results, res)
+        ] for res in results
+    ]
+
+    Plots.plot!(
+        map(median, nf_calls),
+        map(median, g_errors),
+        xlabel = "Function evaluations",
+        ylabel = "L2 error in the gradient",
+        ribbon = (
+            map(median, g_errors) - map(minimum, g_errors),
+            map(maximum, g_errors) - map(median, g_errors),
+        ),
+        xaxis = :log10,
+        yaxis = :log10,
+        label = label,
+    )
+end
+
 Plots.pyplot()
 Plots.PyPlotBackend()
 # pgfplotsx()
 
 # Doing plot() clears the current figure.
 Plots.plot(title = "Compute/accuracy tradeoff")
-plot_scatter!(euler_bptt_results_fixed, "Euler, BPTT")
-plot_scatter!(backsolve_results, "Neural ODE")
-plot_scatter!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
-plot_scatter!(interp_results, "Ours")
+plot_ribbon!(euler_bptt_results_fixed, "Euler, BPTT")
+plot_ribbon!(backsolve_results, "Neural ODE")
+plot_ribbon!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
+plot_ribbon!(interp_results, "Ours")
 Plots.savefig("lqr_tradeoff.pdf")
