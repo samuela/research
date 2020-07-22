@@ -13,94 +13,68 @@ import DiffEqSensitivity:
     InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint
 import LinearAlgebra: I
 import LineSearches
+import ControlSystems
 
-using BenchmarkTools
+include("common.jl")
+include("../utils.jl")
 
 seed!(123)
 
 floatT = Float32
 x_dim = 2
-T = 10.0
+T = 25.0
+num_hidden = 32
+policy = FastChain(
+    FastDense(x_dim, num_hidden, tanh),
+    # FastDense(num_hidden, num_hidden, tanh),
+    FastDense(num_hidden, x_dim),
+)
+# policy = FastDense(x_dim, x_dim) # linear policy
+
+const A = Matrix{floatT}(0 * I, x_dim, x_dim)
+const B = Matrix{floatT}(I, x_dim, x_dim)
+const Q = Matrix{floatT}(I, x_dim, x_dim)
+const R = Matrix{floatT}(I, x_dim, x_dim)
+dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, 0 * I, I, I, I)
+
+const K = ControlSystems.lqr(A, B, Q, R)
+
+learned_policy_loss =
+    policy_loss(dynamics, cost, policy, InterpolatingAdjoint())
+lqr_policy_loss =
+    policy_loss(dynamics, cost, (x, _) -> -K * x, InterpolatingAdjoint())
+
+# @info "Calculating LQR loss"
+# @time lqr_loss = loss(lqr_params, [sample_x0() for _ = 1:1024])
+
+@info "Training policy"
+num_iters = 1000
 batch_size = 1
-# num_hidden = 64
-# policy = FastChain(
-#     FastDense(x_dim, num_hidden, tanh),
-#     # FastDense(num_hidden, num_hidden, tanh),
-#     FastDense(num_hidden, x_dim),
-#     # (x, _) -> 2 * x,
-# )
-policy = FastDense(x_dim, x_dim) # linear policy
-
-dynamics, cost, sample_x0 = linear_env(floatT, x_dim, I, I, I, I)
-
-function aug_dynamics!(dz, z, policy_params, t)
-    x = @view z[2:end]
-    u = policy(x, policy_params)
-    dz[1] = cost(x, u)
-    # Note that dynamics!(dz[2:end], x, u) breaks Zygote :(
-    dz[2:end] = dynamics(x, u)
-end
-
-# function aug_dynamics(z, policy_params, t)
-#     x = @view z[2:end]
-#     u = policy(x, policy_params)
-#     vcat(cost(x, u), dynamics(x, u))
-# end
-
-# function aug_dynamics2(z, policy_params, t)
-#     x = z[2:end]
-#     u = policy(x, policy_params)
-#     [cost(x, u), dynamics(x, u)...]
-# end
-
-# @benchmark aug_dynamics!(
-#     rand(floatT, x_dim + 1),
-#     rand(floatT, x_dim + 1),
-#     init_policy_params,
-#     0.0,
-# )
-
-function loss(policy_params, data...)
-    # TODO: use the ensemble thing
-    mean([
-        begin
-            z0 = [0f0, x0...]
-            rollout = solve(
-                ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
-                Tsit5(),
-                u0 = z0,
-                p = policy_params,
-                # sensealg = QuadratureAdjoint(),
-            )
-            Array(rollout)[1, end]
-        end for x0 in data
-    ])
-end
-
-callback = function (policy_params, loss_val)
-    println("Loss $loss_val")
-    false
-end
-
-# data = DataLoader([sample_x0() for _ = 1:1_000_000], batchsize = batch_size)
-
-policy_params = initial_params(policy)
+learned_loss_per_iter = fill(NaN, num_iters)
+lqr_loss_per_iter = fill(NaN, num_iters)
+policy_params = initial_params(policy) * 0.1
 opt = ADAM()
 # opt = BFGS(
 #     alphaguess = LineSearches.InitialStatic(alpha = 0.1),
 #     linesearch = LineSearches.Static(),
 # )
-for iter = 1:10
+for iter = 1:num_iters
     @time begin
-        println("start iter")
         # x0_batch = [sample_x0() for _ = 1:batch_size]
-        x0 = sample_x0()
-        @time loss_, vjp = Zygote.pullback(loss, policy_params, x0)
-        @time g, _ = vjp(1)
+        x0_batch = [ones(x_dim)]
+        loss_, vjp =
+            Zygote.pullback(learned_policy_loss, policy_params, x0_batch)
+        lqr_loss = lqr_policy_loss(nothing, x0_batch)
+        g, _ = vjp(1)
         Flux.Optimise.update!(opt, policy_params, g)
-        println("Episode $iter, loss = $loss_")
+        learned_loss_per_iter[iter] = loss_
+        lqr_loss_per_iter[iter] = lqr_loss
+        println("Episode $iter, excess loss = $(loss_ - lqr_loss)")
     end
 end
+
+import Plots: plot
+plot(learned_loss_per_iter - lqr_loss_per_iter)
 
 # res1 = sciml_train(
 #     loss,
