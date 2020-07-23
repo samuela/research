@@ -50,6 +50,7 @@ function aug_dynamics!(dz, z, policy_params, t)
 end
 
 """Calculate the loss, gradient wrt parameters, and the reconstructed z(0)."""
+# TODO: can probably reuse the loss_pullback in utils.jl once that's done.
 function node_loss_and_grad(policy_params, x0)
     z0 = vcat(0.0, x0)
     z_dim = x_dim + 1
@@ -64,9 +65,7 @@ function node_loss_and_grad(policy_params, x0)
         ODEAdjointProblem(
             fwd_sol,
             BacksolveAdjoint(checkpointing = false),
-            # This algebra is annoying but this is where BacksolveAdjoint
-            # happens to put the first element of z(t).
-            (out, x, p, t, i) -> (fill!(out, 0); out[end-x_dim] = 1),
+            (out, x, p, t, i) -> (fill!(out, 0); out[1] = 1),
             [T],
         ),
         Tsit5(),
