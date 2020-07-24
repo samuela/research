@@ -8,7 +8,7 @@ function extract_gradients(fwd_sol, bwd_sol)
     # gradients is beyond me...
     p = fwd_sol.prob.p
     l = p === nothing || p === DiffEqBase.NullParameters() ? 0 : length(fwd_sol.prob.p)
-    -bwd_sol[end][1:length(fwd_sol.prob.u0)], -bwd_sol[end][(1:l) .+ length(fwd_sol.prob.u0)]
+    -bwd_sol[end][1:length(fwd_sol.prob.u0)], -bwd_sol[end][(1:l).+length(fwd_sol.prob.u0)]
 end
 
 function extract_loss_and_xT(fwd_sol)
@@ -34,7 +34,7 @@ function ppg_goodies(dynamics, cost, policy)
     #     0.0,
     # )
 
-    function loss_pullback(x0, policy_params, sensealg)
+    function loss_pullback(x0, policy_params)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
             ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
@@ -52,7 +52,7 @@ function ppg_goodies(dynamics, cost, policy)
         # gradient input at time T. Alternatively one could use the continuous
         # adjoints on the non-augmented system although this seems to be slower
         # and a less stable feature.
-        function pullback(g_zT)
+        function pullback(g_zT, sensealg)
             # See https://diffeq.sciml.ai/stable/analysis/sensitivity/#Syntax-1
             # and https://github.com/SciML/DiffEqSensitivity.jl/blob/master/src/local_sensitivity/sensitivity_interface.jl#L9.
             bwd_sol = solve(

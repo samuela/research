@@ -5,8 +5,7 @@ import DiffEqFlux: FastChain, FastDense, initial_params, ODEProblem, solve
 import Random: seed!
 import Statistics: mean
 import Zygote
-import DiffEqSensitivity:
-    InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProblem
+import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProblem
 import LinearAlgebra: I, norm
 import ControlSystems
 import PyPlot
@@ -37,9 +36,8 @@ const R = Matrix{floatT}(I, x_dim, x_dim)
 const K = ControlSystems.lqr(A, B, Q, R)
 dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, 0 * I, I, I, I)
 
-lqr_goodies =
-    ppg_goodies(dynamics, cost, (x, _) -> -K * x)
-lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing, nothing)
+lqr_goodies = ppg_goodies(dynamics, cost, (x, _) -> -K * x)
+lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing)
 lqr_loss = lqr_sol[end][1]
 
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy)
@@ -47,8 +45,8 @@ learned_policy_goodies = ppg_goodies(dynamics, cost, policy)
 """Calculate the loss, gradient wrt parameters, and the reconstructed z(0)."""
 function node_loss_and_grad(x0, policy_params)
     z_dim = x_dim + 1
-    fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, BacksolveAdjoint(checkpointing = false))
-    bwd_sol = vjp(vcat(1, zero(x0)))
+    fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
+    bwd_sol = vjp(vcat(1, zero(x0)), BacksolveAdjoint(checkpointing = false))
     loss, _ = extract_loss_and_xT(fwd_sol)
     _, g = extract_gradients(fwd_sol, bwd_sol)
 
@@ -85,11 +83,7 @@ function plot_neural_ode()
         ax2.tick_params(axis = "y", labelcolor = "tab:red")
         ax2.plot([], color = "tab:blue", label = "Learned policy loss")
         ax2.plot([], linestyle = "--", color = "grey", label = "LQR solution")
-        ax2.plot(
-            reconst_error_per_iter,
-            color = "tab:red",
-            label = "Backsolve error",
-        )
+        ax2.plot(reconst_error_per_iter, color = "tab:red", label = "Backsolve error")
 
         PyPlot.legend()
         PyPlot.tight_layout()
@@ -104,8 +98,8 @@ function plot_interp()
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, InterpolatingAdjoint())
-            bwd_sol = vjp(vcat(1, zero(x0)))
+            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
+            bwd_sol = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
             loss, _ = extract_loss_and_xT(fwd_sol)
             _, g = extract_gradients(fwd_sol, bwd_sol)
 
