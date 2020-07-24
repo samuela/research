@@ -11,7 +11,7 @@ import ControlSystems
 import PyPlot
 
 include("common.jl")
-include("../utils.jl")
+include("../ppg.jl")
 
 seed!(123)
 
@@ -36,11 +36,11 @@ const R = Matrix{floatT}(I, x_dim, x_dim)
 const K = ControlSystems.lqr(A, B, Q, R)
 dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, 0 * I, I, I, I)
 
-lqr_goodies = ppg_goodies(dynamics, cost, (x, _) -> -K * x)
+lqr_goodies = ppg_goodies(dynamics, cost, (x, _) -> -K * x, T)
 lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing)
 lqr_loss = lqr_sol[end][1]
 
-learned_policy_goodies = ppg_goodies(dynamics, cost, policy)
+learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
 """Calculate the loss, gradient wrt parameters, and the reconstructed z(0)."""
 function node_loss_and_grad(x0, policy_params)

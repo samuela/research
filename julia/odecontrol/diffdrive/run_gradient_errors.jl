@@ -1,3 +1,6 @@
+include("common.jl")
+include("../utils.jl")
+
 import DifferentialEquations: Tsit5, Vern9
 import DiffEqFlux: FastChain, FastDense, initial_params, ODEProblem, solve
 import Random: seed!
@@ -6,8 +9,7 @@ import DiffEqSensitivity:
     InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint, ODEAdjointProblem
 import ThreadPools: qmap
 import JLSO
-
-include("common.jl")
+import Utils: force
 
 seed!(123)
 
@@ -221,8 +223,6 @@ end
 # init_conditions = [(sample_x0(), initial_params(policy)) for _ = 1:num_samples]
 x0_samples = [sample_x0() for _ = 1:num_samples]
 θ_samples = [convert(Array{floatT}, 0.1 * initial_params(policy)) for _ = 1:num_samples]
-
-force(thunk) = thunk()
 
 # Must be before plot_results! since that depends on this...
 @info "gold standard"

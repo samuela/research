@@ -1,30 +1,32 @@
+"""Train a differential drive policy and create an animation of the training
+process displaying its adaptation on a set of paths over time. Note that when
+running on a headless machine, the environment variable `GKS_WSTYPE=140`
+generally needs to be set. See https://discourse.julialang.org/t/unable-to-display-plot-using-the-repl-gks-errors/12826/16.
+"""
+
+include("common.jl")
+include("../ppg.jl")
+
 import DifferentialEquations: Tsit5
 import Flux
 import Flux: ADAM
 import Flux.Data: DataLoader
-import DiffEqFlux:
-    FastChain, FastDense, initial_params, sciml_train, ODEProblem, solve
-import Random: seed!, randn
+import DiffEqFlux: FastChain, FastDense, initial_params
+import Random: seed!
 import Plots
 import Statistics: mean
-import Zygote
-using Optim: LBFGS, BFGS, Fminbox
-import DiffEqSensitivity:
-    InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint
-import LinearAlgebra: I
-import LineSearches
-import ControlSystems
+import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint
+import JLSO
 
-include("common.jl")
-include("../utils.jl")
-
+# This seeds the `init_policy_params` below, and then gets overridden later.
 seed!(123)
 
 floatT = Float32
 T = 5.0
+num_iters = 10000
+batch_size = 32
 
-dynamics, cost, sample_x0, obs =
-    DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
+dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
 
 num_hidden = 32
 policy = FastChain(
@@ -35,58 +37,97 @@ policy = FastChain(
 )
 # policy = FastDense(x_dim, x_dim) # linear policy
 
-learned_policy_loss =
-    policy_loss(dynamics, cost, policy, InterpolatingAdjoint())
+init_policy_params = initial_params(policy) * 0.1
+learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
-@info "Training policy"
-num_iters = 25
-learned_loss_per_iter = fill(NaN, num_iters)
-x0_test_batch = [sample_x0() for _ = 1:10]
-policy_params = initial_params(policy) * 0.1
-opt = ADAM()
-anim = Plots.Animation()
-for iter = 1:num_iters
-    @time begin
-        x0_batch = x0_test_batch
-        loss_, vjp =
-            Zygote.pullback(learned_policy_loss, policy_params, x0_batch)
-        g, _ = vjp(1)
-        Flux.Optimise.update!(opt, policy_params, g)
-        learned_loss_per_iter[iter] = loss_
-        println("Episode $iter, loss = $(loss_)")
-    end
+function interp()
+    # Seed here so that both interp and euler get the same batches.
+    seed!(123)
 
-    begin
-        trajs = [
-            begin
-                sol = solve(
-                    ODEProblem(
-                        (x, p, t) -> dynamics(x, policy(x, policy_params)),
-                        x0,
-                        (0, T),
-                        policy_params,
-                    ),
-                    Tsit5(),
-                )
-                traj = sol.(0:0.1:T)
-                xs = [s[1] for s in traj]
-                ys = [s[2] for s in traj]
-                (xs, ys)
-            end for x0 in x0_test_batch
-        ]
+    loss_per_iter = fill(NaN, num_iters)
+    policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
+    nf_per_iter = fill(NaN, num_iters)
+    n∇f_per_iter = fill(NaN, num_iters)
 
-        p = Plots.plot(
-            title = "Iteration $iter",
-            legend = false,
-            aspect_ratio = :equal,
-            xlims = (-7.5, 7.5),
-            ylims = (-7.5, 7.5),
-        )
-        for (xs, ys) in trajs
-            Plots.plot!(xs, ys)
-            Plots.scatter!([xs[1]], [ys[1]], color = :grey, markersize = 5)
+    policy_params = deepcopy(init_policy_params)
+    opt = ADAM()
+    for iter = 1:num_iters
+        @time begin
+            x0_batch = [sample_x0() for _ = 1:batch_size]
+            loss, g, info = learned_policy_goodies.ez_loss_and_grad_many(
+                x0_batch,
+                policy_params,
+                InterpolatingAdjoint(),
+            )
+            loss_per_iter[iter] = loss
+            policy_params_per_iter[iter, :] = policy_params
+            nf_per_iter[iter] = info.nf
+            n∇f_per_iter[iter] = info.n∇f
+
+            Flux.Optimise.update!(opt, policy_params, g)
+            println("Episode $iter, loss = $loss")
         end
-        Plots.frame(anim)
     end
+
+    (
+        loss_per_iter = loss_per_iter,
+        policy_params_per_iter = policy_params_per_iter,
+        nf_per_iter = nf_per_iter,
+        n∇f_per_iter = n∇f_per_iter,
+    )
 end
-Plots.gif(anim, "diffdrive.gif")
+
+@info "Interp"
+interp_results = interp()
+
+# Divide by two for the forward and backward passes.
+mean_euler_steps =
+    mean((interp_results.nf_per_iter + interp_results.n∇f_per_iter) / batch_size / 2)
+euler_dt = T / mean_euler_steps
+
+function euler(dt)
+    # Seed here so that both interp and euler get the same batches.
+    seed!(123)
+
+    loss_per_iter = fill(NaN, num_iters)
+    policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
+    nf_per_iter = fill(NaN, num_iters)
+    n∇f_per_iter = fill(NaN, num_iters)
+
+    policy_params = deepcopy(init_policy_params)
+    opt = ADAM()
+    for iter = 1:num_iters
+        @time begin
+            x0_batch = [sample_x0() for _ = 1:batch_size]
+            loss, g, info = learned_policy_goodies.ez_euler_loss_and_grad_many(
+                x0_batch,
+                policy_params,
+                dt,
+            )
+            loss_per_iter[iter] = loss
+            policy_params_per_iter[iter, :] = policy_params
+            nf_per_iter[iter] = info.nf
+            n∇f_per_iter[iter] = info.n∇f
+
+            Flux.Optimise.update!(opt, policy_params, g)
+            println("Episode $iter, loss = $loss")
+        end
+    end
+
+    (
+        loss_per_iter = loss_per_iter,
+        policy_params_per_iter = policy_params_per_iter,
+        nf_per_iter = nf_per_iter,
+        n∇f_per_iter = n∇f_per_iter,
+    )
+end
+
+@info "Euler"
+euler_results = euler(euler_dt)
+
+@info "Dumping results"
+JLSO.save(
+    "diffdrive_train_results.jlso",
+    :interp_results => interp_results,
+    :euler_results => euler_results,
+)
