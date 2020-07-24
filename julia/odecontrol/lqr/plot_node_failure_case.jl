@@ -37,54 +37,25 @@ const R = Matrix{floatT}(I, x_dim, x_dim)
 const K = ControlSystems.lqr(A, B, Q, R)
 dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, 0 * I, I, I, I)
 
-lqr_policy_loss =
-    policy_loss(dynamics, cost, (x, _) -> -K * x, InterpolatingAdjoint())
-lqr_loss = lqr_policy_loss(nothing, [x0])
+lqr_goodies =
+    ppg_goodies(dynamics, cost, (x, _) -> -K * x)
+lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing, nothing)
+lqr_loss = lqr_sol[end][1]
 
-function aug_dynamics!(dz, z, policy_params, t)
-    x = @view z[2:end]
-    u = policy(x, policy_params)
-    dz[1] = cost(x, u)
-    # Note that dynamics!(dz[2:end], x, u) breaks Zygote :(
-    dz[2:end] = dynamics(x, u)
-end
+learned_policy_goodies = ppg_goodies(dynamics, cost, policy)
 
 """Calculate the loss, gradient wrt parameters, and the reconstructed z(0)."""
-# TODO: can probably reuse the loss_pullback in utils.jl once that's done.
-function node_loss_and_grad(policy_params, x0)
-    z0 = vcat(0.0, x0)
+function node_loss_and_grad(x0, policy_params)
     z_dim = x_dim + 1
-    fwd_sol = solve(
-        ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
-        Tsit5(),
-        u0 = z0,
-        p = policy_params,
-    )
-    # See https://diffeq.sciml.ai/stable/analysis/sensitivity/#Syntax-1.
-    bwd_sol = solve(
-        ODEAdjointProblem(
-            fwd_sol,
-            BacksolveAdjoint(checkpointing = false),
-            (out, x, p, t, i) -> (fill!(out, 0); out[1] = 1),
-            [T],
-        ),
-        Tsit5(),
-        dense = false,
-        save_everystep = false,
-    )
+    fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, BacksolveAdjoint(checkpointing = false))
+    bwd_sol = vjp(vcat(1, zero(x0)))
+    loss, _ = extract_loss_and_xT(fwd_sol)
+    _, g = extract_gradients(fwd_sol, bwd_sol)
 
-    # The first z_dim elements of bwd_sol.u are the gradient wrt z0, next
-    # however many are the gradient wrt policy_params, final z_dim are the
-    # reconstructed z(t) trajectory. Why the gradients come out negative is one
-    # of the great mysteries of our time...
-    (
-        fwd_sol.u[end][1],
-        -bwd_sol.u[end][z_dim+1:end-z_dim],
-        bwd_sol.u[end][end-z_dim+1:end],
-    )
+    # The final z_dim elements of bwd_sol are the reconstructed z(t) trajectory.
+    loss, g, bwd_sol[end][end-z_dim+1:end]
 end
 
-@info "Neural ODE"
 function plot_neural_ode()
     policy_params = deepcopy(init_policy_params)
     learned_loss_per_iter = fill(NaN, num_iters)
@@ -92,11 +63,11 @@ function plot_neural_ode()
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            loss_, g, z0_reconst = node_loss_and_grad(policy_params, x0)
+            loss, g, z0_reconst = node_loss_and_grad(x0, policy_params)
             Flux.Optimise.update!(opt, policy_params, g)
-            learned_loss_per_iter[iter] = loss_
+            learned_loss_per_iter[iter] = loss
             reconst_error_per_iter[iter] = norm(z0_reconst - vcat(0.0, x0))
-            # println("Episode $iter, excess loss = $(loss_ - lqr_loss)")
+            # println("Episode $iter, excess loss = $(loss - lqr_loss)")
         end
     end
 
@@ -127,21 +98,19 @@ function plot_neural_ode()
 end
 
 ################################################################################
-@info "Interpolation adjoint"
 function plot_interp()
-    learned_policy_loss =
-        policy_loss(dynamics, cost, policy, InterpolatingAdjoint())
-
     policy_params = deepcopy(init_policy_params)
     learned_loss_per_iter = fill(NaN, num_iters)
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            loss_, vjp =
-                Zygote.pullback(learned_policy_loss, policy_params, [x0])
-            g, _ = vjp(1)
+            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, InterpolatingAdjoint())
+            bwd_sol = vjp(vcat(1, zero(x0)))
+            loss, _ = extract_loss_and_xT(fwd_sol)
+            _, g = extract_gradients(fwd_sol, bwd_sol)
+
             Flux.Optimise.update!(opt, policy_params, g)
-            learned_loss_per_iter[iter] = loss_
+            learned_loss_per_iter[iter] = loss
             # println("Episode $iter, excess loss = $(loss_ - lqr_loss)")
         end
     end
@@ -176,5 +145,7 @@ function plot_interp()
     end
 end
 
+@info "Neural ODE"
 plot_neural_ode()
+@info "Interpolation adjoint"
 plot_interp()
