@@ -58,28 +58,25 @@ function run(loss_and_grad)
     n∇f_per_iter = fill(NaN, num_iters)
 
     policy_params = deepcopy(init_policy_params)
+    batches = [[sample_x0() for _ = 1:batch_size] for _ = 1:num_iters]
     # opt = ADAM()
-    opt = Momentum(0.001)
-    # opt = Optimizer(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
+    # opt = Momentum(0.001)
+    opt = Optimizer(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
     # opt =LBFGS(
     #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
     #     linesearch = LineSearches.Static(),
     # )
-    # @showprogress
-    for iter = 1:num_iters
-        @time begin
-            x0_batch = [sample_x0() for _ = 1:batch_size]
-            loss, g, info = loss_and_grad(x0_batch, policy_params)
-            loss_per_iter[iter] = loss
-            policy_params_per_iter[iter, :] = policy_params
-            g_per_iter[iter, :] = g
-            nf_per_iter[iter] = info.nf
-            n∇f_per_iter[iter] = info.n∇f
+    @showprogress for iter = 1:num_iters
+        loss, g, info = loss_and_grad(batches[iter], policy_params)
+        loss_per_iter[iter] = loss
+        policy_params_per_iter[iter, :] = policy_params
+        g_per_iter[iter, :] = g
+        nf_per_iter[iter] = info.nf
+        n∇f_per_iter[iter] = info.n∇f
 
-            clamp!(g, -10, 10)
-            Flux.Optimise.update!(opt, policy_params, g)
-            println("Episode $iter, loss = $loss")
-        end
+        clamp!(g, -10, 10)
+        Flux.Optimise.update!(opt, policy_params, g)
+        println("Episode $iter, loss = $loss")
     end
 
     (
@@ -90,6 +87,15 @@ function run(loss_and_grad)
         n∇f_per_iter = n∇f_per_iter,
     )
 end
+
+@info "Neural ODE"
+neural_ode_results = run(
+    (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
+        x0_batch,
+        θ,
+        BacksolveAdjoint(checkpointing = false),
+    ),
+)
 
 @info "Interp"
 interp_results = run(
@@ -114,6 +120,7 @@ euler_results = run(
 @info "Dumping results"
 JLSO.save(
     "diffdrive_train_results.jlso",
+    :neural_ode_results => neural_ode_results,
     :interp_results => interp_results,
     :euler_results => euler_results,
 )
