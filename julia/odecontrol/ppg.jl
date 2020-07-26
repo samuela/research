@@ -3,7 +3,8 @@ include("utils.jl")
 import DiffEqBase
 import DiffEqSensitivity:
     solve, ODEProblem, ODEAdjointProblem, InterpolatingAdjoint, BacksolveAdjoint
-import ThreadPools: qmap
+import ThreadPools: qmap, tmap, bmap
+import Zygote
 
 """Designed to be used in conjunction with loss_pullback below. Returns the
 gradients wrt to `x0` and `policy_params`."""
@@ -144,17 +145,16 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(qmap(
-            Utils.force,
-            [() -> ez_euler_bptt(x0, policy_params, dt) for x0 in x0_batch],
-        ))
+        _aggregate_batch_results(qmap(x0_batch) do x0
+            ez_euler_bptt(x0, policy_params, dt)
+        end)
     end
 
     function ez_loss_and_grad_many(x0_batch, policy_params, sensealg)
-        _aggregate_batch_results(qmap(
-            Utils.force,
-            [() -> ez_loss_and_grad(x0, policy_params, sensealg) for x0 in x0_batch],
-        ))
+        # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
+        _aggregate_batch_results(qmap(x0_batch) do x0
+            ez_loss_and_grad(x0, policy_params, sensealg)
+        end)
     end
 
     (
