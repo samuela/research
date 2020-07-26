@@ -100,6 +100,8 @@ end
     [rollout(x0, θ) for x0 in x0_test_batch]
 end
 
+stills = [5000, 7500, 10000]
+
 anim = Plots.Animation()
 @showprogress for iter = 1:size(ppg_params, 1)
     p = Plots.plot(
@@ -125,5 +127,8 @@ anim = Plots.Animation()
     Plots.plot!([], color = :blue, linestyle = :dash, label = "Euler BPTT")
     Plots.plot!([], color = :red, label = "PPG (ours)")
     Plots.frame(anim)
+    if iter in stills
+        Plots.savefig(p, "diffdrive_still_$iter.pdf")
+    end
 end
 Plots.mp4(anim, "diffdrive.mp4")
