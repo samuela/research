@@ -44,7 +44,7 @@ policy = FastChain(
 # linear policy
 # policy = FastChain((x, _) -> obs(x), FastDense(7, 2))
 
-init_policy_params = initial_params(policy)
+init_policy_params = initial_params(policy) * 0.1
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
 function run(loss_and_grad)
@@ -60,10 +60,12 @@ function run(loss_and_grad)
     policy_params = deepcopy(init_policy_params)
     # opt = ADAM()
     opt = Momentum(0.001)
+    # opt = Optimizer(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
     # opt =LBFGS(
     #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
     #     linesearch = LineSearches.Static(),
     # )
+    # @showprogress
     for iter = 1:num_iters
         @time begin
             x0_batch = [sample_x0() for _ = 1:batch_size]

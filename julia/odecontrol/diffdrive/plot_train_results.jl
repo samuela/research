@@ -10,25 +10,65 @@ results = JLSO.load("diffdrive_train_results.jlso")
 ppg_params = results[:interp_results].policy_params_per_iter
 euler_params = results[:euler_results].policy_params_per_iter
 @assert size(ppg_params) == size(euler_params)
+num_iter = size(ppg_params, 1)
 
-p = Plots.plot(interp_results.loss_per_iter, label = "loss")
-Plots.savefig(p, "diffdrive_loss_per_iter.pdf")
-
-p = Plots.plot(
-    map(mean, eachrow(abs.(interp_results.policy_params_per_iter))),
-    label = "mean abs of each weight",
+Plots.savefig(
+    Plots.plot(
+        1:num_iter,
+        [results[:euler_results].loss_per_iter, results[:interp_results].loss_per_iter],
+        label = ["Euler BPTT" "PPG (ours)"],
+        xlabel = "Iteration",
+        ylabel = "Loss",
+    ),
+    "diffdrive_loss_per_iter.pdf",
 )
-Plots.savefig(p, "diffdrive_weights_per_iter.pdf")
 
-p = Plots.plot(map(norm, eachrow(interp_results.g_per_iter)), label = "norm of gradients")
-Plots.savefig(p, "diffdrive_grads_per_iter.pdf")
+begin
+    p = Plots.plot(xlabel = "Number of function evaluations", ylabel = "Loss")
+    Plots.plot!(
+        cumsum(results[:euler_results].nf_per_iter + results[:euler_results].n∇f_per_iter),
+        results[:euler_results].loss_per_iter,
+        label = "Euler BPTT",
+    )
+    Plots.plot!(
+        cumsum(
+            results[:interp_results].nf_per_iter + results[:interp_results].n∇f_per_iter,
+        ),
+        results[:interp_results].loss_per_iter,
+        label = "PPG (ours)",
+    )
+    Plots.savefig(p, "diffdrive_loss_per_nf.pdf")
+end
 
-p = Plots.plot(
-    map(mean, eachrow(abs.(interp_results.g_per_iter))),
-    label = "mean abs of gradients",
-    yaxis = :log10,
+Plots.savefig(
+    Plots.plot(
+        map(mean, eachrow(abs.(interp_results.policy_params_per_iter))),
+        label = "mean abs of each weight",
+    ),
+    "diffdrive_weights_per_iter.pdf",
 )
-Plots.savefig(p, "diffdrive_grads_per_iter.pdf")
+
+Plots.savefig(
+    Plots.plot(map(norm, eachrow(interp_results.g_per_iter)), label = "norm of gradients"),
+    "diffdrive_grads_per_iter.pdf",
+)
+
+Plots.savefig(
+    Plots.plot(
+        map(mean, eachrow(abs.(interp_results.g_per_iter))),
+        label = "mean abs of gradients",
+        yaxis = :log10,
+    ),
+    "diffdrive_grads_per_iter.pdf",
+)
+
+# euler_dt_per_iter =
+#     T ./ (
+#         cumsum(
+#             (interp_results.nf_per_iter + interp_results.n∇f_per_iter) / batch_size / 2,
+#         ) ./ (1:num_iter)
+#     )
+# Plots.savefig(Plots.plot(euler_dt_per_iter, label="Average Euler dt over time"), "deleteme.pdf")
 
 # NOTE: Make sure this is the same as in train.jl!
 dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)

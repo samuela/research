@@ -59,6 +59,8 @@ function ppg_goodies(dynamics, cost, policy, T)
             Tsit5(),
             u0 = z0,
             p = policy_params,
+            reltol = 1e-3,
+            abstol = 1e-3,
         )
 
         # zT = fwd_sol[end]
@@ -85,6 +87,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
+                reltol = 1e-3,
+                abstol = 1e-3,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
