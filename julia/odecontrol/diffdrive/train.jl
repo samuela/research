@@ -21,14 +21,14 @@ import JLSO
 import Optim: LBFGS
 import LineSearches
 
-BLAS.set_num_threads(1)
+# BLAS.set_num_threads(1)
 
 # This seeds the `init_policy_params` below, and then gets overridden later.
 seed!(123)
 
 floatT = Float32
 T = 5.0
-num_iters = 5000
+num_iters = 10000
 batch_size = 8
 
 dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
@@ -44,7 +44,7 @@ policy = FastChain(
 # linear policy
 # policy = FastChain((x, _) -> obs(x), FastDense(7, 2))
 
-init_policy_params = initial_params(policy) * 0.1
+init_policy_params = initial_params(policy)
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
 function run(loss_and_grad)
@@ -74,6 +74,7 @@ function run(loss_and_grad)
             nf_per_iter[iter] = info.nf
             n∇f_per_iter[iter] = info.n∇f
 
+            clamp!(g, -10, 10)
             Flux.Optimise.update!(opt, policy_params, g)
             println("Episode $iter, loss = $loss")
         end
