@@ -30,8 +30,10 @@ function diffdrive_env(floatT, wheelbase, wheel_radius)
             rand(floatT) * 10 - 5,
             rand(floatT) * 10 - 5,
             rand(floatT) * twopi,
-            randn(floatT),
-            randn(floatT),
+            # randn(floatT),
+            # randn(floatT),
+            0,
+            0,
         ]::Array{floatT}
     end
 

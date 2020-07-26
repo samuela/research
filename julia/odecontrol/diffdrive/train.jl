@@ -9,22 +9,27 @@ include("../ppg.jl")
 
 import DifferentialEquations: Tsit5
 import Flux
-import Flux: ADAM
+import Flux: ADAM, Momentum, Optimiser
 import Flux.Data: DataLoader
+import Flux.Optimise: ExpDecay
 import DiffEqFlux: FastChain, FastDense, initial_params
 import Random: seed!
 import Plots
 import Statistics: mean
 import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint
 import JLSO
+import Optim: LBFGS
+import LineSearches
+
+BLAS.set_num_threads(1)
 
 # This seeds the `init_policy_params` below, and then gets overridden later.
 seed!(123)
 
 floatT = Float32
 T = 5.0
-num_iters = 10000
-batch_size = 32
+num_iters = 5000
+batch_size = 8
 
 dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
 
@@ -35,32 +40,37 @@ policy = FastChain(
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, 2),
 )
-# policy = FastDense(x_dim, x_dim) # linear policy
+
+# linear policy
+# policy = FastChain((x, _) -> obs(x), FastDense(7, 2))
 
 init_policy_params = initial_params(policy) * 0.1
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
-function interp()
+function run(loss_and_grad)
     # Seed here so that both interp and euler get the same batches.
     seed!(123)
 
     loss_per_iter = fill(NaN, num_iters)
     policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
+    g_per_iter = fill(NaN, num_iters, length(init_policy_params))
     nf_per_iter = fill(NaN, num_iters)
     n∇f_per_iter = fill(NaN, num_iters)
 
     policy_params = deepcopy(init_policy_params)
-    opt = ADAM()
+    # opt = ADAM()
+    opt = Momentum(0.001)
+    # opt =LBFGS(
+    #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
+    #     linesearch = LineSearches.Static(),
+    # )
     for iter = 1:num_iters
         @time begin
             x0_batch = [sample_x0() for _ = 1:batch_size]
-            loss, g, info = learned_policy_goodies.ez_loss_and_grad_many(
-                x0_batch,
-                policy_params,
-                InterpolatingAdjoint(),
-            )
+            loss, g, info = loss_and_grad(x0_batch, policy_params)
             loss_per_iter[iter] = loss
             policy_params_per_iter[iter, :] = policy_params
+            g_per_iter[iter, :] = g
             nf_per_iter[iter] = info.nf
             n∇f_per_iter[iter] = info.n∇f
 
@@ -72,58 +82,31 @@ function interp()
     (
         loss_per_iter = loss_per_iter,
         policy_params_per_iter = policy_params_per_iter,
+        g_per_iter = g_per_iter,
         nf_per_iter = nf_per_iter,
         n∇f_per_iter = n∇f_per_iter,
     )
 end
 
 @info "Interp"
-interp_results = interp()
+interp_results = run(
+    (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
+        x0_batch,
+        θ,
+        InterpolatingAdjoint(),
+    ),
+)
 
 # Divide by two for the forward and backward passes.
 mean_euler_steps =
     mean((interp_results.nf_per_iter + interp_results.n∇f_per_iter) / batch_size / 2)
 euler_dt = T / mean_euler_steps
 
-function euler(dt)
-    # Seed here so that both interp and euler get the same batches.
-    seed!(123)
-
-    loss_per_iter = fill(NaN, num_iters)
-    policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
-    nf_per_iter = fill(NaN, num_iters)
-    n∇f_per_iter = fill(NaN, num_iters)
-
-    policy_params = deepcopy(init_policy_params)
-    opt = ADAM()
-    for iter = 1:num_iters
-        @time begin
-            x0_batch = [sample_x0() for _ = 1:batch_size]
-            loss, g, info = learned_policy_goodies.ez_euler_loss_and_grad_many(
-                x0_batch,
-                policy_params,
-                dt,
-            )
-            loss_per_iter[iter] = loss
-            policy_params_per_iter[iter, :] = policy_params
-            nf_per_iter[iter] = info.nf
-            n∇f_per_iter[iter] = info.n∇f
-
-            Flux.Optimise.update!(opt, policy_params, g)
-            println("Episode $iter, loss = $loss")
-        end
-    end
-
-    (
-        loss_per_iter = loss_per_iter,
-        policy_params_per_iter = policy_params_per_iter,
-        nf_per_iter = nf_per_iter,
-        n∇f_per_iter = n∇f_per_iter,
-    )
-end
-
 @info "Euler"
-euler_results = euler(euler_dt)
+euler_results = run(
+    (x0_batch, θ) ->
+        learned_policy_goodies.ez_euler_loss_and_grad_many(x0_batch, θ, euler_dt),
+)
 
 @info "Dumping results"
 JLSO.save(
