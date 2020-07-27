@@ -2,6 +2,7 @@ import JLSO
 import Plots
 import ProgressMeter: @showprogress
 import Random
+import LinearAlgebra: norm
 
 Random.seed!(123)
 ENV["GKSwstype"] = "nul"

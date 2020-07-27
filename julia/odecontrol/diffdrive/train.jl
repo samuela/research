@@ -20,6 +20,7 @@ import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjo
 import JLSO
 import Optim: LBFGS
 import LineSearches
+import ProgressMeter
 
 # BLAS.set_num_threads(1)
 
@@ -60,13 +61,14 @@ function run(loss_and_grad)
     policy_params = deepcopy(init_policy_params)
     batches = [[sample_x0() for _ = 1:batch_size] for _ = 1:num_iters]
     # opt = ADAM()
-    # opt = Momentum(0.001)
-    opt = Optimizer(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
+    opt = Momentum(0.001)
+    # opt = Optimiser(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
     # opt =LBFGS(
     #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
     #     linesearch = LineSearches.Static(),
     # )
-    @showprogress for iter = 1:num_iters
+    progress = ProgressMeter.Progress(num_iters)
+    for iter = 1:num_iters
         loss, g, info = loss_and_grad(batches[iter], policy_params)
         loss_per_iter[iter] = loss
         policy_params_per_iter[iter, :] = policy_params
@@ -76,7 +78,15 @@ function run(loss_and_grad)
 
         clamp!(g, -10, 10)
         Flux.Optimise.update!(opt, policy_params, g)
-        println("Episode $iter, loss = $loss")
+        ProgressMeter.next!(
+            progress;
+            showvalues = [
+                (:iter, iter),
+                (:loss, loss),
+                (:nf, info.nf / batch_size),
+                (:n∇f, info.n∇f / batch_size),
+            ],
+        )
     end
 
     (
@@ -88,15 +98,6 @@ function run(loss_and_grad)
     )
 end
 
-@info "Neural ODE"
-neural_ode_results = run(
-    (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
-        x0_batch,
-        θ,
-        BacksolveAdjoint(checkpointing = false),
-    ),
-)
-
 @info "Interp"
 interp_results = run(
     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
@@ -105,6 +106,15 @@ interp_results = run(
         InterpolatingAdjoint(),
     ),
 )
+
+# @info "Neural ODE"
+# neural_ode_results = run(
+#     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
+#         x0_batch,
+#         θ,
+#         BacksolveAdjoint(checkpointing = false),
+#     ),
+# )
 
 # Divide by two for the forward and backward passes.
 mean_euler_steps =

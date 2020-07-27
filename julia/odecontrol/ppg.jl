@@ -59,7 +59,7 @@ function ppg_goodies(dynamics, cost, policy, T)
             Tsit5(),
             u0 = z0,
             p = policy_params,
-            reltol = 1e-3,
+            reltol = 1e-2,
             abstol = 1e-3,
         )
 
@@ -87,7 +87,7 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
+                reltol = 1e-2,
                 abstol = 1e-3,
             )
 
@@ -128,9 +128,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_bptt(x0, policy_params, dt)
-        # Julia seems to do auto-rounding with floor when doing 1:num_steps. That's
-        # fine for our purposes.
-        num_steps = T / dt
+        num_steps = floor(Int, T / dt)
         loss, pullback =
             Zygote.pullback((θ) -> euler_with_cost(x0, θ, dt, num_steps), policy_params)
         g, = pullback(1.0)
