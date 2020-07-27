@@ -42,18 +42,6 @@ lqr_loss = lqr_sol[end][1]
 
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 
-"""Calculate the loss, gradient wrt parameters, and the reconstructed z(0)."""
-function node_loss_and_grad(x0, policy_params)
-    z_dim = x_dim + 1
-    fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
-    bwd_sol = vjp(vcat(1, zero(x0)), BacksolveAdjoint(checkpointing = false))
-    loss, _ = extract_loss_and_xT(fwd_sol)
-    _, g = extract_gradients(fwd_sol, bwd_sol)
-
-    # The final z_dim elements of bwd_sol are the reconstructed z(t) trajectory.
-    loss, g, bwd_sol[end][end-z_dim+1:end]
-end
-
 function plot_neural_ode()
     policy_params = deepcopy(init_policy_params)
     learned_loss_per_iter = fill(NaN, num_iters)
@@ -61,10 +49,12 @@ function plot_neural_ode()
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            loss, g, z0_reconst = node_loss_and_grad(x0, policy_params)
-            Flux.Optimise.update!(opt, policy_params, g)
+            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
+            bwd = vjp(vcat(1, zero(x0)), BacksolveAdjoint(checkpointing = false))
+            loss, _ = extract_loss_and_xT(fwd_sol)
+            Flux.Optimise.update!(opt, policy_params, bwd.g)
             learned_loss_per_iter[iter] = loss
-            reconst_error_per_iter[iter] = norm(z0_reconst - vcat(0.0, x0))
+            reconst_error_per_iter[iter] = norm(bwd.x0_reconstructed - vcat(0.0, x0))
             # println("Episode $iter, excess loss = $(loss - lqr_loss)")
         end
     end
@@ -92,18 +82,17 @@ function plot_neural_ode()
 end
 
 ################################################################################
-function plot_interp()
+function plot_quad()
     policy_params = deepcopy(init_policy_params)
     learned_loss_per_iter = fill(NaN, num_iters)
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
             fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
-            bwd_sol = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
+            # bwd_sol = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
+            bwd = vjp(vcat(1, zero(x0)), QuadratureAdjoint())
             loss, _ = extract_loss_and_xT(fwd_sol)
-            _, g = extract_gradients(fwd_sol, bwd_sol)
-
-            Flux.Optimise.update!(opt, policy_params, g)
+            Flux.Optimise.update!(opt, policy_params, bwd.g)
             learned_loss_per_iter[iter] = loss
             # println("Episode $iter, excess loss = $(loss_ - lqr_loss)")
         end
@@ -141,5 +130,5 @@ end
 
 @info "Neural ODE"
 plot_neural_ode()
-@info "Interpolation adjoint"
-plot_interp()
+@info "PPG"
+plot_quad()
