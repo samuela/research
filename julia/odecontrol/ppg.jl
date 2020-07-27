@@ -8,7 +8,7 @@ import DiffEqSensitivity:
     InterpolatingAdjoint,
     BacksolveAdjoint,
     AdjointSensitivityIntegrand
-import QuadGK: quadgk
+import QuadGK: quadgk!
 import ThreadPools: qmap, tmap, bmap
 import Zygote
 
@@ -80,8 +80,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                # reltol = 1e-3,
-                # abstol = 1e-3,
+                reltol = 1e-3,
+                abstol = 1e-3,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -113,8 +113,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                # reltol = 1e-3,
-                # abstol = 1e-3,
+                reltol = 1e-3,
+                abstol = 1e-3,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -142,21 +142,25 @@ function ppg_goodies(dynamics, cost, policy, T)
                 sensealg,
                 save_everystep = true,
                 save_start = true,
-                # reltol = 1e-3,
-                # abstol = 1e-3,
+                reltol = 1e-3,
+                abstol = 1e-3,
             )
 
             integrand = AdjointSensitivityIntegrand(fwd_sol, bwd_sol, sensealg, nothing)
 
+            # Do in-place quadgk for a smidge more perf.
             quad_nf = Ref(0)
-            g, err = quadgk(
-                (t) -> (quad_nf[] += 1; integrand(t)),
-                0,
+            g = similar(integrand.p)
+            g .= 0
+            quadgk!(
+                (out, t) -> (quad_nf[] += 1; integrand(out, t)),
+                g,
+                0.0,
                 T,
                 atol = sensealg.abstol,
                 rtol = sensealg.reltol,
             )
-            (g = -g', nf = fwd_sol.destats.nf, n∇f = bwd_sol.destats.nf + quad_nf[])
+            (g = -g, nf = fwd_sol.destats.nf, n∇f = bwd_sol.destats.nf + quad_nf[])
         end
 
         # TODO:
@@ -168,9 +172,9 @@ function ppg_goodies(dynamics, cost, policy, T)
 
     function ez_loss_and_grad(x0, policy_params, sensealg)
         @info "fwd"
-        @timev fwd_sol, vjp = loss_pullback(x0, policy_params)
+        fwd_sol, vjp = loss_pullback(x0, policy_params)
         @info "bwd"
-        @timev bwd = vjp(vcat(1, zero(x0)), sensealg)
+        bwd = vjp(vcat(1, zero(x0)), sensealg)
         loss, _ = extract_loss_and_xT(fwd_sol)
         # _, g = extract_gradients(fwd_sol, bwd_sol)
         # nf, n∇f = count_evals(fwd_sol, bwd_sol, sensealg)
@@ -210,7 +214,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(qmap(x0_batch) do x0
+        _aggregate_batch_results(map(x0_batch) do x0
             ez_euler_bptt(x0, policy_params, dt)
         end)
     end
