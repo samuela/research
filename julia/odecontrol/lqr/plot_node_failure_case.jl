@@ -71,11 +71,11 @@ function plot_neural_ode()
         ax2 = ax1.twinx()
         ax2.set_ylabel("L2 error", color = "tab:red")
         ax2.tick_params(axis = "y", labelcolor = "tab:red")
-        ax2.plot([], color = "tab:blue", label = "Learned policy loss")
+        ax2.plot([], color = "tab:blue", label = "Neural ODE solution")
         ax2.plot([], linestyle = "--", color = "grey", label = "LQR solution")
         ax2.plot(reconst_error_per_iter, color = "tab:red", label = "Backsolve error")
 
-        PyPlot.legend()
+        PyPlot.legend(loc = "upper left")
         PyPlot.tight_layout()
         PyPlot.savefig("node_comparison.pdf")
     end
@@ -110,7 +110,7 @@ function plot_quad()
         ax2 = ax1.twinx()
         ax2.set_ylabel("L2 error", color = "tab:red")
         ax2.tick_params(axis = "y", labelcolor = "tab:red")
-        ax2.plot([], color = "tab:blue", label = "Learned policy loss")
+        ax2.plot([], color = "tab:blue", label = "PPG solution (ours)")
         ax2.plot([], linestyle = "--", color = "grey", label = "LQR solution")
 
         # Interpolated forward pass has no reconstruction error since we have a
@@ -122,7 +122,7 @@ function plot_quad()
         )
         ax2.set_ylim(-1.0, 50.0)
 
-        PyPlot.legend()
+        PyPlot.legend(loc = "upper left")
         PyPlot.tight_layout()
         PyPlot.savefig("ours_comparison.pdf")
     end
