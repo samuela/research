@@ -1,16 +1,10 @@
 include("utils.jl")
 
-import DiffEqBase
-import DiffEqSensitivity:
-    solve,
-    ODEProblem,
-    ODEAdjointProblem,
-    InterpolatingAdjoint,
-    BacksolveAdjoint,
-    AdjointSensitivityIntegrand
-import QuadGK: quadgk!
-import ThreadPools: qmap, tmap, bmap
-import Zygote
+using DiffEqFlux, DiffEqSensitivity, DifferentialEquations, Flux
+using DiffEqBase
+using QuadGK: quadgk!
+using ThreadPools: qmap, tmap, bmap
+using Zygote
 
 function extract_loss_and_xT(fwd_sol)
     fwd_sol[end][1], fwd_sol[end][2:end]
@@ -41,11 +35,12 @@ function ppg_goodies(dynamics, cost, policy, T)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
             ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
-            Tsit5(),
+            VCABM(), #Tsit5(),
             u0 = z0,
             p = policy_params,
-            # reltol = 1e-3,
-            # abstol = 1e-3,
+            solverargs=(dt=0.3, dtmax=100.0),
+            reltol = 1e-2,
+            abstol = 1e-3,
         )
 
         # zT = fwd_sol[end]
@@ -61,10 +56,11 @@ function ppg_goodies(dynamics, cost, policy, T)
                 ODEAdjointProblem(
                     fwd_sol,
                     sensealg,
+                    solverargs=(dt=0.3, dtmax=100.0),
                     (out, x, p, t, i) -> (out[:] = g_zT),
                     [T],
                 ),
-                Tsit5();
+                VCABM(); #Tsit5();
                 kwargs...,
             )
         end
@@ -80,7 +76,7 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
+                reltol = 1e-2,
                 abstol = 1e-3,
             )
 
@@ -106,14 +102,16 @@ function ppg_goodies(dynamics, cost, policy, T)
                 x0_reconstructed = bwd_sol[end][end-length(fwd_sol.prob.u0)+1:end],
             )
         end
+        
         function pullback(g_zT, sensealg::InterpolatingAdjoint)
             bwd_sol = _adjoint_solve(
                 g_zT,
                 sensealg,
+                solverargs=(dt=0.3, dtmax=100.0),
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
+                reltol = 1e-2,
                 abstol = 1e-3,
             )
 
@@ -142,7 +140,7 @@ function ppg_goodies(dynamics, cost, policy, T)
                 sensealg,
                 save_everystep = true,
                 save_start = true,
-                reltol = 1e-3,
+                reltol = 1e-2,
                 abstol = 1e-3,
             )
 
@@ -171,14 +169,14 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_loss_and_grad(x0, policy_params, sensealg)
-        @info "fwd"
+        #@info "fwd"
         fwd_sol, vjp = loss_pullback(x0, policy_params)
-        @info "bwd"
+        #@info "bwd"
         bwd = vjp(vcat(1, zero(x0)), sensealg)
         loss, _ = extract_loss_and_xT(fwd_sol)
         # _, g = extract_gradients(fwd_sol, bwd_sol)
         # nf, n∇f = count_evals(fwd_sol, bwd_sol, sensealg)
-        @info "fin"
+        #@info "fin"
         # TODO: double check the nf logic
         loss, bwd.g, (nf = fwd_sol.destats.nf + bwd.nf, n∇f = bwd.n∇f)
     end
@@ -214,14 +212,14 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(map(x0_batch) do x0
+        _aggregate_batch_results(tmap(x0_batch) do x0
             ez_euler_bptt(x0, policy_params, dt)
         end)
     end
 
     function ez_loss_and_grad_many(x0_batch, policy_params, sensealg)
         # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
-        _aggregate_batch_results(map(x0_batch) do x0
+        _aggregate_batch_results(tmap(x0_batch) do x0
             ez_loss_and_grad(x0, policy_params, sensealg)
         end)
     end
