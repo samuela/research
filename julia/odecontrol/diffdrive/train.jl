@@ -32,7 +32,7 @@ batch_size = 32 #8 #128 #32 #8
 dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
 #const dd = DDrive{floatT}(1.0f0, 0.5f0)
 
-num_hidden = 512 #32
+num_hidden = 32
 act = tanh #relu
 policy = FastChain(
                    (x, _) -> obs(x),
