@@ -1,14 +1,15 @@
 """A self-contained script to test the performance of the forward and adjoint
 DifferentialEquations.jl solves with the quadrotor."""
 
-import DifferentialEquations: Tsit5, VCABM, BS3, Euler, Vern7, VCAB3
-import DiffEqFlux: FastChain, FastDense, initial_params, ODEProblem, solve
-import Random: seed!
-import DiffEqSensitivity:
-    InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProblem, ReverseDiffVJP
+using DifferentialEquations: Tsit5, VCABM, BS3, Euler, Vern7, VCAB3
+using DiffEqFlux: FastChain, FastDense, initial_params, ODEProblem, solve
+using Random: seed!
+using DiffEqSensitivity#:
+    #InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProblem, ReverseDiffVJP
 using BenchmarkTools
 
 seed!(123)
+const floatT = Float32
 
 module QuadrotorEnv
 

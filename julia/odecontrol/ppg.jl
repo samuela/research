@@ -214,7 +214,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(qmap(x0_batch) do x0
+        _aggregate_batch_results(tmap(x0_batch) do x0
             ez_euler_bptt(x0, policy_params, dt)
         end)
     end
@@ -222,7 +222,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     function ez_loss_and_grad_many(x0_batch, policy_params, solvealg, sensealg)
         # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
         _aggregate_batch_results(
-            qmap(x0_batch) do x0
+            tmap(x0_batch) do x0
                 ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
             end,
         )
