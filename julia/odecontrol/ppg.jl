@@ -7,6 +7,7 @@ import DiffEqSensitivity:
     ODEAdjointProblem,
     InterpolatingAdjoint,
     BacksolveAdjoint,
+    QuadratureAdjoint,
     AdjointSensitivityIntegrand
 import QuadGK: quadgk!
 import ThreadPools: qmap, tmap, bmap
@@ -37,19 +38,16 @@ function ppg_goodies(dynamics, cost, policy, T)
 
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
-    function loss_pullback(x0, policy_params)
+    function loss_pullback(x0, policy_params, solvealg)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
             ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
-            Tsit5(),
+            solvealg,
             u0 = z0,
             p = policy_params,
-            # reltol = 1e-3,
-            # abstol = 1e-3,
+            reltol = 1e-3,
+            abstol = 1e-3,
         )
-
-        # zT = fwd_sol[end]
-        # fwd_sol, zT[1], zT[2:end], fwd_sol.destats.nf
 
         # TODO: this is not compatible with QuadratureAdjoint because nothing is
         # consistent... See https://github.com/SciML/DiffEqSensitivity.jl/blob/master/src/local_sensitivity/quadrature_adjoint.jl#L171.
@@ -64,7 +62,7 @@ function ppg_goodies(dynamics, cost, policy, T)
                     (out, x, p, t, i) -> (out[:] = g_zT),
                     [T],
                 ),
-                Tsit5();
+                solvealg;
                 kwargs...,
             )
         end
@@ -102,7 +100,8 @@ function ppg_goodies(dynamics, cost, policy, T)
             (
                 g = -bwd_sol[end][(1:l).+length(fwd_sol.prob.u0)],
                 nf = bwd_sol.destats.nf,
-                n∇f = bwd_sol.destats.nf,
+                n∇ₓf = bwd_sol.destats.nf,
+                n∇ᵤf = bwd_sol.destats.nf,
                 x0_reconstructed = bwd_sol[end][end-length(fwd_sol.prob.u0)+1:end],
             )
         end
@@ -130,7 +129,8 @@ function ppg_goodies(dynamics, cost, policy, T)
             (
                 g = -bwd_sol[end][(1:l).+length(fwd_sol.prob.u0)],
                 nf = 0,
-                n∇f = bwd_sol.destats.nf,
+                n∇ₓf = bwd_sol.destats.nf,
+                n∇ᵤf = bwd_sol.destats.nf,
             )
         end
         function pullback(g_zT, sensealg::QuadratureAdjoint)
@@ -152,15 +152,17 @@ function ppg_goodies(dynamics, cost, policy, T)
             quad_nf = Ref(0)
             g = similar(integrand.p)
             g .= 0
-            quadgk!(
+            _, err = quadgk!(
                 (out, t) -> (quad_nf[] += 1; integrand(out, t)),
                 g,
                 0.0,
                 T,
+                # It's possible to pass abstol and reltol to QuadratureAdjoint.
                 atol = sensealg.abstol,
                 rtol = sensealg.reltol,
+                # order = 3,
             )
-            (g = -g, nf = fwd_sol.destats.nf, n∇f = bwd_sol.destats.nf + quad_nf[])
+            (g = -g, nf = 0, n∇ₓf = bwd_sol.destats.nf, n∇ᵤf = quad_nf[], quadgk_err = err)
         end
 
         # TODO:
@@ -170,17 +172,14 @@ function ppg_goodies(dynamics, cost, policy, T)
         fwd_sol, pullback
     end
 
-    function ez_loss_and_grad(x0, policy_params, sensealg)
-        @info "fwd"
-        fwd_sol, vjp = loss_pullback(x0, policy_params)
-        @info "bwd"
+    function ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
+        # @info "fwd"
+        fwd_sol, vjp = loss_pullback(x0, policy_params, solvealg)
+        # @info "bwd"
         bwd = vjp(vcat(1, zero(x0)), sensealg)
         loss, _ = extract_loss_and_xT(fwd_sol)
-        # _, g = extract_gradients(fwd_sol, bwd_sol)
-        # nf, n∇f = count_evals(fwd_sol, bwd_sol, sensealg)
-        @info "fin"
-        # TODO: double check the nf logic
-        loss, bwd.g, (nf = fwd_sol.destats.nf + bwd.nf, n∇f = bwd.n∇f)
+        # @info "fin"
+        loss, bwd.g, (nf = fwd_sol.destats.nf + bwd.nf, n∇ₓf = bwd.n∇ₓf, n∇ᵤf = bwd.n∇ᵤf)
     end
 
     function euler_with_cost(x0, policy_params, dt, num_steps)
@@ -199,7 +198,7 @@ function ppg_goodies(dynamics, cost, policy, T)
         loss, pullback =
             Zygote.pullback((θ) -> euler_with_cost(x0, θ, dt, num_steps), policy_params)
         g, = pullback(1.0)
-        loss, g, (nf = num_steps, n∇f = num_steps)
+        loss, g, (nf = num_steps, n∇ₓf = num_steps, n∇ᵤf = num_steps)
     end
 
     function _aggregate_batch_results(res)
@@ -208,22 +207,25 @@ function ppg_goodies(dynamics, cost, policy, T)
             mean(g for (_, g, _) in res),
             (
                 nf = sum(info.nf for (_, _, info) in res),
-                n∇f = sum(info.n∇f for (_, _, info) in res),
+                n∇ₓf = sum(info.n∇ₓf for (_, _, info) in res),
+                n∇ᵤf = sum(info.n∇ᵤf for (_, _, info) in res),
             ),
         )
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(map(x0_batch) do x0
+        _aggregate_batch_results(qmap(x0_batch) do x0
             ez_euler_bptt(x0, policy_params, dt)
         end)
     end
 
-    function ez_loss_and_grad_many(x0_batch, policy_params, sensealg)
+    function ez_loss_and_grad_many(x0_batch, policy_params, solvealg, sensealg)
         # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
-        _aggregate_batch_results(map(x0_batch) do x0
-            ez_loss_and_grad(x0, policy_params, sensealg)
-        end)
+        _aggregate_batch_results(
+            qmap(x0_batch) do x0
+                ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
+            end,
+        )
     end
 
     (
