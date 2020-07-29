@@ -5,18 +5,26 @@ See http://planning.cs.uiuc.edu/node659.html.
 
 module DiffDriveEnv
 
-function diffdrive_env(floatT, wheelbase, wheel_radius)
+function env(floatT, wheelbase, wheel_radius)
     twopi = convert(floatT, 2π)
 
     function dynamics(state, u)
         x, y, θ, ω_l, ω_r = state
         sinθ, cosθ = sincos(θ)
+        clippy(z, dz) =
+            if z < -1
+                max(dz, 0)
+            elseif z > 1
+                min(dz, 0)
+            else
+                dz
+            end
         [
             wheel_radius / 2 * (ω_l + ω_r) * cosθ,
             wheel_radius / 2 * (ω_l + ω_r) * sinθ,
             wheel_radius / wheelbase * (ω_r - ω_l),
-            u[1],
-            u[2],
+            clippy(ω_l,   u[1]),
+            clippy(ω_r, u[2]),
         ]
     end
 
@@ -40,7 +48,7 @@ function diffdrive_env(floatT, wheelbase, wheel_radius)
     function observation(state)
         x, y, θ, ω_l, ω_r = state
         sinθ, cosθ = sincos(θ)
-        [x, y, θ % twopi, ω_l, ω_r, sinθ, cosθ]
+        [x, y, θ % twopi, ω_l, ω_r, sinθ, cosθ, x^2, y^2, ω_l^2, ω_r^2]
     end
 
     dynamics, cost, sample_x0, observation
