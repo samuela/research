@@ -7,7 +7,7 @@ generally needs to be set. See https://discourse.julialang.org/t/unable-to-displ
 include("common.jl")
 include("../ppg.jl")
 
-import DifferentialEquations: Tsit5
+import DifferentialEquations: Tsit5, VCABM
 import Flux
 import Flux: ADAM, Momentum, Optimiser
 import Flux.Data: DataLoader
@@ -28,16 +28,16 @@ import ProgressMeter
 seed!(123)
 
 floatT = Float32
-T = 5.0
+T = 10.0
 num_iters = 10000
 batch_size = 8
 
-dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
+dynamics, cost, sample_x0, obs = DiffDriveEnv.env(floatT, 1.0f0, 0.5f0)
 
-num_hidden = 32
+num_hidden = 64
 policy = FastChain(
     (x, _) -> obs(x),
-    FastDense(7, num_hidden, tanh),
+    FastDense(11, num_hidden, tanh),
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, 2),
 )
@@ -56,7 +56,8 @@ function run(loss_and_grad)
     policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
     g_per_iter = fill(NaN, num_iters, length(init_policy_params))
     nf_per_iter = fill(NaN, num_iters)
-    n∇f_per_iter = fill(NaN, num_iters)
+    n∇ₓf_per_iter = fill(NaN, num_iters)
+    n∇ᵤf_per_iter = fill(NaN, num_iters)
 
     policy_params = deepcopy(init_policy_params)
     batches = [[sample_x0() for _ = 1:batch_size] for _ = 1:num_iters]
@@ -74,7 +75,8 @@ function run(loss_and_grad)
         policy_params_per_iter[iter, :] = policy_params
         g_per_iter[iter, :] = g
         nf_per_iter[iter] = info.nf
-        n∇f_per_iter[iter] = info.n∇f
+        n∇ₓf_per_iter[iter] = info.n∇ₓf
+        n∇ᵤf_per_iter[iter] = info.n∇ᵤf
 
         clamp!(g, -10, 10)
         Flux.Optimise.update!(opt, policy_params, g)
@@ -84,7 +86,8 @@ function run(loss_and_grad)
                 (:iter, iter),
                 (:loss, loss),
                 (:nf, info.nf / batch_size),
-                (:n∇f, info.n∇f / batch_size),
+                (:n∇ₓf, info.n∇ₓf / batch_size),
+                (:n∇ᵤf, info.n∇ᵤf / batch_size),
             ],
         )
     end
@@ -94,31 +97,50 @@ function run(loss_and_grad)
         policy_params_per_iter = policy_params_per_iter,
         g_per_iter = g_per_iter,
         nf_per_iter = nf_per_iter,
-        n∇f_per_iter = n∇f_per_iter,
+        n∇ₓf_per_iter = n∇ₓf_per_iter,
+        n∇ᵤf_per_iter = n∇ᵤf_per_iter,
     )
 end
 
-@info "Interp"
+@info "InterpolatingAdjoint"
 interp_results = run(
     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
         x0_batch,
         θ,
-        InterpolatingAdjoint(),
+        VCABM(),
+        InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
     ),
 )
+
+# @info "QuadratureAdjoint"
+# quad_results = run(
+#     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
+#         x0_batch,
+#         θ,
+#         Tsit5(),
+#         QuadratureAdjoint(abstol = 1e-3, reltol = 1e-3, autojacvec = ReverseDiffVJP(true)),
+#     ),
+# )
+
 
 # @info "Neural ODE"
 # neural_ode_results = run(
 #     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
 #         x0_batch,
 #         θ,
-#         BacksolveAdjoint(checkpointing = false),
+#         Tsit5(),
+#         BacksolveAdjoint(checkpointing = false, autojacvec = ReverseDiffVJP(true)),
 #     ),
 # )
 
-# Divide by two for the forward and backward passes.
-mean_euler_steps =
-    mean((interp_results.nf_per_iter + interp_results.n∇f_per_iter) / batch_size / 2)
+# Divide by 3 for nf, n∇ₓf, and n∇ᵤf.
+mean_euler_steps = mean(
+    (
+        interp_results.nf_per_iter +
+        interp_results.n∇ₓf_per_iter +
+        interp_results.n∇ᵤf_per_iter
+    ) / batch_size / 3,
+)
 euler_dt = T / mean_euler_steps
 
 @info "Euler"
@@ -130,7 +152,8 @@ euler_results = run(
 @info "Dumping results"
 JLSO.save(
     "diffdrive_train_results.jlso",
-    :neural_ode_results => neural_ode_results,
     :interp_results => interp_results,
+    # :quad_results => quad_results,
+    # :neural_ode_results => neural_ode_results,
     :euler_results => euler_results,
 )
