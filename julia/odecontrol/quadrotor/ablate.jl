@@ -1,8 +1,3 @@
-"""Train a differential drive policy and create an animation of the training
-process displaying its adaptation on a set of paths over time. Note that when
-running on a headless machine, the environment variable `GKS_WSTYPE=140`
-generally needs to be set. See https://discourse.julialang.org/t/unable-to-display-plot-using-the-repl-gks-errors/12826/16.
-"""
 
 include("common.jl")
 include("../ppg.jl")
@@ -30,7 +25,7 @@ seed!(12345)
 floatT = Float32
 T = 5.0
 num_iters = 200
-batch_size = 16 #32
+batch_size = 8 #32
 #dstate = 12
 #dact = 4
 
@@ -39,7 +34,7 @@ dynamics, cost, sample_x0, obs = QuadrotorEnv.normalenv(floatT, 9.8f0, 3.0f0,
 dobs = length(obs(sample_x0()))
 dstate = length(sample_x0())
 
-num_hidden = 16 #64
+num_hidden = 32 #64
 act = tanh
 policy = FastChain(
     (x, _) -> obs(x),
@@ -53,26 +48,10 @@ policy = FastChain(
 # policy = FastChain((x, _) -> obs(x), FastDense(7, 2))
 init_policy_params = initial_params(policy)
 
-############### next model
-rdynamics, rcost, rsample_x0, robs = QuadrotorEnv.residualenv(floatT, 9.8f0, 3.0f0,
-                                                          1.0f0, 1.0f0, 1.0f0)
-dobs = length(robs(rsample_x0()))
-
-rpolicy = FastChain(
-    (x, _) -> robs(x),
-    FastDense(dobs, num_hidden, act),
-    FastDense(num_hidden, num_hidden, act),
-    FastDense(num_hidden, 4,
-              initW=(x...)->Flux.glorot_normal(x...)*1e-2
-             ),
-)
-res_policy_params = initial_params(rpolicy)
-
 rtol = 1e-3
 atol = 1e-3
 
 lpg = ppg_goodies(dynamics, cost, policy, T; reltol=rtol, abstol=atol)
-rpg = ppg_goodies(rdynamics, rcost, rpolicy, T; reltol=rtol, abstol=atol)
 
 function run(loss_and_grad, p0, sample_env)
     # Seed here so that both interp and euler get the same batches.
@@ -146,8 +125,17 @@ interp_results = run(
         θ,
         solver(),
         InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
-        #InterpolatingAdjoint(),
-        #QuadratureAdjoint(autojacvec = ReverseDiffVJP(true))
+    ),
+    init_policy_params, sample_x0
+)
+
+@info "Quadrature"
+quad_results = run(
+    (x0_batch, θ) -> lpg.ez_loss_and_grad_many(
+        x0_batch,
+        θ,
+        solver(),
+        QuadratureAdjoint(autojacvec = ReverseDiffVJP(true))
     ),
     init_policy_params, sample_x0
 )
@@ -166,58 +154,28 @@ euler_results = run(
     init_policy_params, sample_x0
 )
 
-######## residual model
-@info "Residual Interp"
-res_interp_results = run(
-    (x0_batch, θ) -> rpg.ez_loss_and_grad_many(
-        x0_batch,
-        θ,
-        solver(),
-        InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
-        #InterpolatingAdjoint(),
-        #QuadratureAdjoint(autojacvec = ReverseDiffVJP(true))
-    ),
-    res_policy_params, rsample_x0
-)
-
-# Divide by two for the forward and backward passes.
- mean_euler_steps =
-     mean((res_interp_results.nf_per_iter + res_interp_results.n∇f_per_iter) / batch_size / 2)
- euler_dt = T / mean_euler_steps
-#@info euler_dt
-#euler_dt = 0.05
-
-@info "Residual Euler"
-res_euler_results = run(
-    (x0_batch, θ) ->
-        rpg.ez_euler_loss_and_grad_many(x0_batch, θ, euler_dt),
-    res_policy_params, rsample_x0
-)
-
-
 @info "Dumping results"
 JLSO.save(
           "quadrotor_train_results.jlso",
           :interp_results => interp_results,
           :euler_results  => euler_results,
-          :res_interp_results => res_interp_results,
-          :res_euler_results  => res_euler_results,
+          #:res_interp_results => res_interp_results,
+          #:res_euler_results  => res_euler_results,
          )
 
 using UnicodePlots
 xmax = maximum(vcat(sum(euler_results.nf_per_iter) +sum(euler_results.n∇f_per_iter),
                     sum(interp_results.nf_per_iter)+sum(interp_results.n∇f_per_iter),
-                    sum(res_euler_results.nf_per_iter) +sum(res_euler_results.n∇f_per_iter),
-                    sum(res_interp_results.nf_per_iter)+sum(res_interp_results.n∇f_per_iter)))
+                    sum(quad_results.nf_per_iter)+sum(quad_results.n∇f_per_iter)))
 
 #xmax = mean([sum(euler_results.nf_per_iter)+sum(euler_results.n∇f_per_iter),
 #             sum(interp_results.nf_per_iter)+sum(interp_results.n∇f_per_iter)])
 ymin, ymax = round.(extrema([euler_results.loss_per_iter; interp_results.loss_per_iter;
-                             res_euler_results.loss_per_iter; res_interp_results.loss_per_iter;]))
+                             quad_results.loss_per_iter; ]))
 
 plt = lineplot(cumsum(euler_results.nf_per_iter + euler_results.n∇f_per_iter),
                euler_results.loss_per_iter,
-               name = "Euler BPTT, normal",
+               name = "Euler BPTT",
                xlabel = "Number of function evaluations", ylabel = "Loss",
                color = :blue,
                ylim=(ymin, ymax),
@@ -229,23 +187,19 @@ lineplot!(plt,
                  interp_results.nf_per_iter + interp_results.n∇f_per_iter,
                 ),
           interp_results.loss_per_iter,
-          name = "PPG (ours), normall",
+          name = "PPG (ours)",
           color = :red
          )
-lineplot!(plt, cumsum(res_euler_results.nf_per_iter + res_euler_results.n∇f_per_iter),
-          res_euler_results.loss_per_iter,
-          name = "Euler BPTT, residual",
+lineplot!(plt, cumsum(quad_results.nf_per_iter + quad_results.n∇f_per_iter),
+          quad_results.loss_per_iter,
+          name = "Quadrature",
           color=:green)
-lineplot!(plt, cumsum(res_interp_results.nf_per_iter + res_interp_results.n∇f_per_iter),
-          res_interp_results.loss_per_iter,
-          name = "PPG (ours), residual",
-          color=:white)
 display(plt)
 
 
 plt = lineplot(1:num_iters,
                euler_results.loss_per_iter,
-               name = "Euler BPTT, normal",
+               name = "Euler BPTT",
                xlabel = "Number of iterations", ylabel = "Loss",
                color = :blue,
                ylim=(ymin, ymax),
@@ -255,23 +209,19 @@ plt = lineplot(1:num_iters,
 lineplot!(plt,
           1:num_iters,
           interp_results.loss_per_iter,
-          name = "PPG (ours), normall",
+          name = "PPG (ours)",
           color = :red
          )
 lineplot!(plt, 1:num_iters,
-          res_euler_results.loss_per_iter,
-          name = "Euler BPTT, residual",
+          quad_results.loss_per_iter,
+          name = "Quadrature",
           color=:green)
-lineplot!(plt, 1:num_iters,
-          res_interp_results.loss_per_iter,
-          name = "PPG (ours), residual",
-          color=:white)
 display(plt)
 
 
 plt = lineplot(1:num_iters,
                cumsum(euler_results.nf_per_iter + euler_results.n∇f_per_iter),
-               name = "Euler BPTT, normal",
+               name = "Euler BPTT",
                xlabel = "Iterations", ylabel = "Function Evals",
                color = :blue,
                ylim=(0, 500000),
@@ -283,38 +233,14 @@ lineplot!(plt,
           cumsum(
                  interp_results.nf_per_iter + interp_results.n∇f_per_iter,
                 ),
-          name = "PPG (ours), normall",
+          name = "PPG (ours)",
           color = :red
          )
 lineplot!(plt, 
           1:num_iters,
-          cumsum(res_euler_results.nf_per_iter + res_euler_results.n∇f_per_iter),
-          name = "Euler BPTT, residual",
+          cumsum(quad_results.nf_per_iter + quad_results.n∇f_per_iter),
+          name = "Quadrature",
           color=:green)
-lineplot!(plt, 
-          1:num_iters,
-          cumsum(res_interp_results.nf_per_iter + res_interp_results.n∇f_per_iter),
-          name = "PPG (ours), residual",
-          color=:white)
 display(plt)
 
-
-#=
-x0 = rsample_x0();
-roll_iter = Array(rollout(x0[1:end-4], lpg.aug_dynamics!, interp_results.policy_params_per_iter[end,:]))[1:2,:]
-roll_eulr = Array(rollout(x0[1:end-4], lpg.aug_dynamics!, euler_results.policy_params_per_iter[end,:]))[1:2,:]
-rollriter = Array(rollout(x0, rpg.aug_dynamics!, res_interp_results.policy_params_per_iter[end,:]))[1:2,:]
-rollreulr = Array(rollout(x0, rpg.aug_dynamics!, res_euler_results.policy_params_per_iter[end,:]))[1:2,:]
-
-xmin, xmax = extrema(vcat(roll_iter[1,:], roll_eulr[1,:], rollriter[1,:], rollreulr[1,:]))
-ymin, ymax = extrema(vcat(roll_iter[2,:], roll_eulr[2,:], rollriter[2,:], rollreulr[2,:]))
-
-plt = scatterplot(roll_iter[1,:], roll_iter[2,:],
-               name="interp rollout", xlabel="x", ylabel="y",
-               xlim=(xmin, xmax),
-               ylim=(ymin, ymax))
-scatterplot!(plt, roll_eulr[1,:], roll_eulr[2,:], name="euler rollout")
-scatterplot!(plt, rollriter[1,:], rollriter[2,:], name="iterp residual rollout")
-scatterplot!(plt, rollreulr[1,:], rollreulr[2,:], name="euler residual rollout")
-=#
 

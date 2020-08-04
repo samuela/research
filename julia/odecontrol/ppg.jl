@@ -19,7 +19,7 @@ end
 
 """Returns a differentiable loss function that rolls out a policy in an
 environment and calculates its cost."""
-function ppg_goodies(dynamics, cost, policy, T)
+function ppg_goodies(dynamics, cost, policy, T; reltol=1e-3, abstol=1e-3)
     function aug_dynamics!(dz, z, policy_params, t)
         x = @view z[2:end]
         u = policy(x, policy_params)
@@ -45,8 +45,8 @@ function ppg_goodies(dynamics, cost, policy, T)
             solvealg,
             u0 = z0,
             p = policy_params,
-            reltol = 1e-3,
-            abstol = 1e-3,
+            reltol = reltol,
+            abstol = abstol,
         )
 
         # TODO: this is not compatible with QuadratureAdjoint because nothing is
@@ -78,8 +78,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                reltol = reltol,
+                abstol = abstol,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -112,8 +112,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                reltol = reltol,
+                abstol = abstol,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -142,8 +142,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 sensealg,
                 save_everystep = true,
                 save_start = true,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                reltol = reltol,
+                abstol = abstol,
             )
 
             integrand = AdjointSensitivityIntegrand(fwd_sol, bwd_sol, sensealg, nothing)
@@ -183,14 +183,26 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function euler_with_cost(x0, policy_params, dt, num_steps)
-        x = x0
-        cost_accum = 0.0
-        for _ = 1:num_steps
-            u = policy(x, policy_params)
-            cost_accum += dt * cost(x, u)
-            x += dt * dynamics(x, u)
-        end
-        cost_accum
+        #x = x0
+        #cost_accum = 0.0
+        #for _ = 1:num_steps
+        #    u = policy(x, policy_params)
+        #    cost_accum += dt * cost(x, u)
+        #    x += dt * dynamics(x, u)
+        #end
+        #cost_accum
+        z0 = vcat(zero(eltype(x0)), x0)
+        fwd_sol = Array(solve(
+            ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
+            Euler(),
+            u0 = z0,
+            p = policy_params,
+            dt = dt,
+            reltol = reltol,
+            abstol = abstol,
+            saveend= true
+           ))
+        fwd_sol[1,end] # cost
     end
 
     function ez_euler_bptt(x0, policy_params, dt)

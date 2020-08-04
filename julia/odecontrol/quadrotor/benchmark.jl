@@ -4,6 +4,8 @@ DifferentialEquations.jl solves with the quadrotor."""
 using DifferentialEquations: Tsit5, VCABM, BS3, Euler, Vern7, VCAB3
 using DiffEqFlux: FastChain, FastDense, initial_params, ODEProblem, solve
 using Random: seed!
+using Flux
+using UnsafeArrays
 using DiffEqSensitivity#:
     #InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProblem, ReverseDiffVJP
 using BenchmarkTools
@@ -124,7 +126,7 @@ end
 end
 
 
-T = 25.0
+T = 2.0
 
 dynamics, cost, sample_x0, obs = QuadrotorEnv.env(floatT, 9.8f0, 1, 1, 1, 1)
 x0 = sample_x0()
@@ -134,7 +136,9 @@ policy = FastChain(
     (x, _) -> obs(x),
     FastDense(32, num_hidden, tanh),
     FastDense(num_hidden, num_hidden, tanh),
-    FastDense(num_hidden, 4),
+    FastDense(num_hidden, 4,
+              initW=(x...)->Flux.glorot_uniform(x...)*1e-2
+             )
 )
 
 function aug_dynamics(z, policy_params, t)
@@ -225,8 +229,8 @@ fwd_sol, vjp = loss_pullback(x0, policy_params)
 @show fwd_sol.destats.nf
 g = vcat(1, zero(x0))
 
-@info "BacksolveAdjoint"
-@btime vjp(g, BacksolveAdjoint(autojacvec = ReverseDiffVJP(true)))
+#@info "BacksolveAdjoint"
+#@btime vjp(g, BacksolveAdjoint(autojacvec = ReverseDiffVJP(true)))
 @info "InterpolatingAdjoint"
 @btime vjp(g, InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)))
 @info "QuadratureAdjoint"
