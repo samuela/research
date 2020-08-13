@@ -110,16 +110,11 @@ def nn1(t: ti.i32):
             offset = x[t, j] - center[t]
             # use a smaller weight since there are too many of them
             actuation += weights1[i, j * 4 + n_sin_waves] * offset[0] * 0.05
-            actuation += weights1[i,
-                                  j * 4 + n_sin_waves + 1] * offset[1] * 0.05
-            actuation += weights1[i, j * 4 + n_sin_waves + 2] * v[t,
-                                                                  j][0] * 0.05
-            actuation += weights1[i, j * 4 + n_sin_waves + 3] * v[t,
-                                                                  j][1] * 0.05
-        actuation += weights1[i, n_objects * 4 +
-                              n_sin_waves] * (goal[None][0] - center[t][0])
-        actuation += weights1[i, n_objects * 4 + n_sin_waves +
-                              1] * (goal[None][1] - center[t][1])
+            actuation += weights1[i, j * 4 + n_sin_waves + 1] * offset[1] * 0.05
+            actuation += weights1[i, j * 4 + n_sin_waves + 2] * v[t, j][0] * 0.05
+            actuation += weights1[i, j * 4 + n_sin_waves + 3] * v[t, j][1] * 0.05
+        actuation += weights1[i, n_objects * 4 + n_sin_waves] * (goal[None][0] - center[t][0])
+        actuation += weights1[i, n_objects * 4 + n_sin_waves + 1] * (goal[None][1] - center[t][1])
         actuation += bias1[i]
         actuation = ti.tanh(actuation)
         hidden[t, i] = actuation
@@ -253,8 +248,7 @@ def forward(output=None, visualize=True):
                     c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
                 canvas.path(
                     get_pt(x[t, spring_anchor_a[i]]),
-                    get_pt(x[t,
-                             spring_anchor_b[i]])).color(c).radius(r).finish()
+                    get_pt(x[t, spring_anchor_b[i]])).color(c).radius(r).finish()
 
             for i in range(n_objects):
                 color = (0.4, 0.6, 0.6)
@@ -302,14 +296,12 @@ def optimize(toi, visualize):
     use_toi = toi
     for i in range(n_hidden):
         for j in range(n_input_states()):
-            weights1[i, j] = np.random.randn() * math.sqrt(
-                2 / (n_hidden + n_input_states())) * 2
+            weights1[i, j] = np.random.randn() * math.sqrt(2 / (n_hidden + n_input_states())) * 2
 
     for i in range(n_springs):
         for j in range(n_hidden):
             # TODO: n_springs should be n_actuators
-            weights2[i, j] = np.random.randn() * math.sqrt(
-                2 / (n_hidden + n_springs)) * 3
+            weights2[i, j] = np.random.randn() * math.sqrt(2 / (n_hidden + n_springs)) * 3
 
     losses = []
     # forward('initial{}'.format(robot_id), visualize=visualize)
