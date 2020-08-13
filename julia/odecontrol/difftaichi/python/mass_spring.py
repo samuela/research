@@ -201,8 +201,6 @@ canvas = gui.get_canvas()
 
 
 def forward(output=None, visualize=True):
-    goal[None] = [0.9, 0.2]
-
     interval = vis_interval
     if output:
         interval = output_vis_interval
@@ -340,6 +338,8 @@ def optimize(toi, visualize):
     return losses
 
 def main(robot_id, toi=True, visualize=False):
+    goal[None] = [0.9, 0.2]
+
     setup_robot(*robots[robot_id]())
     optimize(toi=toi, visualize=visualize)
     clear_states()
