@@ -201,10 +201,6 @@ canvas = gui.get_canvas()
 
 
 def forward(output=None, visualize=True):
-    if random.random() > 0.5:
-        goal[None] = [0.9, 0.2]
-    else:
-        goal[None] = [0.1, 0.2]
     goal[None] = [0.9, 0.2]
 
     interval = vis_interval
