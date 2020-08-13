@@ -8,5 +8,5 @@ See https://gist.github.com/Luthaf/368a23981c8ec095c3eb."""
 import PyCall: @pyimport
 
 @pyimport pip
-const PIP_PACKAGES = ["taichi", "scipy", "matplotlib"]
+const PIP_PACKAGES = ["taichi", "matplotlib"]
 pip.main(["install", "--user", PIP_PACKAGES...])

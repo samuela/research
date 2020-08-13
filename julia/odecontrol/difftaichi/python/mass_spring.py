@@ -1,16 +1,17 @@
 from mass_spring_robot_config import robots
 import random
 import sys
-from scipy.ndimage.filters import gaussian_filter
 import matplotlib.pyplot as plt
 import taichi as ti
 import math
 import numpy as np
 import os
+from datetime import datetime
 
 random.seed(0)
 np.random.seed(0)
 
+RESULTS_DIR = "mass_spring_output"
 real = ti.f32
 ti.init(default_fp=real)
 
@@ -33,18 +34,16 @@ v_acc = vec()
 
 head_id = 0
 
-n_objects = 0
-# target_ball = 0
-elasticity = 0.0
+n_objects = None
 ground_height = 0.1
 gravity = -4.8
 friction = 2.5
+dt = 0.004
 
-gradient_clip = 1
 spring_omega = 10
 damping = 15
 
-n_springs = 0
+n_springs = None
 spring_anchor_a = ti.var(ti.i32)
 spring_anchor_b = ti.var(ti.i32)
 spring_length = scalar()
@@ -64,7 +63,7 @@ center = vec()
 
 act = scalar()
 
-
+# This is a function because n_objects is filled out once the robot is set.
 def n_input_states():
     return n_sin_waves + 4 * n_objects + 2
 
@@ -84,9 +83,6 @@ def place():
     ti.root.dense(ti.i, max_steps).place(center)
     ti.root.place(loss)
     ti.root.lazy_grad()
-
-
-dt = 0.004
 
 
 @ti.kernel
@@ -198,15 +194,54 @@ def compute_loss(t: ti.i32):
 gui = ti.core.GUI("Mass Spring Robot", ti.veci(1024, 1024))
 canvas = gui.get_canvas()
 
+def animate(total_steps: int, output=None):
+    """Animate a the policy controlling the robot.
 
-def forward(output=None, visualize=True):
-    interval = vis_interval
+    * `total_steps` controls the number of time steps to animate for. This is
+        necessary since the final animation is run for more time steps than in
+        training.
+    * `output` controls whether or not frames of the animation are screenshotted
+        and dumped to a results directory.
+    """
     if output:
-        interval = output_vis_interval
-        os.makedirs('mass_spring/{}/'.format(output), exist_ok=True)
+        os.makedirs("{}/{}/".format(RESULTS_DIR, output))
 
-    total_steps = steps if not output else steps * 2
+    for t in range(1, total_steps):
+        canvas.clear(0xFFFFFF)
+        canvas.path(ti.vec(0, ground_height),
+                    ti.vec(1, ground_height)).color(0x0).radius(3).finish()
 
+        def circle(x, y, color):
+            canvas.circle(ti.vec(x, y)).color(
+                ti.rgb_to_hex(color)).radius(7).finish()
+
+        for i in range(n_springs):
+            def get_pt(x):
+                return ti.vec(x[0], x[1])
+
+            a = act[t - 1, i] * 0.5
+            r = 2
+            if spring_actuation[i] == 0:
+                a = 0
+                c = 0x222222
+            else:
+                r = 4
+                c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
+            canvas.path(
+                get_pt(x[t, spring_anchor_a[i]]),
+                get_pt(x[t, spring_anchor_b[i]])).color(c).radius(r).finish()
+
+        for i in range(n_objects):
+            color = (0.4, 0.6, 0.6)
+            if i == head_id:
+                color = (0.8, 0.2, 0.3)
+            circle(x[t, i][0], x[t, i][1], color)
+
+        gui.update()
+        if output:
+            gui.screenshot("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
+
+def forward(total_steps: int, visualize=True):
     for t in range(1, total_steps):
         compute_center(t - 1)
         nn1(t - 1)
@@ -217,42 +252,8 @@ def forward(output=None, visualize=True):
         else:
             advance_no_toi(t)
 
-        if (t + 1) % interval == 0 and visualize:
-            canvas.clear(0xFFFFFF)
-            canvas.path(ti.vec(0, ground_height),
-                        ti.vec(1, ground_height)).color(0x0).radius(3).finish()
-
-            def circle(x, y, color):
-                canvas.circle(ti.vec(x, y)).color(
-                    ti.rgb_to_hex(color)).radius(7).finish()
-
-            for i in range(n_springs):
-
-                def get_pt(x):
-                    return ti.vec(x[0], x[1])
-
-                a = act[t - 1, i] * 0.5
-                r = 2
-                if spring_actuation[i] == 0:
-                    a = 0
-                    c = 0x222222
-                else:
-                    r = 4
-                    c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
-                canvas.path(
-                    get_pt(x[t, spring_anchor_a[i]]),
-                    get_pt(x[t, spring_anchor_b[i]])).color(c).radius(r).finish()
-
-            for i in range(n_objects):
-                color = (0.4, 0.6, 0.6)
-                if i == head_id:
-                    color = (0.8, 0.2, 0.3)
-                circle(x[t, i][0], x[t, i][1], color)
-            # circle(goal[None][0], goal[None][1], (0.6, 0.2, 0.2))
-
-            gui.update()
-            if output:
-                gui.screenshot('mass_spring/{}/{:04d}.png'.format(output, t))
+    if visualize:
+        animate(total_steps, output=False)
 
     loss[None] = 0
     compute_loss(steps - 1)
@@ -302,7 +303,7 @@ def optimize(toi, visualize):
         clear_states()
         # with ti.Tape(loss) automatically clears all gradients
         with ti.Tape(loss):
-            forward(visualize=visualize)
+            forward(steps, visualize=visualize)
 
         print('Iter=', iter, 'Loss=', loss[None])
 
@@ -320,9 +321,11 @@ def optimize(toi, visualize):
         # print(total_norm_sqr)
 
         # learning_rate = 25
+        # gradient_clip = 1
         # scale = learning_rate * min(1.0, gradient_clip / total_norm_sqr ** 0.5)
         gradient_clip = 0.2
         scale = gradient_clip / (total_norm_sqr**0.5 + 1e-6)
+
         for i in range(n_hidden):
             for j in range(n_input_states()):
                 weights1[i, j] -= scale * weights1.grad[i, j]
@@ -337,7 +340,14 @@ def optimize(toi, visualize):
     return losses
 
 def main(robot_id, toi=True, visualize=False):
+    # Set up the robot configuration.
     setup_robot(*robots[robot_id]())
+
+    # Train the policy.
     optimize(toi=toi, visualize=visualize)
+
+    # Run the final policy.
     clear_states()
-    forward('final{}'.format(robot_id))
+    # animate will show the exact same thing, so no need to visualize.
+    forward(2 * steps, visualize=False)
+    animate(2 * steps, output=f"robot{robot_id}_{datetime.now()}")
