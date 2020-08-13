@@ -32,7 +32,6 @@ v = vec()
 v_acc = vec()
 
 head_id = 0
-goal = vec()
 
 n_objects = 0
 # target_ball = 0
@@ -83,7 +82,7 @@ def place():
     ti.root.dense(ti.ij, (max_steps, n_hidden)).place(hidden)
     ti.root.dense(ti.ij, (max_steps, n_springs)).place(act)
     ti.root.dense(ti.i, max_steps).place(center)
-    ti.root.place(loss, goal)
+    ti.root.place(loss)
     ti.root.lazy_grad()
 
 
@@ -113,8 +112,8 @@ def nn1(t: ti.i32):
             actuation += weights1[i, j * 4 + n_sin_waves + 1] * offset[1] * 0.05
             actuation += weights1[i, j * 4 + n_sin_waves + 2] * v[t, j][0] * 0.05
             actuation += weights1[i, j * 4 + n_sin_waves + 3] * v[t, j][1] * 0.05
-        actuation += weights1[i, n_objects * 4 + n_sin_waves] * (goal[None][0] - center[t][0])
-        actuation += weights1[i, n_objects * 4 + n_sin_waves + 1] * (goal[None][1] - center[t][1])
+        actuation += weights1[i, n_objects * 4 + n_sin_waves] * center[t][0]
+        actuation += weights1[i, n_objects * 4 + n_sin_waves + 1] * center[t][1]
         actuation += bias1[i]
         actuation = ti.tanh(actuation)
         hidden[t, i] = actuation
@@ -338,8 +337,6 @@ def optimize(toi, visualize):
     return losses
 
 def main(robot_id, toi=True, visualize=False):
-    goal[None] = [0.9, 0.2]
-
     setup_robot(*robots[robot_id]())
     optimize(toi=toi, visualize=visualize)
     clear_states()
