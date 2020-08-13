@@ -37,7 +37,6 @@ head_id = 0
 n_objects = None
 ground_height = 0.1
 gravity = -4.8
-friction = 2.5
 dt = 0.004
 
 spring_omega = 10
