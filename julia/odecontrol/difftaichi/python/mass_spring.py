@@ -29,7 +29,7 @@ loss = scalar()
 
 x = vec()
 v = vec()
-v_inc = vec()
+v_acc = vec()
 
 head_id = 0
 goal = vec()
@@ -72,7 +72,7 @@ def n_input_states():
 
 @ti.layout
 def place():
-    ti.root.dense(ti.l, max_steps).dense(ti.i, n_objects).place(x, v, v_inc)
+    ti.root.dense(ti.l, max_steps).dense(ti.i, n_objects).place(x, v, v_acc)
     ti.root.dense(ti.i, n_springs).place(spring_anchor_a, spring_anchor_b,
                                          spring_length, spring_stiffness,
                                          spring_actuation)
@@ -88,7 +88,6 @@ def place():
 
 
 dt = 0.004
-learning_rate = 25
 
 
 @ti.kernel
@@ -138,7 +137,8 @@ def nn2(t: ti.i32):
 
 
 @ti.kernel
-def apply_spring_force(t: ti.i32):
+def forces(t: ti.i32):
+    # Spring forces
     for i in range(n_springs):
         a = spring_anchor_a[i]
         b = spring_anchor_b[i]
@@ -148,10 +148,14 @@ def apply_spring_force(t: ti.i32):
         length = dist.norm() + 1e-4
 
         target_length = spring_length[i] * (1.0 + spring_actuation[i] * act[t, i])
-        impulse = dt * (length - target_length) * spring_stiffness[i] / length * dist
+        impulse = (length - target_length) * spring_stiffness[i] / length * dist
 
-        ti.atomic_add(v_inc[t + 1, a], -impulse)
-        ti.atomic_add(v_inc[t + 1, b], impulse)
+        ti.atomic_add(v_acc[t + 1, a], -impulse)
+        ti.atomic_add(v_acc[t + 1, b], impulse)
+
+    # Gravity
+    for i in range(n_objects):
+        ti.atomic_add(v_acc[t + 1, i][1], gravity)
 
 
 use_toi = False
@@ -161,7 +165,7 @@ use_toi = False
 def advance_toi(t: ti.i32):
     for i in range(n_objects):
         s = math.exp(-dt * damping)
-        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0]) + v_inc[t, i]
+        old_v = s * v[t - 1, i] + dt * v_acc[t, i]
         old_x = x[t - 1, i]
         new_x = old_x + dt * old_v
         toi = 0.0
@@ -179,7 +183,7 @@ def advance_toi(t: ti.i32):
 def advance_no_toi(t: ti.i32):
     for i in range(n_objects):
         s = math.exp(-dt * damping)
-        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0]) + v_inc[t, i]
+        old_v = s * v[t - 1, i] + dt * v_acc[t, i]
         old_x = x[t - 1, i]
         new_v = old_v
         depth = old_x[1] - ground_height
@@ -219,7 +223,7 @@ def forward(output=None, visualize=True):
         compute_center(t - 1)
         nn1(t - 1)
         nn2(t - 1)
-        apply_spring_force(t - 1)
+        forces(t - 1)
         if use_toi:
             advance_toi(t)
         else:
@@ -271,7 +275,7 @@ def forward(output=None, visualize=True):
 def clear_states():
     for t in range(0, max_steps):
         for i in range(0, n_objects):
-            v_inc[t, i] = ti.Vector([0.0, 0.0])
+            v_acc[t, i] = ti.Vector([0.0, 0.0])
 
 
 def setup_robot(objects, springs):
@@ -328,8 +332,9 @@ def optimize(toi, visualize):
                 total_norm_sqr += weights2.grad[i, j]**2
             total_norm_sqr += bias2.grad[i]**2
 
-        print(total_norm_sqr)
+        # print(total_norm_sqr)
 
+        # learning_rate = 25
         # scale = learning_rate * min(1.0, gradient_clip / total_norm_sqr ** 0.5)
         gradient_clip = 0.2
         scale = gradient_clip / (total_norm_sqr**0.5 + 1e-6)
