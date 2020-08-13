@@ -8,6 +8,9 @@ import math
 import numpy as np
 import os
 
+random.seed(0)
+np.random.seed(0)
+
 real = ti.f32
 ti.init(default_fp=real)
 
@@ -144,10 +147,8 @@ def apply_spring_force(t: ti.i32):
         dist = pos_a - pos_b
         length = dist.norm() + 1e-4
 
-        target_length = spring_length[i] * (1.0 +
-                                            spring_actuation[i] * act[t, i])
-        impulse = dt * (length -
-                        target_length) * spring_stiffness[i] / length * dist
+        target_length = spring_length[i] * (1.0 + spring_actuation[i] * act[t, i])
+        impulse = dt * (length - target_length) * spring_stiffness[i] / length * dist
 
         ti.atomic_add(v_inc[t + 1, a], -impulse)
         ti.atomic_add(v_inc[t + 1, b], impulse)
@@ -160,8 +161,7 @@ use_toi = False
 def advance_toi(t: ti.i32):
     for i in range(n_objects):
         s = math.exp(-dt * damping)
-        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0
-                                                            ]) + v_inc[t, i]
+        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0]) + v_inc[t, i]
         old_x = x[t - 1, i]
         new_x = old_x + dt * old_v
         toi = 0.0
@@ -179,8 +179,7 @@ def advance_toi(t: ti.i32):
 def advance_no_toi(t: ti.i32):
     for i in range(n_objects):
         s = math.exp(-dt * damping)
-        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0
-                                                            ]) + v_inc[t, i]
+        old_v = s * v[t - 1, i] + dt * gravity * ti.Vector([0.0, 1.0]) + v_inc[t, i]
         old_x = x[t - 1, i]
         new_v = old_v
         depth = old_x[1] - ground_height
@@ -198,8 +197,8 @@ def compute_loss(t: ti.i32):
     loss[None] = -x[t, head_id][0]
 
 
-# gui = ti.core.GUI("Mass Spring Robot", ti.veci(1024, 1024))
-# canvas = gui.get_canvas()
+gui = ti.core.GUI("Mass Spring Robot", ti.veci(1024, 1024))
+canvas = gui.get_canvas()
 
 
 def forward(output=None, visualize=True):
@@ -275,10 +274,6 @@ def clear_states():
             v_inc[t, i] = ti.Vector([0.0, 0.0])
 
 
-def clear():
-    clear_states()
-
-
 def setup_robot(objects, springs):
     global n_objects, n_springs
     n_objects = len(objects)
@@ -315,7 +310,7 @@ def optimize(toi, visualize):
     losses = []
     # forward('initial{}'.format(robot_id), visualize=visualize)
     for iter in range(100):
-        clear()
+        clear_states()
         # with ti.Tape(loss) automatically clears all gradients
         with ti.Tape(loss):
             forward(visualize=visualize)
@@ -351,40 +346,8 @@ def optimize(toi, visualize):
 
     return losses
 
-
-robot_id = 0
-if len(sys.argv) != 3:
-    print(
-        "Usage: python3 mass_spring.py [robot_id=0, 1, 2, ...] [task=train/plot]"
-    )
-    exit(-1)
-else:
-    robot_id = int(sys.argv[1])
-    task = sys.argv[2]
-
-
-def main():
-
+def main(robot_id, toi=True, visualize=False):
     setup_robot(*robots[robot_id]())
-
-    if task == 'plot':
-        ret = {}
-        for toi in [False, True]:
-            ret[toi] = []
-            for i in range(5):
-                losses = optimize(toi=toi, visualize=False)
-                # losses = gaussian_filter(losses, sigma=3)
-                plt.plot(losses, 'g' if toi else 'r')
-                ret[toi].append(losses)
-
-        import pickle
-        pickle.dump(ret, open('losses.pkl', 'wb'))
-        print("Losses saved to losses.pkl")
-    else:
-        optimize(toi=True, visualize=False)
-        clear()
-        forward('final{}'.format(robot_id))
-
-
-if __name__ == '__main__':
-    main()
+    optimize(toi=toi, visualize=visualize)
+    clear_states()
+    forward('final{}'.format(robot_id))
