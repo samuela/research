@@ -15,6 +15,7 @@ import math
 import numpy as np
 import os
 from datetime import datetime
+import pickle
 
 random.seed(0)
 np.random.seed(0)
@@ -25,8 +26,6 @@ ti.init(default_fp=real)
 
 use_toi = False
 max_steps = 4096
-vis_interval = 256
-output_vis_interval = 8
 steps = 2048 // 3
 assert steps * 2 <= max_steps
 
@@ -347,6 +346,14 @@ def main(robot_id, toi=True, visualize=False):
     # Set up the robot configuration.
     setup_robot(*robots[robot_id]())
 
+    # Load existing weights.
+    # with open("weights.pkl", "rb") as fh:
+    #     w1, b1, w2, b2 = pickle.load(fh)
+    #     weights1.from_numpy(w1)
+    #     bias1.from_numpy(b1)
+    #     weights2.from_numpy(w2)
+    #     bias2.from_numpy(b2)
+
     # Train the policy.
     optimize(toi=toi, visualize=visualize)
 
@@ -354,4 +361,9 @@ def main(robot_id, toi=True, visualize=False):
     clear_states()
     # animate will show the exact same thing, so no need to visualize.
     forward(2 * steps)
-    animate(2 * steps, output=f"robot{robot_id}_{datetime.now()}")
+    animate(2 * steps)
+    # animate(2 * steps, output=f"robot{robot_id}_{datetime.now()}")
+
+    # Save weights.
+    with open("weights.pkl", "wb") as fh:
+        pickle.dump((weights1.to_numpy(), bias1.to_numpy(), weights2.to_numpy(), bias2.to_numpy()), fh)
