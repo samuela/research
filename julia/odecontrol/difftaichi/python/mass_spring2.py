@@ -358,41 +358,15 @@ def main(robot_id, toi=True, visualize=False):
     #     weights2.from_numpy(w2)
     #     bias2.from_numpy(b2)
 
-    with open("stuffdump.pkl", "rb") as fh:
-        stuff = pickle.load(fh)
-
-    for i in range(10):
-        init_weights()
-        w1, w2, x_gold, v_gold, g_w1_gold, g_b1_gold, g_w2_gold, g_b2_gold = stuff[i]
-
-        # For some reason these aren't exactly zero...
-        # print(np.sum(np.abs(weights1.to_numpy() - w1)) / w1.size)
-        # print(np.sum(np.abs(weights2.to_numpy() - w2)) / w2.size)
-
-        # For reasons that are entirely beyond me the to/from_numpy roundtrip
-        # doesn't give you exactly what you started with. Calling init_weights()
-        # with the same random seed works instead.
-        # weights1.from_numpy(w1)
-        # weights2.from_numpy(w2)
-        # bias1.from_numpy(np.zeros_like(bias1.to_numpy()))
-        # bias2.from_numpy(np.zeros_like(bias2.to_numpy()))
-
-        # print(hash(weights1.to_numpy().tobytes()))
-        # print(hash(weights2.to_numpy().tobytes()))
-        optimize(1, toi=toi, visualize=visualize)
-        print(np.sum(np.abs(x.to_numpy() - x_gold)) / x_gold.size)
-        print(np.sum(np.abs(v.to_numpy() - v_gold)) / v_gold.size)
-        print(np.sum(np.abs(weights1.grad.to_numpy() - g_w1_gold)) / g_w1_gold.size)
-        print(np.sum(np.abs(bias1.grad.to_numpy() - g_b1_gold)) / g_b1_gold.size)
-        print(np.sum(np.abs(weights2.grad.to_numpy() - g_w2_gold)) / g_w2_gold.size)
-        print(np.sum(np.abs(bias2.grad.to_numpy() - g_b2_gold)) / g_b2_gold.size)
-
-        # print(hash(x.to_numpy().tobytes()))
-        # print(hash(v.to_numpy().tobytes()))
-        # print(hash(weights1.grad.to_numpy().tobytes()))
-
     # Train the policy.
-    # optimize(100, toi=toi, visualize=visualize)
+    stuff = []
+    for _ in range(10):
+        init_weights()
+        optimize(1, toi=toi, visualize=visualize)
+        stuff.append((weights1.to_numpy(), weights2.to_numpy(), x.to_numpy(), v.to_numpy(), weights1.grad.to_numpy(), bias1.grad.to_numpy(), weights2.grad.to_numpy(), bias2.grad.to_numpy()))
+
+    with open("stuffdump.pkl", "wb") as fh:
+        pickle.dump(stuff, fh)
 
     # Run the final policy.
     # clear_states()

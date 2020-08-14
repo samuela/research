@@ -14,3 +14,6 @@ mass_spring = pyimport("mass_spring")
 importlib.reload(mass_spring)
 
 mass_spring.main(1; visualize = false)
+
+# mass_spring2 = pyimport("mass_spring2")
+# mass_spring2.main(1)

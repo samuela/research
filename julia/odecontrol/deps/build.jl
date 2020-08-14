@@ -9,4 +9,4 @@ import PyCall: @pyimport
 
 @pyimport pip
 const PIP_PACKAGES = ["taichi", "matplotlib"]
-pip.main(["install", "--user", PIP_PACKAGES...])
+pip.main(["install", "--user", "--upgrade", "--force-reinstall", PIP_PACKAGES...])
