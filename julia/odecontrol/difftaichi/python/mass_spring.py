@@ -1,3 +1,11 @@
+"""
+TODO:
+* save final weights
+* load saved weights, turn off weight updates
+* transition forward sim into julia
+* test that gradients are the same
+"""
+
 from mass_spring_robot_config import robots
 import random
 import sys
@@ -15,6 +23,7 @@ RESULTS_DIR = "mass_spring_output"
 real = ti.f32
 ti.init(default_fp=real)
 
+use_toi = False
 max_steps = 4096
 vis_interval = 256
 output_vis_interval = 8
@@ -147,9 +156,6 @@ def forces(t: ti.i32):
         ti.atomic_add(v_acc[t + 1, i][1], gravity)
 
 
-use_toi = False
-
-
 @ti.kernel
 def advance_toi(t: ti.i32):
     for i in range(n_objects):
@@ -240,7 +246,7 @@ def animate(total_steps: int, output=None):
         if output:
             gui.screenshot("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
 
-def forward(total_steps: int, visualize=True):
+def forward(total_steps: int):
     for t in range(1, total_steps):
         compute_center(t - 1)
         nn1(t - 1)
@@ -250,9 +256,6 @@ def forward(total_steps: int, visualize=True):
             advance_toi(t)
         else:
             advance_no_toi(t)
-
-    if visualize:
-        animate(total_steps, output=False)
 
     loss[None] = 0
     compute_loss(steps - 1)
@@ -302,7 +305,9 @@ def optimize(toi, visualize):
         clear_states()
         # with ti.Tape(loss) automatically clears all gradients
         with ti.Tape(loss):
-            forward(steps, visualize=visualize)
+            forward(steps)
+        if visualize:
+            animate(steps)
 
         print('Iter=', iter, 'Loss=', loss[None])
 
@@ -348,5 +353,5 @@ def main(robot_id, toi=True, visualize=False):
     # Run the final policy.
     clear_states()
     # animate will show the exact same thing, so no need to visualize.
-    forward(2 * steps, visualize=False)
+    forward(2 * steps)
     animate(2 * steps, output=f"robot{robot_id}_{datetime.now()}")
