@@ -286,7 +286,7 @@ def setup_robot(objects, springs):
         spring_actuation[i] = s[4]
 
 
-def optimize(toi, visualize):
+def optimize(num_iters: int, toi, visualize):
     global use_toi
     use_toi = toi
     for i in range(n_hidden):
@@ -300,7 +300,7 @@ def optimize(toi, visualize):
 
     losses = []
     # forward('initial{}'.format(robot_id), visualize=visualize)
-    for iter in range(100):
+    for iter in range(num_iters):
         clear_states()
         # with ti.Tape(loss) automatically clears all gradients
         with ti.Tape(loss):
@@ -355,7 +355,7 @@ def main(robot_id, toi=True, visualize=False):
     #     bias2.from_numpy(b2)
 
     # Train the policy.
-    optimize(toi=toi, visualize=visualize)
+    optimize(100, toi=toi, visualize=visualize)
 
     # Run the final policy.
     clear_states()
