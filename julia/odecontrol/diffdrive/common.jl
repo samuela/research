@@ -23,7 +23,7 @@ function env(floatT, wheelbase, wheel_radius)
             wheel_radius / 2 * (ω_l + ω_r) * cosθ,
             wheel_radius / 2 * (ω_l + ω_r) * sinθ,
             wheel_radius / wheelbase * (ω_r - ω_l),
-            clippy(ω_l,   u[1]),
+            clippy(ω_l, u[1]),
             clippy(ω_r, u[2]),
         ]
     end
