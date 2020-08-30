@@ -1,3 +1,6 @@
+"""From difftaichi/examples/."""
+
+# globals, ugh.
 objects = []
 springs = []
 
