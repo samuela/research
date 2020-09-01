@@ -1,6 +1,5 @@
 """
 TODO:
-* transition forward sim into julia
 * test that gradients are the same
 """
 
@@ -15,7 +14,6 @@ ti.init(default_fp=real)
 # steps = 2048 // 3
 n_objects = None
 n_springs = None
-ground_height = 0.1
 gravity = -4.8
 # dt = 0.004
 
@@ -71,6 +69,11 @@ def setup_robot(objects, springs):
 
 @ti.kernel
 def forces():
+    # It's necessary to zero out v_acc before each call. The difftaichi version doesn't need this because they index
+    # each array by time as well.
+    for i in range(n_objects):
+        v_acc[i].fill(0.0)
+
     # Spring forces
     for i in range(n_springs):
         a = spring_anchor_a[i]
@@ -115,7 +118,7 @@ def forces_fn_vjp(x_np, v_np, act_np, v_acc_bar_np):
 
     return x.grad.to_numpy(), v.grad.to_numpy(), act.grad.to_numpy()
 
-def animate(total_steps: int, output=None, head_id=0):
+def animate(xs, acts, ground_height: float, output=None, head_id=0):
     """Animate a the policy controlling the robot.
 
     * `total_steps` controls the number of time steps to animate for. This is
@@ -124,13 +127,14 @@ def animate(total_steps: int, output=None, head_id=0):
     * `output` controls whether or not frames of the animation are screenshotted
         and dumped to a results directory.
     """
+    assert len(xs) == len(acts)
     gui = ti.core.GUI("Mass Spring Robot", ti.veci(1024, 1024))
     canvas = gui.get_canvas()
 
     if output:
         os.makedirs("{}/{}/".format(RESULTS_DIR, output))
 
-    for t in range(1, total_steps):
+    for t in range(1, len(xs)):
         canvas.clear(0xFFFFFF)
         canvas.path(ti.vec(0, ground_height),
                     ti.vec(1, ground_height)).color(0x0).radius(3).finish()
@@ -143,7 +147,7 @@ def animate(total_steps: int, output=None, head_id=0):
             def get_pt(x):
                 return ti.vec(x[0], x[1])
 
-            a = act[t - 1, i] * 0.5
+            a = acts[t - 1][i] * 0.5
             r = 2
             if spring_actuation[i] == 0:
                 a = 0
@@ -152,14 +156,14 @@ def animate(total_steps: int, output=None, head_id=0):
                 r = 4
                 c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
             canvas.path(
-                get_pt(x[t, spring_anchor_a[i]]),
-                get_pt(x[t, spring_anchor_b[i]])).color(c).radius(r).finish()
+                get_pt(xs[t][spring_anchor_a[i]]),
+                get_pt(xs[t][spring_anchor_b[i]])).color(c).radius(r).finish()
 
         for i in range(n_objects):
             color = (0.4, 0.6, 0.6)
             if i == head_id:
                 color = (0.8, 0.2, 0.3)
-            circle(x[t, i][0], x[t, i][1], color)
+            circle(xs[t][i][0], xs[t][i][1], color)
 
         gui.update()
         if output:

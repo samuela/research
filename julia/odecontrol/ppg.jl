@@ -9,6 +9,7 @@ import DiffEqSensitivity:
     BacksolveAdjoint,
     QuadratureAdjoint,
     AdjointSensitivityIntegrand
+import DifferentialEquations: VectorContinuousCallback
 import QuadGK: quadgk!
 import ThreadPools: qmap, tmap, bmap
 import Zygote
@@ -22,7 +23,7 @@ environment and calculates its cost."""
 function ppg_goodies(dynamics, cost, policy, T)
     function aug_dynamics!(dz, z, policy_params, t)
         x = @view z[2:end]
-        u = policy(x, policy_params)
+        u = policy(x, t, policy_params)
         dz[1] = cost(x, u)
         # Note that dynamics!(dz[2:end], x, u) breaks Zygote :(
         dz[2:end] = dynamics(x, u)
@@ -45,8 +46,32 @@ function ppg_goodies(dynamics, cost, policy, T)
             solvealg,
             u0 = z0,
             p = policy_params,
-            reltol = 1e-3,
-            abstol = 1e-3,
+            # reltol = 1e-3,
+            # abstol = 1e-3,
+            # TODO: this is a huge hack!!!
+            callback = VectorContinuousCallback(
+                (out, u, _, _) -> begin
+                    n_objects = 14
+                    ground_height = 0.1
+                    state = @view u[2:end]
+                    x_flat = @view state[1:2*n_objects]
+                    x = reshape(x_flat, (n_objects, 2))
+                    out[:] .= x[:, 2] .- ground_height
+                end,
+                (integrator, idx) -> begin
+                    n_objects = 14
+                    ground_height = 0.1
+                    # TODO: this arithmetic is disgusting. Use RecursiveArrayTools or something else.
+                    # Don't forget the 1 to account for the cost.
+                    # Set the y to ground_height.
+                    integrator.u[1 + n_objects + idx] = ground_height
+                    # Set the x velocity to zero.
+                    integrator.u[1 + 2 * n_objects + idx] = 0
+                    # Set the y velocity to zero.
+                    integrator.u[1 + 3 * n_objects + idx] = 0
+                end,
+                14
+            )
         )
 
         # TODO: this is not compatible with QuadratureAdjoint because nothing is
@@ -78,8 +103,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                # reltol = 1e-3,
+                # abstol = 1e-3,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -112,8 +137,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 dense = false,
                 save_everystep = false,
                 save_start = false,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                # reltol = 1e-3,
+                # abstol = 1e-3,
             )
 
             # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
@@ -142,8 +167,8 @@ function ppg_goodies(dynamics, cost, policy, T)
                 sensealg,
                 save_everystep = true,
                 save_start = true,
-                reltol = 1e-3,
-                abstol = 1e-3,
+                # reltol = 1e-3,
+                # abstol = 1e-3,
             )
 
             integrand = AdjointSensitivityIntegrand(fwd_sol, bwd_sol, sensealg, nothing)
