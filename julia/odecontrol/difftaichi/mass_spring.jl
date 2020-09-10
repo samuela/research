@@ -1,13 +1,13 @@
 include("../ppg.jl")
 
 import DiffEqFlux: FastChain, FastDense, initial_params
-
 import DifferentialEquations: solve, Euler, Tsit5
 
 # module MassSpringEnv
 
 import PyCall: @pyimport, @py_str, pyimport
 import Statistics: mean
+import DifferentialEquations: VectorContinuousCallback
 
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
@@ -41,6 +41,10 @@ spring_omega = 10
 # The number of input sine waves to the policy.
 n_sin_waves = 10
 
+# The exact equivalent from the difftaichi code is that our dampening = (1 - exp(-dt * d)) / d where d is their damping.
+# In difftaichi d = 15 and dt = 0.004 which comes out to damping = 14.56...
+damping = 14.56
+
 n_objects = length(objects)
 n_springs = size(springs, 1)
 
@@ -53,8 +57,9 @@ function dynamics(state, u)
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
     v_acc = mass_spring.forces_fn(np.array(x), np.array(v), u)
+    v_acc -= damping * v
 
-    for i in 1:n_objects
+    for i = 1:n_objects
         # positions are [x, y]. The ground has infinite friction in the difftaichi model.
         if x[i, 2] <= ground_height
             v_acc[i, 1] = 0
@@ -90,7 +95,7 @@ function observation(state, t)
     # difference.
     periodic_signal = sin.(spring_omega * t .+ 2 * π / n_sin_waves .* (1:n_sin_waves))
 
-    center = mean(x, dims=1)
+    center = mean(x, dims = 1)
     offsets = x .- center
     [periodic_signal; center[:]; offsets[:]]
 end
@@ -105,21 +110,54 @@ policy = FastChain(
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, n_springs),
 )
-
 init_policy_params = initial_params(policy)
-goodies = ppg_goodies(dynamics, cost, (x, t, params) -> policy(observation(x, t), params), T)
-fwd_sol, _ = goodies.loss_pullback(sample_x0(), init_policy_params, Tsit5())
 
-ts = 0:0.01:T
-zs = fwd_sol.(ts)
-xs_flat = [z[2:end] for z in zs]
-xs = [reshape(z[1:2*n_objects], (n_objects,2)) for z in xs_flat]
-acts = [policy(observation(x, t), init_policy_params) for (x, t) in zip(xs_flat, ts)]
+callback = VectorContinuousCallback(
+    (out, u, _, _) -> begin
+        state = @view u[2:end]
+        x_flat = @view state[1:2*n_objects]
+        x = reshape(x_flat, (n_objects, 2))
+        out[:] .= x[:, 2] .- ground_height
+    end,
+    (integrator, idx) -> begin
+        # TODO: this arithmetic is disgusting. Use RecursiveArrayTools or something else.
+        # Don't forget the 1 to account for the cost.
+        # Set the y to ground_height.
+        integrator.u[1+n_objects+idx] = ground_height
+        # Set the x velocity to zero.
+        integrator.u[1+2*n_objects+idx] = 0
+        # Set the y velocity to zero.
+        integrator.u[1+3*n_objects+idx] = 0
+    end,
+    n_objects,
+)
 
-mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+goodies =
+    ppg_goodies(dynamics, cost, (x, t, params) -> policy(observation(x, t), params), T)
+@time fwd_sol, _ = goodies.loss_pullback(
+    sample_x0(),
+    init_policy_params,
+    Tsit5(),
+    callback = callback,
+    rtol = 1e-3,
+    atol = 1e-3,
+)
 
+# Visualize a rollout:
+# ts = 0:0.01:T
+# zs = fwd_sol.(ts)
+# xs_flat = [z[2:end] for z in zs]
+# xs = [reshape(z[1:2*n_objects], (n_objects,2)) for z in xs_flat]
+# acts = [policy(observation(x, t), init_policy_params) for (x, t) in zip(xs_flat, ts)]
+
+# This doesn't work on headless machines.
+# mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
 
 # mass_spring2 = pyimport("mass_spring2")
 # mass_spring2.main(1)
 
 # end
+
+# TODO:
+#  * try training with Euler
+#  * try training with ppg

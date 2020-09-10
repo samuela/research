@@ -1,5 +1,3 @@
-include("utils.jl")
-
 import DiffEqBase
 import DiffEqSensitivity:
     solve,
@@ -9,10 +7,10 @@ import DiffEqSensitivity:
     BacksolveAdjoint,
     QuadratureAdjoint,
     AdjointSensitivityIntegrand
-import DifferentialEquations: VectorContinuousCallback
 import QuadGK: quadgk!
 import ThreadPools: qmap, tmap, bmap
 import Zygote
+import Statistics: mean
 
 function extract_loss_and_xT(fwd_sol)
     fwd_sol[end][1], fwd_sol[end][2:end]
@@ -39,39 +37,14 @@ function ppg_goodies(dynamics, cost, policy, T)
 
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
-    function loss_pullback(x0, policy_params, solvealg)
+    function loss_pullback(x0, policy_params, solvealg; kwargs...)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
             ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
             solvealg,
             u0 = z0,
-            p = policy_params,
-            # reltol = 1e-3,
-            # abstol = 1e-3,
-            # TODO: this is a huge hack!!!
-            callback = VectorContinuousCallback(
-                (out, u, _, _) -> begin
-                    n_objects = 14
-                    ground_height = 0.1
-                    state = @view u[2:end]
-                    x_flat = @view state[1:2*n_objects]
-                    x = reshape(x_flat, (n_objects, 2))
-                    out[:] .= x[:, 2] .- ground_height
-                end,
-                (integrator, idx) -> begin
-                    n_objects = 14
-                    ground_height = 0.1
-                    # TODO: this arithmetic is disgusting. Use RecursiveArrayTools or something else.
-                    # Don't forget the 1 to account for the cost.
-                    # Set the y to ground_height.
-                    integrator.u[1 + n_objects + idx] = ground_height
-                    # Set the x velocity to zero.
-                    integrator.u[1 + 2 * n_objects + idx] = 0
-                    # Set the y velocity to zero.
-                    integrator.u[1 + 3 * n_objects + idx] = 0
-                end,
-                14
-            )
+            p = policy_params;
+            kwargs...
         )
 
         # TODO: this is not compatible with QuadratureAdjoint because nothing is
@@ -239,7 +212,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     function ez_euler_loss_and_grad_many(x0_batch, policy_params, dt)
-        _aggregate_batch_results(qmap(x0_batch) do x0
+        _aggregate_batch_results(map(x0_batch) do x0
             ez_euler_bptt(x0, policy_params, dt)
         end)
     end
@@ -247,7 +220,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     function ez_loss_and_grad_many(x0_batch, policy_params, solvealg, sensealg)
         # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
         _aggregate_batch_results(
-            qmap(x0_batch) do x0
+            map(x0_batch) do x0
                 ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
             end,
         )
