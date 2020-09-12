@@ -37,14 +37,14 @@ function ppg_goodies(dynamics, cost, policy, T)
 
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
-    function loss_pullback(x0, policy_params, solvealg; kwargs...)
+    function loss_pullback(x0, policy_params, solvealg, solve_kwargs)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
             ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
             solvealg,
             u0 = z0,
             p = policy_params;
-            kwargs...
+            solve_kwargs...,
         )
 
         # TODO: this is not compatible with QuadratureAdjoint because nothing is
@@ -170,9 +170,15 @@ function ppg_goodies(dynamics, cost, policy, T)
         fwd_sol, pullback
     end
 
-    function ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
+    function ez_loss_and_grad(
+        x0,
+        policy_params,
+        solvealg,
+        sensealg;
+        fwd_solve_kwargs = Dict(),
+    )
         # @info "fwd"
-        fwd_sol, vjp = loss_pullback(x0, policy_params, solvealg)
+        fwd_sol, vjp = loss_pullback(x0, policy_params, solvealg, fwd_solve_kwargs)
         # @info "bwd"
         bwd = vjp(vcat(1, zero(x0)), sensealg)
         loss, _ = extract_loss_and_xT(fwd_sol)
@@ -217,11 +223,23 @@ function ppg_goodies(dynamics, cost, policy, T)
         end)
     end
 
-    function ez_loss_and_grad_many(x0_batch, policy_params, solvealg, sensealg)
+    function ez_loss_and_grad_many(
+        x0_batch,
+        policy_params,
+        solvealg,
+        sensealg;
+        fwd_solve_kwargs = Dict(),
+    )
         # Using tmap here gives a segfault. See https://github.com/tro3/ThreadPools.jl/issues/18.
         _aggregate_batch_results(
             map(x0_batch) do x0
-                ez_loss_and_grad(x0, policy_params, solvealg, sensealg)
+                ez_loss_and_grad(
+                    x0,
+                    policy_params,
+                    solvealg,
+                    sensealg,
+                    fwd_solve_kwargs = fwd_solve_kwargs,
+                )
             end,
         )
     end

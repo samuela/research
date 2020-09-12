@@ -1,10 +1,17 @@
 include("../ppg.jl")
 
+# Training imports
 import DiffEqFlux: FastChain, FastDense, initial_params
-import DifferentialEquations: solve, Euler, Tsit5
+import DifferentialEquations: solve, Euler, Tsit5, VCABM
+import DiffEqSensitivity: ReverseDiffVJP
+import Random: seed!
+import Flux
+import Flux: ADAM, Momentum, Optimiser
+import ProgressMeter
 
 # module MassSpringEnv
 
+# MassSpringEnv module imports
 import PyCall: @pyimport, @py_str, pyimport
 import Statistics: mean
 import DifferentialEquations: VectorContinuousCallback
@@ -16,8 +23,8 @@ sys.path.insert(0, "./difftaichi/python")
 """
 
 # @pyimport taichi as ti
-@pyimport numpy as np
-@pyimport importlib
+np = pyimport("numpy")
+importlib = pyimport("importlib")
 # For some reason, @pyimport doesn't work with module reloading.
 mass_spring = pyimport("mass_spring")
 mass_spring_robot_config = pyimport("mass_spring_robot_config")
@@ -56,7 +63,7 @@ function dynamics(state, u)
     v_flat = @view state[2*n_objects+1:end]
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
-    v_acc = mass_spring.forces_fn(np.array(x), np.array(v), u)
+    v_acc = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
     v_acc -= damping * v
 
     for i = 1:n_objects
@@ -102,16 +109,6 @@ end
 
 ###
 
-T = 10.0
-num_hidden = 64
-policy = FastChain(
-    # We have n_sin_waves scalars, n_objects 2-vectors for each offset, and 1 2-vector for the center.
-    FastDense(n_sin_waves + 2 * n_objects + 2, num_hidden, tanh),
-    FastDense(num_hidden, num_hidden, tanh),
-    FastDense(num_hidden, n_springs),
-)
-init_policy_params = initial_params(policy)
-
 callback = VectorContinuousCallback(
     (out, u, _, _) -> begin
         state = @view u[2:end]
@@ -132,16 +129,94 @@ callback = VectorContinuousCallback(
     n_objects,
 )
 
-goodies =
+# Difftaichi trains for 2048 // 3 steps, each being 0.004s long. That all works out to 2.728s.
+T = 2.728
+num_iters = 10
+batch_size = 1
+num_hidden = 64
+policy = FastChain(
+    # We have n_sin_waves scalars, n_objects 2-vectors for each offset, and 1 2-vector for the center.
+    FastDense(n_sin_waves + 2 * n_objects + 2, num_hidden, tanh),
+    FastDense(num_hidden, num_hidden, tanh),
+    FastDense(num_hidden, n_springs),
+)
+init_policy_params = initial_params(policy)
+
+learned_policy_goodies =
     ppg_goodies(dynamics, cost, (x, t, params) -> policy(observation(x, t), params), T)
-@time fwd_sol, _ = goodies.loss_pullback(
+@time fwd_sol, pullback = learned_policy_goodies.loss_pullback(
     sample_x0(),
     init_policy_params,
     Tsit5(),
-    callback = callback,
-    rtol = 1e-3,
-    atol = 1e-3,
+    Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
+stuff = pullback(ones(1+size(sample_x0(), 1)), InterpolatingAdjoint())
+
+# Train
+# function run(loss_and_grad)
+#     # Seed here so that both interp and euler get the same batches.
+#     seed!(123)
+
+#     loss_per_iter = fill(NaN, num_iters)
+#     policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
+#     g_per_iter = fill(NaN, num_iters, length(init_policy_params))
+#     nf_per_iter = fill(NaN, num_iters)
+#     n∇ₓf_per_iter = fill(NaN, num_iters)
+#     n∇ᵤf_per_iter = fill(NaN, num_iters)
+
+#     policy_params = deepcopy(init_policy_params)
+#     batches = [[sample_x0() for _ = 1:batch_size] for _ = 1:num_iters]
+#     # opt = ADAM()
+#     opt = Momentum(0.001)
+#     # opt = Optimiser(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
+#     # opt =LBFGS(
+#     #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
+#     #     linesearch = LineSearches.Static(),
+#     # )
+#     progress = ProgressMeter.Progress(num_iters)
+#     for iter = 1:num_iters
+#         loss, g, info = loss_and_grad(batches[iter], policy_params)
+#         loss_per_iter[iter] = loss
+#         policy_params_per_iter[iter, :] = policy_params
+#         g_per_iter[iter, :] = g
+#         nf_per_iter[iter] = info.nf
+#         n∇ₓf_per_iter[iter] = info.n∇ₓf
+#         n∇ᵤf_per_iter[iter] = info.n∇ᵤf
+
+#         clamp!(g, -10, 10)
+#         Flux.Optimise.update!(opt, policy_params, g)
+#         ProgressMeter.next!(
+#             progress;
+#             showvalues = [
+#                 (:iter, iter),
+#                 (:loss, loss),
+#                 (:nf, info.nf / batch_size),
+#                 (:n∇ₓf, info.n∇ₓf / batch_size),
+#                 (:n∇ᵤf, info.n∇ᵤf / batch_size),
+#             ],
+#         )
+#     end
+
+#     (
+#         loss_per_iter = loss_per_iter,
+#         policy_params_per_iter = policy_params_per_iter,
+#         g_per_iter = g_per_iter,
+#         nf_per_iter = nf_per_iter,
+#         n∇ₓf_per_iter = n∇ₓf_per_iter,
+#         n∇ᵤf_per_iter = n∇ᵤf_per_iter,
+#     )
+# end
+
+# @info "InterpolatingAdjoint"
+# interp_results = run(
+#     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
+#         x0_batch,
+#         θ,
+#         Tsit5(),
+#         InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
+#         fwd_solve_kwargs = Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3),
+#     ),
+# )
 
 # Visualize a rollout:
 # ts = 0:0.01:T
@@ -159,5 +234,7 @@ goodies =
 # end
 
 # TODO:
+#  * report the 0 gradient by default bug
+#  * define adjoint on the dynamics
 #  * try training with Euler
 #  * try training with ppg
