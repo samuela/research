@@ -16,6 +16,9 @@ import PyCall: @pyimport, @py_str, pyimport
 import Statistics: mean
 import DifferentialEquations: VectorContinuousCallback
 
+# I'm not yet sure how to import only the things we need from ChainRulesCore.
+using ChainRulesCore
+
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
 import sys
@@ -58,11 +61,38 @@ n_springs = size(springs, 1)
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
+# Defining the rrule on a Julia function as opposed to a PyCall one doesn't work either:
+# function forces_fn(x, v, u)
+#     mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+# end
+# function rrule(::typeof(forces_fn), x, v, u)
+#     # We reuse these for both the forward and backward.
+#     x_np = np.array(x)
+#     v_np = np.array(v)
+#     u_np = np.array(u)
+#     function pullback(ΔΩ)
+#         # This never gets called
+#         @error "poopy"
+#         NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
+#     end
+#     forces_fn(x_np, v_np, u_np), pullback
+# end
+
+function rrule(::typeof(mass_spring.forces_fn), x_np, v_np, u_np)
+    function pullback(ΔΩ)
+        # This never gets called :(
+        @error "poopy"
+        NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
+    end
+    mass_spring.forces_fn(x_np, v_np, u_np), pullback
+end
+
 function dynamics(state, u)
     x_flat = @view state[1:2*n_objects]
     v_flat = @view state[2*n_objects+1:end]
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
+    # v_acc = forces_fn(x, v, u)
     v_acc = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
     v_acc -= damping * v
 
@@ -107,7 +137,7 @@ function observation(state, t)
     [periodic_signal; center[:]; offsets[:]]
 end
 
-###
+################
 
 callback = VectorContinuousCallback(
     (out, u, _, _) -> begin
@@ -150,7 +180,7 @@ learned_policy_goodies =
     Tsit5(),
     Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
-stuff = pullback(ones(1+size(sample_x0(), 1)), InterpolatingAdjoint())
+@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint())
 
 # Train
 # function run(loss_and_grad)
@@ -234,7 +264,6 @@ stuff = pullback(ones(1+size(sample_x0(), 1)), InterpolatingAdjoint())
 # end
 
 # TODO:
-#  * report the 0 gradient by default bug
 #  * define adjoint on the dynamics
 #  * try training with Euler
 #  * try training with ppg

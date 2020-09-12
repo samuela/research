@@ -3,6 +3,8 @@ uuid = "add7d8ba-c849-48e8-ace6-f334edce53fd"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 ControlSystems = "a6e380b2-a6ca-5380-bf3e-84a91bcd477e"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DiffEqFlux = "aae7a2af-3d4f-5e19-a356-7da93b79d9d0"
