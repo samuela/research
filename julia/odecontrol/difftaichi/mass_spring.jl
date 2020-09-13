@@ -62,9 +62,9 @@ n_springs = size(springs, 1)
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
 # Defining the rrule on a Julia function as opposed to a PyCall one doesn't work either:
-# function forces_fn(x, v, u)
-#     mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
-# end
+function forces_fn(x, v, u)
+    mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+end
 # function rrule(::typeof(forces_fn), x, v, u)
 #     # We reuse these for both the forward and backward.
 #     x_np = np.array(x)
@@ -78,13 +78,30 @@ n_springs = size(springs, 1)
 #     forces_fn(x_np, v_np, u_np), pullback
 # end
 
-function rrule(::typeof(mass_spring.forces_fn), x_np, v_np, u_np)
+# See https://github.com/SciML/DiffEqSensitivity.jl/issues/334.
+# function rrule(::typeof(mass_spring.forces_fn), x_np, v_np, u_np)
+#     function pullback(ΔΩ)
+#         # This never gets called :(
+#         @error "poopy"
+#         NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
+#     end
+#     mass_spring.forces_fn(x_np, v_np, u_np), pullback
+# end
+
+import Zygote: @adjoint
+
+@adjoint function forces_fn(x, v, u)
+    @error "fwd?"
+    # We reuse these for both the forward and backward.
+    x_np = np.array(x)
+    v_np = np.array(v)
+    u_np = np.array(u)
     function pullback(ΔΩ)
-        # This never gets called :(
+        # This never gets called
         @error "poopy"
-        NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
+        mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
     end
-    mass_spring.forces_fn(x_np, v_np, u_np), pullback
+    forces_fn(x_np, v_np, u_np), pullback
 end
 
 function dynamics(state, u)
@@ -92,8 +109,8 @@ function dynamics(state, u)
     v_flat = @view state[2*n_objects+1:end]
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
-    # v_acc = forces_fn(x, v, u)
-    v_acc = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+    v_acc = forces_fn(x, v, u)
+    # v_acc = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
     v_acc -= damping * v
 
     for i = 1:n_objects
