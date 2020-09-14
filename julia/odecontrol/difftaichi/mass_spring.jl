@@ -3,7 +3,7 @@ include("../ppg.jl")
 # Training imports
 import DiffEqFlux: FastChain, FastDense, initial_params
 import DifferentialEquations: solve, Euler, Tsit5, VCABM
-import DiffEqSensitivity: ReverseDiffVJP
+import DiffEqSensitivity: ReverseDiffVJP, ZygoteVJP
 import Random: seed!
 import Flux
 import Flux: ADAM, Momentum, Optimiser
@@ -88,10 +88,9 @@ end
 #     mass_spring.forces_fn(x_np, v_np, u_np), pullback
 # end
 
-import Zygote: @adjoint
+import Zygote
 
-@adjoint function forces_fn(x, v, u)
-    @error "fwd?"
+Zygote.@adjoint function forces_fn(x, v, u)
     # We reuse these for both the forward and backward.
     x_np = np.array(x)
     v_np = np.array(v)
@@ -197,7 +196,7 @@ learned_policy_goodies =
     Tsit5(),
     Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
-@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint())
+@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
 
 # Train
 # function run(loss_and_grad)
