@@ -124,8 +124,8 @@ Plots.PyPlotBackend()
 
 # Doing plot() clears the current figure.
 Plots.plot(title = "Compute/accuracy tradeoff")
-plot_ribbon!(euler_bptt_results_fixed, "Euler, BPTT")
-plot_ribbon!(backsolve_results, "Neural ODE")
-plot_ribbon!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
-plot_ribbon!(interp_results, "Ours")
+plot_scatter!(euler_bptt_results_fixed, "Euler, BPTT")
+plot_scatter!(backsolve_results, "Neural ODE")
+plot_scatter!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
+plot_scatter!(interp_results, "Ours")
 Plots.savefig("lqr_tradeoff.pdf")
