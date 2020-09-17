@@ -64,30 +64,6 @@ n_springs = size(springs, 1)
 
 # Defining the rrule on a Julia function as opposed to a PyCall one doesn't work either:
 forces_fn(x, v, u) = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
-forces_fn(x::ReverseDiff.TrackedArray, v::ReverseDiff.TrackedArray, u::ReverseDiff.TrackedArray) = ReverseDiff.track(x, v, u)
-# function rrule(::typeof(forces_fn), x, v, u)
-#     # We reuse these for both the forward and backward.
-#     x_np = np.array(x)
-#     v_np = np.array(v)
-#     u_np = np.array(u)
-#     function pullback(ΔΩ)
-#         # This never gets called
-#         @error "poopy"
-#         NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
-#     end
-#     forces_fn(x_np, v_np, u_np), pullback
-# end
-
-# See https://github.com/SciML/DiffEqSensitivity.jl/issues/334.
-# function rrule(::typeof(mass_spring.forces_fn), x_np, v_np, u_np)
-#     function pullback(ΔΩ)
-#         # This never gets called :(
-#         @error "poopy"
-#         NO_FIELDS, mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
-#     end
-#     mass_spring.forces_fn(x_np, v_np, u_np), pullback
-# end
-
 ReverseDiff.@grad function forces_fn(x, v, u)
     # We reuse these for both the forward and backward.
     @error "fwd"
@@ -99,7 +75,11 @@ ReverseDiff.@grad function forces_fn(x, v, u)
         @error "bwd"
         mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
     end
-    forces_fn(x_np, v_np, u_np), pullback
+    mass_spring.forces_fn(x_np, v_np, u_np), pullback
+end
+forces_fn(x::ReverseDiff.TrackedArray, v::ReverseDiff.TrackedArray, u::ReverseDiff.TrackedArray) = begin
+    @error "track"
+    ReverseDiff.track(forces_fn, x, v, u)
 end
 
 function dynamics(state, u)
@@ -145,7 +125,9 @@ function observation(state, t)
     # that we are doing 1..10, but in Python they do 0..9. It's all just
     # arbitrary inputs to the policy network though, shouldn't make any
     # difference.
-    periodic_signal = sin.(spring_omega * t .+ 2 * π / n_sin_waves .* (1:n_sin_waves))
+    # See https://github.com/JuliaDiff/ReverseDiff.jl/issues/151 for why the
+    # `collect` is necessary.
+    periodic_signal = sin.(spring_omega * t .+ 2 * π / n_sin_waves .* collect(1:n_sin_waves))
 
     center = mean(x, dims = 1)
     offsets = x .- center
