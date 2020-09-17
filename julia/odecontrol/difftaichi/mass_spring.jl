@@ -62,25 +62,21 @@ n_springs = size(springs, 1)
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
-# Defining the rrule on a Julia function as opposed to a PyCall one doesn't work either:
-forces_fn(x, v, u) = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+# Specifying Array types here is important for ReverseDiff.jl to be able to hit the tracked version of this function
+# below. Why is this the case? Who knows. For some reason we end up calling `forces_fn` with an Array of TrackedReals as
+# opposed to just a TrackedArray which makes specifying the types on the tracked version messier.
+forces_fn(x::Array, v::Array, u::Array) = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
 ReverseDiff.@grad function forces_fn(x, v, u)
     # We reuse these for both the forward and backward.
-    @error "fwd"
     x_np = np.array(x)
     v_np = np.array(v)
     u_np = np.array(u)
     function pullback(ΔΩ)
-        # This never gets called
-        @error "bwd"
         mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
     end
     mass_spring.forces_fn(x_np, v_np, u_np), pullback
 end
-forces_fn(x::ReverseDiff.TrackedArray, v::ReverseDiff.TrackedArray, u::ReverseDiff.TrackedArray) = begin
-    @error "track"
-    ReverseDiff.track(forces_fn, x, v, u)
-end
+forces_fn(x, v, u) = ReverseDiff.track(forces_fn, x, v, u)
 
 function dynamics(state, u)
     x_flat = @view state[1:2*n_objects]
@@ -88,19 +84,16 @@ function dynamics(state, u)
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
     v_acc = forces_fn(x, v, u)
-    # v_acc = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
     v_acc -= damping * v
 
-    for i = 1:n_objects
-        # positions are [x, y]. The ground has infinite friction in the difftaichi model.
-        if x[i, 2] <= ground_height
-            v_acc[i, 1] = 0
-            v_acc[i, 2] = max(0, v_acc[i, 2])
-        end
-    end
+    # Positions are [x, y]. The ground has infinite friction in the difftaichi model.
+    # We need to do this in order to work with ReverseDiff.jl since a for-loop requires setindex! which isn't allowed in
+    # AD code.
+    v_acc_x = [if x[i, 2] > ground_height v_acc[i, 1] else 0 end for i in 1:n_objects]
+    v_acc_y = [if x[i, 2] > ground_height v_acc[i, 2] else max(0, v_acc[i, 2]) end for i in 1:n_objects]
 
     # We need to flatten everything back down to a vector. Reuse v_flat == v[:].
-    [v_flat; v_acc[:]]
+    [v_flat; v_acc_x; v_acc_y]
 end
 
 function cost(state, u)

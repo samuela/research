@@ -93,6 +93,13 @@ def forces():
     for i in range(n_objects):
         ti.atomic_add(v_acc[i][1], gravity)
 
+@ti.kernel
+def forces_vjp():
+    forces()
+    for i in range(n_objects):
+        ti.atomic_add(loss, v_acc[i][0] * v_acc_bar[i][0])
+        ti.atomic_add(loss, v_acc[i][1] * v_acc_bar[i][1])
+
 # Can't write this function until we get rid of the x for every step thing.
 def forces_fn(x_np, v_np, act_np):
     x.from_numpy(x_np)
@@ -111,10 +118,7 @@ def forces_fn_vjp(x_np, v_np, act_np, v_acc_bar_np):
     # scalar backprop: d/dx [v^T f(x)].
     loss[None] = 0
     with ti.Tape(loss):
-        forces()
-        for i in range(n_objects):
-            ti.atomic_add(loss, v_acc[i][0] * v_acc_bar[i][0])
-            ti.atomic_add(loss, v_acc[i][1] * v_acc_bar[i][1])
+        forces_vjp()
 
     return x.grad.to_numpy(), v.grad.to_numpy(), act.grad.to_numpy()
 
