@@ -8,6 +8,7 @@ import Random: seed!
 import Flux
 import Flux: ADAM, Momentum, Optimiser
 import ProgressMeter
+import ReverseDiff
 
 # module MassSpringEnv
 
@@ -62,9 +63,8 @@ n_springs = size(springs, 1)
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
 # Defining the rrule on a Julia function as opposed to a PyCall one doesn't work either:
-function forces_fn(x, v, u)
-    mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
-end
+forces_fn(x, v, u) = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+forces_fn(x::ReverseDiff.TrackedArray, v::ReverseDiff.TrackedArray, u::ReverseDiff.TrackedArray) = ReverseDiff.track(x, v, u)
 # function rrule(::typeof(forces_fn), x, v, u)
 #     # We reuse these for both the forward and backward.
 #     x_np = np.array(x)
@@ -88,16 +88,15 @@ end
 #     mass_spring.forces_fn(x_np, v_np, u_np), pullback
 # end
 
-import Zygote
-
-Zygote.@adjoint function forces_fn(x, v, u)
+ReverseDiff.@grad function forces_fn(x, v, u)
     # We reuse these for both the forward and backward.
+    @error "fwd"
     x_np = np.array(x)
     v_np = np.array(v)
     u_np = np.array(u)
     function pullback(ΔΩ)
         # This never gets called
-        @error "poopy"
+        @error "bwd"
         mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
     end
     forces_fn(x_np, v_np, u_np), pullback
@@ -196,7 +195,7 @@ learned_policy_goodies =
     Tsit5(),
     Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
-@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ReverseDiffVJP()))
 
 # Train
 # function run(loss_and_grad)
