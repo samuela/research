@@ -431,6 +431,12 @@ git-tree-sha1 = "c98c1b5c2b5eeb6d867ec77b936132b8e7c978c0"
 uuid = "6a86dc24-6348-571c-b903-95158fe2bd41"
 version = "2.6.0"
 
+[[FiniteDifferences]]
+deps = ["ChainRulesCore", "LinearAlgebra", "Printf", "Random"]
+git-tree-sha1 = "39c7e195062c85bd2aa850e0adb86796c9cb67a3"
+uuid = "26cc04aa-876d-5657-8c51-4c34ba976000"
+version = "0.10.8"
+
 [[FixedPointNumbers]]
 deps = ["Statistics"]
 git-tree-sha1 = "335bfdceacc84c5cdf16aadc768aa5ddfc5383cc"
