@@ -95,7 +95,6 @@ def forces():
 
 @ti.kernel
 def forces_vjp():
-    forces()
     for i in range(n_objects):
         ti.atomic_add(loss, v_acc[i][0] * v_acc_bar[i][0])
         ti.atomic_add(loss, v_acc[i][1] * v_acc_bar[i][1])
@@ -118,6 +117,7 @@ def forces_fn_vjp(x_np, v_np, act_np, v_acc_bar_np):
     # scalar backprop: d/dx [v^T f(x)].
     loss[None] = 0
     with ti.Tape(loss):
+        forces()
         forces_vjp()
 
     return x.grad.to_numpy(), v.grad.to_numpy(), act.grad.to_numpy()
@@ -172,7 +172,3 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
         gui.update()
         if output:
             gui.screenshot("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
-
-if __name__ == "__main__":
-    from mass_spring_robot_config import robotB
-    setup_robot(*robotB())

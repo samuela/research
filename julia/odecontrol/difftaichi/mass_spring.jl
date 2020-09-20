@@ -17,9 +17,6 @@ import PyCall: @pyimport, @py_str, pyimport
 import Statistics: mean
 import DifferentialEquations: VectorContinuousCallback
 
-# I'm not yet sure how to import only the things we need from ChainRulesCore.
-using ChainRulesCore
-
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
 import sys
@@ -63,26 +60,51 @@ n_springs = size(springs, 1)
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
 # Specifying Array types here is important for ReverseDiff.jl to be able to hit the tracked version of this function
-# below. Why is this the case? Who knows. For some reason we end up calling `forces_fn` with an Array of TrackedReals as
-# opposed to just a TrackedArray which makes specifying the types on the tracked version messier.
-forces_fn(x::Array, v::Array, u::Array) = mass_spring.forces_fn(np.array(x), np.array(v), np.array(u))
+# below. Why is this the case? Who knows. Because x and v are actually ReshapedArrays, it ends up being easier to
+# dispatch on u. See https://github.com/JuliaDiff/ReverseDiff.jl/issues/150#issuecomment-692649803.
+function forces_fn(x, v, u::Array)
+    mass_spring.forces_fn(np.array(x, dtype=np.float32), np.array(v, dtype=np.float32), np.array(u, dtype=np.float32))
+end
+function forces_fn(x, v, u::ReverseDiff.TrackedArray)
+    ReverseDiff.track(forces_fn, x, v, u)
+end
 ReverseDiff.@grad function forces_fn(x, v, u)
     # We reuse these for both the forward and backward.
-    x_np = np.array(x)
-    v_np = np.array(v)
-    u_np = np.array(u)
+    x_np = np.array(x, dtype=np.float32)
+    v_np = np.array(v, dtype=np.float32)
+    u_np = np.array(u, dtype=np.float32)
     function pullback(ΔΩ)
-        mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ))
+        mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ, dtype=np.float32))
     end
     mass_spring.forces_fn(x_np, v_np, u_np), pullback
 end
-forces_fn(x, v, u) = ReverseDiff.track(forces_fn, x, v, u)
+
+import Test: @test
+import FiniteDifferences
+
+begin
+    @info "Testing DiffTaichi gradients"
+    seed!(123)
+    for i in 1:10
+        local x = randn(Float32, (n_objects, 2))
+        local v = randn(Float32, (n_objects, 2))
+        local u = randn(Float32, (n_springs, ))
+        local g = randn(Float32, (n_objects, 2))
+        f(x, v, u) = sum(forces_fn(x, v, u) .* g)
+        local x̄1, v̄1, ū1 = FiniteDifferences.grad(FiniteDifferences.central_fdm(3, 1), f, x, v, u)
+        local x̄2, v̄2, ū2 = ReverseDiff.gradient(f, (x, v, u))
+        @test isapprox(x̄1, x̄2; rtol=1e-3)
+        @test maximum(abs.(v̄1 - v̄2)) <= 1e-2
+        @test isapprox(ū1, ū2, rtol = 1e-2)
+    end
+end
 
 function dynamics(state, u)
     x_flat = @view state[1:2*n_objects]
     v_flat = @view state[2*n_objects+1:end]
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
+    # TODO: did the original difftaichi example damp gravity as well? We are.
     v_acc = forces_fn(x, v, u)
     v_acc -= damping * v
 
