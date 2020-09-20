@@ -132,20 +132,19 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
         and dumped to a results directory.
     """
     assert len(xs) == len(acts)
-    gui = ti.core.GUI("Mass Spring Robot", ti.veci(1024, 1024))
-    canvas = gui.get_canvas()
+    gui = ti.GUI("Mass Spring Robot", (1024, 1024), background_color=0xFFFFFF)
 
     if output:
         os.makedirs("{}/{}/".format(RESULTS_DIR, output))
 
     for t in range(1, len(xs)):
-        canvas.clear(0xFFFFFF)
-        canvas.path(ti.vec(0, ground_height),
-                    ti.vec(1, ground_height)).color(0x0).radius(3).finish()
+        gui.line(begin=(0, ground_height),
+                    end=(1, ground_height),
+                    color=0x0,
+                    radius=3)
 
         def circle(x, y, color):
-            canvas.circle(ti.vec(x, y)).color(
-                ti.rgb_to_hex(color)).radius(7).finish()
+            gui.circle((x, y), ti.rgb_to_hex(color), 7)
 
         for i in range(n_springs):
             def get_pt(x):
@@ -159,9 +158,10 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
             else:
                 r = 4
                 c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
-            canvas.path(
-                get_pt(xs[t][spring_anchor_a[i]]),
-                get_pt(xs[t][spring_anchor_b[i]])).color(c).radius(r).finish()
+            gui.line(begin=get_pt(x[t, spring_anchor_a[i]]),
+                     end=get_pt(x[t, spring_anchor_b[i]]),
+                     radius=r,
+                     color=c)
 
         for i in range(n_objects):
             color = (0.4, 0.6, 0.6)
@@ -169,6 +169,7 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
                 color = (0.8, 0.2, 0.3)
             circle(xs[t][i][0], xs[t][i][1], color)
 
-        gui.update()
         if output:
-            gui.screenshot("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
+            gui.show("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
+        else:
+            gui.show()
