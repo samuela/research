@@ -19,12 +19,17 @@ end
 """Returns a differentiable loss function that rolls out a policy in an
 environment and calculates its cost."""
 function ppg_goodies(dynamics, cost, policy, T)
-    function aug_dynamics!(dz, z, policy_params, t)
+    # function aug_dynamics!(dz, z, policy_params, t)
+    #     x = @view z[2:end]
+    #     u = policy(x, t, policy_params)
+    #     dz[1] = cost(x, u)
+    #     # Note that dynamics!(dz[2:end], x, u) breaks Zygote/ReverseDiff :(
+    #     dz[2:end] = dynamics(x, u)
+    # end
+    function aug_dynamics(z, policy_params, t)
         x = @view z[2:end]
         u = policy(x, t, policy_params)
-        dz[1] = cost(x, u)
-        # Note that dynamics!(dz[2:end], x, u) breaks Zygote :(
-        dz[2:end] = dynamics(x, u)
+        [cost(x, u); dynamics(x, u)]
     end
 
     # using BenchmarkTools
@@ -40,7 +45,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     function loss_pullback(x0, policy_params, solvealg, solve_kwargs)
         z0 = vcat(0.0, x0)
         fwd_sol = solve(
-            ODEProblem(aug_dynamics!, z0, (0, T), policy_params),
+            ODEProblem(aug_dynamics, z0, (0, T), policy_params),
             solvealg,
             u0 = z0,
             p = policy_params;
@@ -245,7 +250,7 @@ function ppg_goodies(dynamics, cost, policy, T)
     end
 
     (
-        aug_dynamics! = aug_dynamics!,
+        aug_dynamics = aug_dynamics,
         loss_pullback = loss_pullback,
         ez_loss_and_grad = ez_loss_and_grad,
         ez_loss_and_grad_many = ez_loss_and_grad_many,
