@@ -225,7 +225,7 @@ policy = FastChain(
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, n_springs),
 )
-init_policy_params = initial_params(policy)
+init_policy_params = 0.1 * initial_params(policy)
 
 learned_policy_goodies =
     ppg_goodies(dynamics, cost, (x, t, params) -> policy(observation(x, t), params), T)
@@ -300,11 +300,14 @@ interp_results = run(
     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
         x0_batch,
         θ,
-        Tsit5(),
+        VCABM(),
         InterpolatingAdjoint(autojacvec = ZygoteVJP()),
         fwd_solve_kwargs = Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3),
     ),
 )
+
+import JLSO
+JLSO.save("mass_spring_results.jlso", :results => interp_results)
 
 # Visualize a rollout:
 ts = 0:0.01:T
@@ -322,6 +325,5 @@ mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
 # end
 
 # TODO:
-#  * define adjoint on the dynamics
 #  * try training with Euler
 #  * try training with ppg
