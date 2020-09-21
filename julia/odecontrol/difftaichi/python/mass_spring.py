@@ -8,7 +8,8 @@ import os
 
 RESULTS_DIR = "mass_spring_output"
 real = ti.f32
-ti.init(default_fp=real)
+# See https://github.com/taichi-dev/taichi/issues/1886.
+ti.init(default_fp=real, cpu_max_num_threads=1)
 
 # use_toi = False
 # steps = 2048 // 3
