@@ -40,25 +40,36 @@ function ppg_toi_goodies(dynamics, cost, policy, toi, T)
         [cost(x, u); dynamics(x, u)]
     end
 
-    callback = CallbackSet((
-        DiscreteCallback((u, t, integrator) -> condition(u[2:end]) < 0, (integrator) -> begin
+    callback = DiscreteCallback((u, t, integrator) -> true, (integrator) -> begin
+        # In some cases (eg toi_test6.jl) there is a zero-crossing, but the integrators are sufficiently smart as to
+        # skip it entirely. Ie, you cross zero twice and so you would never notice without some more careful testing.
+        test_times = range(integrator.tprev, integrator.t, length=10)
+        xs = [z[2:end] for z in integrator.(test_times)]
+        # There's a little tiny droplet of optimization that could be squeezed out here. We could be lazier.
+        # For each condition, find the index of the time span with the first down-crossing. `nothing` if no
+        # down-crossing is found.
+        ixs = filter((a) -> !isnothing(a[1]), [begin
+            cs = condition.(xs)
             # Only fire for down-crossings: positive -> negative.
-            if condition(integrator.uprev[2:end]) > 0
-                # See https://github.com/SciML/DiffEqBase.jl/blob/d4973e21ff31dc1d355e84ae2b4c1d3c9546b6b2/src/callbacks.jl#L673.
-                event_t = DiffEqBase.bisection(
-                    (t) -> condition(integrator(t)[2:end]),
-                    (integrator.tprev, integrator.t), isone(integrator.tdir)
-                )
+            (findfirst((j) -> cs[j] > 0 > cs[j + 1], 1:(length(cs) - 1)), i)
+        end for (i, condition) in enumerate(toi.conditions)])
 
-                # If, on the off chance, event_t - time_epsilon < tprev, this will return an error. Soluton is
-                # to set time_epsilon smaller. Taking the max is technically messing up time a little bit, but
-                # saves us a bunch of trouble.
-                DiffEqBase.change_t_via_interpolation!(integrator, max(event_t - toi.time_epsilon, integrator.tprev))
-                DiffEqBase.terminate!(integrator)
-            end
-        end)
-        for condition in toi.conditions)...
-    )
+        if length(ixs) > 0
+            (t_ix, condition_ix) = ixs[argmin(map(first, ixs))]
+
+            # See https://github.com/SciML/DiffEqBase.jl/blob/d4973e21ff31dc1d355e84ae2b4c1d3c9546b6b2/src/callbacks.jl#L673.
+            event_t = DiffEqBase.bisection(
+                (t) -> toi.conditions[condition_ix](integrator(t)[2:end]),
+                (test_times[t_ix], test_times[t_ix + 1]), isone(integrator.tdir)
+            )
+
+            # If, on the off chance, event_t - time_epsilon < tprev, this will return an error. Soluton is
+            # to set time_epsilon smaller. Taking the max is technically messing up time a little bit, but
+            # saves us a bunch of trouble.
+            DiffEqBase.change_t_via_interpolation!(integrator, max(event_t - toi.time_epsilon, integrator.tprev))
+            DiffEqBase.terminate!(integrator)
+        end
+    end)
 
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
