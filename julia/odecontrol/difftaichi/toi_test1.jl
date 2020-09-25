@@ -10,7 +10,7 @@ policy(state, t, p) = 0
 toi_affect(state, dt) = [-dt * state[2] - state[1], -state[2]]
 terminal_cost(state) = (state[1] - 0.6) ^ 2
 
-goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff((x) -> x[1], toi_affect, 1e-3), 1.0)
+goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff([(x) -> x[1]], toi_affect, 1e-3), 1.0)
 
 x0 = [0.75, -1]
 for _ in 1:100

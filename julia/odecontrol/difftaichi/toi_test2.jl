@@ -13,7 +13,7 @@ toi_affect(state, dt) = [-dt * state[2] - state[1], -state[2]]
 terminal_cost(state) = (state[1] - 5) ^ 2
 
 T = 2.0
-goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff((x) -> x[1], toi_affect, 1e-6), T)
+goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff([(x) -> x[1]], toi_affect, 1e-6), T)
 
 x0 = [10.0, 0.0]
 cost_per_iter = []

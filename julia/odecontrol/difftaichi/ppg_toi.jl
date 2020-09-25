@@ -1,7 +1,5 @@
-# include("../ppg.jl")
-
 import DiffEqBase
-import DiffEqBase: DiscreteCallback
+import DiffEqBase: DiscreteCallback, CallbackSet
 import DiffEqSensitivity:
     solve,
     ODEProblem,
@@ -11,7 +9,7 @@ import DiffEqSensitivity:
 import Zygote
 
 struct TOIStuff
-    condition
+    conditions
     affect
     time_epsilon::Float64
 end
@@ -42,6 +40,26 @@ function ppg_toi_goodies(dynamics, cost, policy, toi, T)
         [cost(x, u); dynamics(x, u)]
     end
 
+    callback = CallbackSet((
+        DiscreteCallback((u, t, integrator) -> condition(u[2:end]) < 0, (integrator) -> begin
+            # Only fire for down-crossings: positive -> negative.
+            if condition(integrator.uprev[2:end]) > 0
+                # See https://github.com/SciML/DiffEqBase.jl/blob/d4973e21ff31dc1d355e84ae2b4c1d3c9546b6b2/src/callbacks.jl#L673.
+                event_t = DiffEqBase.bisection(
+                    (t) -> condition(integrator(t)[2:end]),
+                    (integrator.tprev, integrator.t), isone(integrator.tdir)
+                )
+
+                # If, on the off chance, event_t - time_epsilon < tprev, this will return an error. Soluton is
+                # to set time_epsilon smaller. Taking the max is technically messing up time a little bit, but
+                # saves us a bunch of trouble.
+                DiffEqBase.change_t_via_interpolation!(integrator, max(event_t - toi.time_epsilon, integrator.tprev))
+                DiffEqBase.terminate!(integrator)
+            end
+        end)
+        for condition in toi.conditions)...
+    )
+
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
     function loss_pullback(x0, policy_params, solvealg, solve_kwargs)
@@ -64,22 +82,7 @@ function ppg_toi_goodies(dynamics, cost, policy, toi, T)
                 solvealg,
                 u0 = current_z,
                 p = policy_params;
-                callback = DiscreteCallback((u, t, integrator) -> toi.condition(u[2:end]) < 0, (integrator) -> begin
-                    # Only fire for down-crossings: positive -> negative.
-                    if toi.condition(integrator.uprev[2:end]) > 0
-                        # See https://github.com/SciML/DiffEqBase.jl/blob/d4973e21ff31dc1d355e84ae2b4c1d3c9546b6b2/src/callbacks.jl#L673.
-                        event_t = DiffEqBase.bisection(
-                            (t) -> toi.condition(integrator(t)[2:end]),
-                            (integrator.tprev, integrator.t), isone(integrator.tdir)
-                        )
-
-                        # If, on the off chance, event_t - time_epsilon < tprev, this will return an error. Soluton is
-                        # to set time_epsilon smaller. Taking the max is technically messing up time a little bit, but
-                        # saves us a bunch of trouble.
-                        DiffEqBase.change_t_via_interpolation!(integrator, max(event_t - toi.time_epsilon, integrator.tprev))
-                        DiffEqBase.terminate!(integrator)
-                    end
-                end),
+                callback = callback,
                 solve_kwargs...,
             )
 
