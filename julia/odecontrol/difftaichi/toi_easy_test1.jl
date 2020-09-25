@@ -14,8 +14,8 @@ goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff((x) -> x[1], toi_affe
 
 x0 = [0.75, -1]
 for _ in 1:100
-    zT, pb1 = goodies.loss_pullback(x0, zeros(1), Tsit5(), Dict())
-    xT = zT[2:end]
+    sol, pb1 = goodies.loss_pullback(x0, zeros(1), nothing, Dict())
+    xT = sol.solutions[end].u[end][2:end]
     local cost, pb2 = Zygote.pullback(terminal_cost, xT)
 
     (g_xT, ) = pb2(1.0)

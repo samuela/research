@@ -17,7 +17,9 @@ struct TOIStuff
 end
 
 struct TOISolution
-    solutions::Array{DiffEqBase.ODESolution}
+    # An array of ODESolution's. Sometimes we get `OrdinaryDiffEq.ODECompositeSolution` instead of
+    # `DiffEqBase.ODESolution` and they don't have a subtype relationship, so we resort to just `Array`.
+    solutions::Array
 end
 
 function (sol::TOISolution)(t)

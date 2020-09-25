@@ -40,4 +40,6 @@ for iter in 1:1000
     push!(cost_per_iter, cost)
 end
 
+@assert cost_per_iter[end] <= 1e-6
+
 lineplot((1:length(cost_per_iter)), convert(Array{Float64}, cost_per_iter)) |> show
