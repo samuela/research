@@ -1,4 +1,4 @@
-include("../ppg.jl")
+include("ppg_toi.jl")
 
 # Training imports
 import DiffEqFlux: FastChain, FastDense, initial_params
@@ -33,7 +33,7 @@ importlib.reload(mass_spring)
 importlib.reload(mass_spring_robot_config)
 
 # mass_spring.main(1; visualize = false)
-objects, springs = mass_spring_robot_config.robots[2]()
+objects, springs = mass_spring_robot_config.robots[1]()
 mass_spring.setup_robot(objects, springs)
 
 # The y position of the ground. As defined in the Python version.
@@ -51,8 +51,10 @@ n_sin_waves = 10
 # The exact equivalent from the difftaichi code is that our dampening = (1 - exp(-dt * d)) / d where d is their damping.
 # In difftaichi d = 15 and dt = 0.004 which comes out to damping = 14.56...
 damping = 14.56
+# damping = 1 / 0.004
+@assert damping >= 0
 
-n_objects = length(objects)
+n_objects = size(objects, 1)
 n_springs = size(springs, 1)
 
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
@@ -116,7 +118,6 @@ function dynamics(state, u)
     v_flat = @view state[2*n_objects+1:end]
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
-    # TODO: did the original difftaichi example damp gravity as well? We are.
     v_acc = forces_fn(x, v, u)
     v_acc -= damping * v
 
@@ -193,27 +194,6 @@ end
 
 ################
 
-callback = VectorContinuousCallback(
-    (out, u, _, _) -> begin
-        state = @view u[2:end]
-        x_flat = @view state[1:2*n_objects]
-        x = reshape(x_flat, (n_objects, 2))
-        out[:] .= x[:, 2] .- ground_height
-    end,
-    (integrator, idx) -> begin
-        # TODO: this arithmetic is disgusting. Use RecursiveArrayTools or something else.
-        # Don't forget the 1 to account for the cost.
-        # Set the y to ground_height.
-        integrator.u[1+n_objects+idx] = ground_height
-        # Set the x velocity to zero.
-        integrator.u[1+2*n_objects+idx] = 0
-        # Set the y velocity to zero.
-        integrator.u[1+3*n_objects+idx] = 0
-    end,
-    n_objects,
-    abstol=1e-2
-)
-
 # Difftaichi trains for 2048 // 3 steps, each being 0.004s long. That all works out to 2.728s.
 T = 2.728
 num_iters = 10
@@ -227,8 +207,31 @@ policy = FastChain(
 )
 init_policy_params = 0.1 * initial_params(policy)
 
-learned_policy_goodies =
-    ppg_goodies(dynamics, cost, (x, t, params) -> policy(observation(x, t), params), T)
+toi_affect(state, dt) = begin
+    x_flat = @view state[1:2*n_objects]
+    v_flat = @view state[2*n_objects+1:end]
+    x = reshape(x_flat, (n_objects, 2))
+    v = reshape(v_flat, (n_objects, 2))
+
+    # We want to make sure that we only register for negative velocities.
+    tois = [-x[i, 2] / min(v[i, 2], -eps()) for i in 1:n_objects]
+    impact_velocities = zero(v)
+
+    # Can't use zip. See https://github.com/FluxML/Zygote.jl/issues/221.
+    new_v1 = [if tois[i] < dt impact_velocities[i, 1] else v[i, 1] end for i in 1:n_objects]
+    new_v2 = [if tois[i] < dt impact_velocities[i, 2] else v[i, 2] end for i in 1:n_objects]
+    new_x1 = x[:, 1] + min.(tois, dt) .* v[:, 1] + max.(dt .- tois, 0) .* new_v1
+    new_x2 = x[:, 2] + min.(tois, dt) .* v[:, 2] + max.(dt .- tois, 0) .* new_v2
+    [new_x1; new_x2; new_v1; new_v2]
+end
+
+learned_policy_goodies = ppg_toi_goodies(
+    dynamics,
+    cost,
+    (x, t, params) -> policy(observation(x, t), params),
+    TOIStuff([(x) -> x[n_objects + i] for i in 1:n_objects], toi_affect, 1e-6),
+    T
+)
 @time fwd_sol, pullback = learned_policy_goodies.loss_pullback(
     sample_x0(),
     init_policy_params,
@@ -238,10 +241,8 @@ learned_policy_goodies =
 )
 @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
 
-batch_size = 1
-
 # Train
-function run(loss_and_grad)
+function run(goodies)
     # Seed here so that both interp and euler get the same batches.
     seed!(123)
 
@@ -253,7 +254,6 @@ function run(loss_and_grad)
     n∇ᵤf_per_iter = fill(NaN, num_iters)
 
     policy_params = deepcopy(init_policy_params)
-    batches = [[sample_x0() for _ = 1:batch_size] for _ = 1:num_iters]
     # opt = ADAM()
     opt = Momentum(0.001)
     # opt = Optimiser(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
@@ -263,13 +263,25 @@ function run(loss_and_grad)
     # )
     progress = ProgressMeter.Progress(num_iters)
     for iter = 1:num_iters
-        loss, g, info = loss_and_grad(batches[iter], policy_params)
+        x0 = sample_x0()
+        sol, pullback = goodies.loss_pullback(
+            x0,
+            policy_params,
+            Euler(),
+            # Dict(:rtol => 1e-3, :atol => 1e-3)
+            Dict(:dt => 0.004)
+        )
+        loss = sol.solutions[end].u[end][1]
+        @error "yay"
+        pb_stuff = pullback([1.0; zero(x0)], InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+        g = pb_stuff.g_p
+
         loss_per_iter[iter] = loss
         policy_params_per_iter[iter, :] = policy_params
         g_per_iter[iter, :] = g
-        nf_per_iter[iter] = info.nf
-        n∇ₓf_per_iter[iter] = info.n∇ₓf
-        n∇ᵤf_per_iter[iter] = info.n∇ᵤf
+        nf_per_iter[iter] = pb_stuff.nf + sum(s.destats.nf for s in sol.solutions)
+        n∇ₓf_per_iter[iter] = pb_stuff.n∇ₓf
+        n∇ᵤf_per_iter[iter] = pb_stuff.n∇ᵤf
 
         # clamp!(g, -10, 10)
         Flux.Optimise.update!(opt, policy_params, g)
@@ -278,9 +290,9 @@ function run(loss_and_grad)
             showvalues = [
                 (:iter, iter),
                 (:loss, loss),
-                (:nf, info.nf / batch_size),
-                (:n∇ₓf, info.n∇ₓf / batch_size),
-                (:n∇ᵤf, info.n∇ᵤf / batch_size),
+                (:nf, nf_per_iter[iter]),
+                (:n∇ₓf, n∇ₓf_per_iter[iter]),
+                (:n∇ᵤf, n∇ᵤf_per_iter[iter]),
             ],
         )
     end
@@ -295,29 +307,21 @@ function run(loss_and_grad)
     )
 end
 
-@info "InterpolatingAdjoint"
-interp_results = run(
-    (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
-        x0_batch,
-        θ,
-        VCABM(),
-        InterpolatingAdjoint(autojacvec = ZygoteVJP()),
-        fwd_solve_kwargs = Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3),
-    ),
-)
+# @info "InterpolatingAdjoint"
+# interp_results = run(learned_policy_goodies)
 
-import JLSO
-JLSO.save("mass_spring_results.jlso", :results => interp_results)
+# import JLSO
+# JLSO.save("mass_spring_results.jlso", :results => interp_results)
 
 # Visualize a rollout:
-ts = 0:0.01:T
-zs = fwd_sol.(ts)
-xs_flat = [z[2:end] for z in zs]
-xs = [reshape(z[1:2*n_objects], (n_objects,2)) for z in xs_flat]
-acts = [policy(observation(x, t), interp_results.policy_params_per_iter[end, :]) for (x, t) in zip(xs_flat, ts)]
+# ts = 0:0.01:T
+# zs = fwd_sol.(ts)
+# xs_flat = [z[2:end] for z in zs]
+# xs = [reshape(z[1:2*n_objects], (n_objects,2)) for z in xs_flat]
+# acts = [policy(observation(x, t), interp_results.policy_params_per_iter[end, :]) for (x, t) in zip(xs_flat, ts)]
 
 # This doesn't work on headless machines.
-mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+# mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
 
 # mass_spring2 = pyimport("mass_spring2")
 # mass_spring2.main(1)
