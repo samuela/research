@@ -1,10 +1,6 @@
-"""
-TODO:
-* test that gradients are the same
-"""
+import os
 
 import taichi as ti
-import os
 
 RESULTS_DIR = "mass_spring_output"
 real = ti.f32
