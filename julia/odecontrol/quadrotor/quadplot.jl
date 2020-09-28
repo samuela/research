@@ -25,7 +25,7 @@ seed!(12345)
 
 floatT = Float32
 T = 5.0
-num_iters = 500
+num_iters = 200
 batch_size = 16 #32
 #dstate = 12
 #dact = 4
@@ -43,7 +43,7 @@ function newpolicy()
               FastDense(dobs, num_hidden, act),
               FastDense(num_hidden, num_hidden, act),
               FastDense(num_hidden, 4,
-                        initW=(x...)->Flux.glorot_uniform(x...)*1e-2
+                        initW=(x...)->Flux.glorot_uniform(x...)*1e-1
                        ),
              )
 end
@@ -112,7 +112,7 @@ interp_times = zeros(N)
 euler_times = zeros(N)
 for i=1:N
     init_params = initial_params(newpolicy()) # get new policy parameters, randomly
-    rseed = 12345 + 10000*i
+    rseed = 12345 + 1000*i
 
     solver = VCABM
     @info "Interp"

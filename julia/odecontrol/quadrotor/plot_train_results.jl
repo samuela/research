@@ -40,19 +40,56 @@ Plots.savefig(
 
 begin
     p = Plots.plot(xlabel = "Number of function evaluations", ylabel = "Loss")
+    s_euler = std(euler_loss_per_iter)
+    s_interp = std(interp_loss_per_iter)
     Plots.plot!(
                 mean(euler_nf_per_iter),
                 mean(euler_loss_per_iter),
                 label = "Euler BPTT",
-                ribbon = (std(euler_loss_per_iter), std(euler_loss_per_iter))
+                ribbon = (s_euler, s_euler),
                )
     Plots.plot!(
                 mean(interp_nf_per_iter),
                 mean(interp_loss_per_iter),
                 label = "PPG (ours)",
-                ribbon = (std(interp_loss_per_iter), std(interp_loss_per_iter))
+                ribbon = (s_interp, s_interp),
                )
-    Plots.savefig(p, "/tmp/quadrotor_loss_per_nf.pdf")
+    Plots.savefig(p, "/tmp/quadrotor_loss_per_nf_ribbon.pdf")
+end
+
+begin
+    p = Plots.plot(xlabel = "Number of function evaluations", ylabel = "Loss")
+    s_euler = std(euler_loss_per_iter)
+    s_interp = std(interp_loss_per_iter)
+    Plots.plot!(
+                euler_nf_per_iter[1],
+                euler_loss_per_iter[1],
+                label = "Euler BPTT",
+                color=:blue
+               )
+    for i=2:N
+        Plots.plot!(
+                    euler_nf_per_iter[i],
+                    euler_loss_per_iter[i],
+                    label="",
+                    color=:blue
+                   )
+    end
+    Plots.plot!(
+                interp_nf_per_iter[1],
+                interp_loss_per_iter[1],
+                label = "PPG (ours)",
+                color=:red,
+               )
+    for i=2:N
+        Plots.plot!(
+                    interp_nf_per_iter[i],
+                    interp_loss_per_iter[1],
+                    label="",
+                color=:red,
+        )
+    end
+    Plots.savefig(p, "/tmp/quadrotor_loss_per_nf_lines.pdf")
 end
 
 #=
