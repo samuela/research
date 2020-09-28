@@ -8,50 +8,65 @@ Random.seed!(123)
 ENV["GKSwstype"] = "nul"
 
 results = JLSO.load("quadrotor_train_results.jlso")
-# ppg_params = results[:interp_results].policy_params_per_iter
+ppg_params = results[:interp_results].policy_params_per_iter
 euler_params = results[:euler_results].policy_params_per_iter
-# @assert size(ppg_params) == size(euler_params)
+@assert size(ppg_params) == size(euler_params)
 num_iter = size(ppg_params, 1)
+
+N = 5
+interp_loss_per_iter = [ JLSO.load("quadrotor_train_results_$i.jlso")[:interp_results].loss_per_iter
+                        for i=1:N ]
+euler_loss_per_iter = [ JLSO.load("quadrotor_train_results_$i.jlso")[:euler_results].loss_per_iter 
+                       for i=1:N ]
+interp_nf_per_iter = [ begin
+                          result = JLSO.load("quadrotor_train_results_$i.jlso")
+                          cumsum(result[:interp_results].nf_per_iter + result[:interp_results].n∇f_per_iter)
+                      end for i=1:N ]
+euler_nf_per_iter = [ begin
+                         result = JLSO.load("quadrotor_train_results_$i.jlso")
+                         cumsum(result[:euler_results].nf_per_iter + result[:euler_results].n∇f_per_iter)
+                     end for i=1:N ]
 
 Plots.savefig(
     Plots.plot(
         1:num_iter,
-        [results[:euler_results].loss_per_iter, results[:euler_results].loss_per_iter],
+        [results[:euler_results].loss_per_iter, results[:interp_results].loss_per_iter],
         label = ["Euler BPTT" "PPG (ours)"],
         xlabel = "Iteration",
         ylabel = "Loss",
     ),
-    "quadrotor_loss_per_iter.pdf",
+    "/tmp/quadrotor_loss_per_iter.pdf",
 )
 
 begin
     p = Plots.plot(xlabel = "Number of function evaluations", ylabel = "Loss")
     Plots.plot!(
-        cumsum(results[:euler_results].nf_per_iter + results[:euler_results].n∇f_per_iter),
-        results[:euler_results].loss_per_iter,
-        label = "Euler BPTT",
-    )
-    # Plots.plot!(
-    #     cumsum(
-    #         results[:interp_results].nf_per_iter + results[:interp_results].n∇f_per_iter,
-    #     ),
-    #     results[:interp_results].loss_per_iter,
-    #     label = "PPG (ours)",
-    # )
-    Plots.savefig(p, "quadrotor_loss_per_nf.pdf")
+                mean(euler_nf_per_iter),
+                mean(euler_loss_per_iter),
+                label = "Euler BPTT",
+                ribbon = (std(euler_loss_per_iter), std(euler_loss_per_iter))
+               )
+    Plots.plot!(
+                mean(interp_nf_per_iter),
+                mean(interp_loss_per_iter),
+                label = "PPG (ours)",
+                ribbon = (std(interp_loss_per_iter), std(interp_loss_per_iter))
+               )
+    Plots.savefig(p, "/tmp/quadrotor_loss_per_nf.pdf")
 end
 
+#=
 Plots.savefig(
     Plots.plot(
         map(mean, eachrow(abs.(euler_results.policy_params_per_iter))),
         label = "mean abs of each weight",
     ),
-    "quadrotor_weights_per_iter.pdf",
+    "/tmp/quadrotor_weights_per_iter.pdf",
 )
 
 Plots.savefig(
     Plots.plot(map(norm, eachrow(euler_results.g_per_iter)), label = "norm of gradients"),
-    "quadrotor_grads_per_iter.pdf",
+    "/tmp/quadrotor_grads_per_iter.pdf",
 )
 
 Plots.savefig(
@@ -60,8 +75,9 @@ Plots.savefig(
         label = "mean abs of gradients",
         yaxis = :log10,
     ),
-    "quadrotor_grads_per_iter.pdf",
+    "/tmp/quadrotor_grads_per_iter.pdf",
 )
+=#
 
 # euler_dt_per_iter =
 #     T ./ (
@@ -72,7 +88,9 @@ Plots.savefig(
 # Plots.savefig(Plots.plot(euler_dt_per_iter, label="Average Euler dt over time"), "deleteme.pdf")
 
 # NOTE: Make sure this is the same as in train.jl!
-dynamics, cost, sample_x0, obs = quadrotorEnv.quadrotor_env(floatT, 1.0f0, 0.5f0)
+error()
+dynamics, cost, sample_x0, obs = QuadrotorEnv.normalenv(floatT, 9.8f0, 3.0f0,
+                                                        1.0f0, 1.0f0, 1.0f0)
 learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 x0_test_batch = [sample_x0() for _ = 1:10]
 # num_hidden = 32

@@ -167,6 +167,7 @@ euler_results = run(
 )
 
 ######## residual model
+#=
 @info "Residual Interp"
 res_interp_results = run(
     (x0_batch, θ) -> rpg.ez_loss_and_grad_many(
@@ -193,6 +194,7 @@ res_euler_results = run(
         rpg.ez_euler_loss_and_grad_many(x0_batch, θ, euler_dt),
     res_policy_params, rsample_x0
 )
+=#
 
 
 @info "Dumping results"
