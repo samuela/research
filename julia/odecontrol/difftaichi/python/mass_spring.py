@@ -129,25 +129,23 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
         and dumped to a results directory.
     """
     assert len(xs) == len(acts)
-    gui = ti.GUI("Mass Spring Robot", (1024, 1024), background_color=0xFFFFFF)
+    gui = ti.GUI("Mass Spring Robot", (512, 512), background_color=0xFFFFFF, show_gui=False)
 
     if output:
         os.makedirs("{}/{}/".format(RESULTS_DIR, output))
 
-    for t in range(1, len(xs)):
-        gui.line(begin=(0, ground_height),
-                    end=(1, ground_height),
-                    color=0x0,
-                    radius=3)
+    for t in range(len(xs)):
+        gui.line(
+            begin=(0, ground_height),
+            end=(1, ground_height),
+            color=0x0,
+            radius=3)
 
         def circle(x, y, color):
             gui.circle((x, y), ti.rgb_to_hex(color), 7)
 
         for i in range(n_springs):
-            def get_pt(x):
-                return ti.vec(x[0], x[1])
-
-            a = acts[t - 1][i] * 0.5
+            a = acts[t][i] * 0.5
             r = 2
             if spring_actuation[i] == 0:
                 a = 0
@@ -155,8 +153,8 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
             else:
                 r = 4
                 c = ti.rgb_to_hex((0.5 + a, 0.5 - abs(a), 0.5 - a))
-            gui.line(begin=get_pt(x[t, spring_anchor_a[i]]),
-                     end=get_pt(x[t, spring_anchor_b[i]]),
+            gui.line(begin=tuple(xs[t][spring_anchor_a[i], :]),
+                     end=tuple(xs[t][spring_anchor_b[i], :]),
                      radius=r,
                      color=c)
 
@@ -167,6 +165,6 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
             circle(xs[t][i][0], xs[t][i][1], color)
 
         if output:
-            gui.show("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t))
+            gui.show("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t + 1))
         else:
             gui.show()
