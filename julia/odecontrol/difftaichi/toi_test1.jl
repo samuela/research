@@ -4,7 +4,6 @@ include("ppg_toi.jl")
 
 import DifferentialEquations: Tsit5
 import UnicodePlots: lineplot
-import RecursiveArrayTools: ArrayPartition
 
 v_dynamics(v, x, u) = [0.0]
 x_dynamics(v, x, u) = v
