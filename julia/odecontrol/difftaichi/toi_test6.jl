@@ -5,14 +5,25 @@ testing the interpolated points thing."""
 
 include("ppg_toi.jl")
 
+import DifferentialEquations
+import UnicodePlots: lineplot
+
 g = 9.8
-dynamics(state, u) = [state[2], -g]
-cost(state, u) = 0
-policy(state, t, p) = 0
-toi_affect(state, dt) = [-dt * state[2] - state[1], -state[2]]
+v_dynamics(v, x, u) = [-g]
+x_dynamics(v, x, u) = v
+cost(v, x, u) = 0
+policy(v, x, t, p) = 0
+toi_affect(v, x, dt) = (-v, -dt * v - x)
 
 T = 1.0
-goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff([(x) -> x[1]], toi_affect, 1e-6), T)
+loss_pullback = ppg_toi_goodies(
+    v_dynamics,
+    x_dynamics,
+    cost,
+    policy,
+    TOIStuff([(v, x) -> x[1]], toi_affect, 1e-6),
+    T
+)
 
 x0 = -1
 v0 = 5
@@ -21,12 +32,13 @@ peak_time = v0 / g
 @assert parabola(peak_time) > 0
 land_time = (v0 + sqrt(v0^2 + 2 * g * x0)) / g
 @assert land_time < T
-sol, _ = goodies.loss_pullback([x0, v0], zeros(1), nothing, Dict())
+sol, _ = loss_pullback([v0], [x0], zeros(), nothing, Dict())
 
-fts = 0:0.01:T
+ts = 0:0.01:T
 # Don't forget the first is for the cost!
 lineplot(ts, [z[2] for z in sol.(ts)]) |> show
 lineplot(ts, [z[3] for z in sol.(ts)]) |> show
 
 @assert length(sol.solutions) == 2
-@assert sol(peak_time) ≈ [0, parabola(peak_time), 0]
+@show sol(peak_time)
+@assert sol(peak_time) ≈ ArrayPartition([0, 0], [0, parabola(peak_time)])
