@@ -33,7 +33,7 @@ importlib.reload(mass_spring)
 importlib.reload(mass_spring_robot_config)
 
 # mass_spring.main(1; visualize = false)
-objects, springs = mass_spring_robot_config.robots[4]()
+objects, springs = mass_spring_robot_config.robots[3]()
 mass_spring.setup_robot(objects, springs)
 
 # The y position of the ground. As defined in the Python version.
@@ -130,8 +130,10 @@ x_dynamics(v_flat, x_flat, u) = begin
     v = reshape(v_flat, (n_objects, 2))
     x = reshape(x_flat, (n_objects, 2))
     # This is important so that we don't end up penetrating the floor.
-    (v .* (x[:, 2] .> ground_height))[:]
+    (v .* ((x[:, 2] .> ground_height) .| (v[:, 2] .> 0)))[:]
 end
+# TODO test the new dynamics!
+
 # begin
 #     @info "Testing dynamics gradients"
 #     seed!(123)
@@ -229,32 +231,36 @@ ppg_loss_pullback = ppg_toi_goodies(
     TOIStuff([(v_flat, x_flat) -> reshape(x_flat, (n_objects, 2))[i, 2] - ground_height - 1e-4 for i in 1:n_objects], toi_affect, 1e-6),
     T
 )
-v0, x0 = sample_x0()
-@time fwd_sol, pullback = ppg_loss_pullback(
-    v0,
-    x0,
-    init_policy_params,
-    Tsit5(),
-    Dict(:rtol => 1e-3, :atol => 1e-3),
-    # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
-)
 
-# Visualize a rollout:
-ts = 0:0.004:T
-zs = fwd_sol.(ts)
-vs_flat = [z.x[1][2:end] for z in zs]
-xs_flat = [z.x[2][2:end] for z in zs]
-vs = [reshape(z, (n_objects, 2)) for z in vs_flat]
-xs = [reshape(z, (n_objects, 2)) for z in xs_flat]
-acts = [policy(observation(v, x, t), init_policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
+# Run a test rollout and visualize the results
+begin
+    v0, x0 = sample_x0()
+    @time fwd_sol, pullback = ppg_loss_pullback(
+        v0,
+        x0,
+        init_policy_params,
+        Tsit5(),
+        Dict(:rtol => 1e-3, :atol => 1e-3),
+        # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
+    )
 
-# This doesn't work on headless machines.
-mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+    # Visualize a rollout:
+    ts = 0:0.004:T
+    zs = fwd_sol.(ts)
+    vs_flat = [z.x[1][2:end] for z in zs]
+    xs_flat = [z.x[2][2:end] for z in zs]
+    vs = [reshape(z, (n_objects, 2)) for z in vs_flat]
+    xs = [reshape(z, (n_objects, 2)) for z in xs_flat]
+    acts = [policy(observation(v, x, t), init_policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
 
-# @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+    # This doesn't work on headless machines.
+    mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+
+    # @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+end
 
 # Train
-function run(goodies)
+function run()
     # Seed here so that both interp and euler get the same batches.
     seed!(123)
 
@@ -275,15 +281,17 @@ function run(goodies)
     # )
     progress = ProgressMeter.Progress(num_iters)
     for iter = 1:num_iters
-        x0 = sample_x0()
-        sol, pullback = goodies.loss_pullback(
+        v0, x0 = sample_x0()
+        sol, pullback = ppg_loss_pullback(
+            v0,
             x0,
             policy_params,
-            Euler(),
-            # Dict(:rtol => 1e-3, :atol => 1e-3)
-            Dict(:dt => 0.004)
+            # Euler(),
+            nothing,
+            Dict(:rtol => 1e-3, :atol => 1e-3)
+            # Dict(:dt => 0.004)
         )
-        loss = sol.solutions[end].u[end][1]
+        @show loss = sol.solutions[end].u[end].x[2][1]
         @error "yay"
         pb_stuff = pullback([1.0; zero(x0)], InterpolatingAdjoint(autojacvec = ZygoteVJP()))
         g = pb_stuff.g_p
@@ -320,7 +328,7 @@ function run(goodies)
 end
 
 # @info "InterpolatingAdjoint"
-# interp_results = run(learned_policy_goodies)
+# interp_results = run()
 
 # import JLSO
 # JLSO.save("mass_spring_results.jlso", :results => interp_results)
