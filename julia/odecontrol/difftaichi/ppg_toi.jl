@@ -39,7 +39,7 @@ function (sol::TOISolution)(t)
     end
 end
 
-function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
+function augmented_dynamics(v_dynamics, x_dynamics, cost, policy)
     # Incoming v_aug and x_aug are [cost::Real; actual_x/v].
     # Our trick for shoehorning cost accumulation into a DynamicalODEProblem is to include it in both x and v. Then we
     # update it in the aug_dyn_x dynamics. The space for it in v is unused and left at zero.
@@ -55,8 +55,11 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
         u = policy(x, v, policy_params, t)
         [cost(v, x, u); x_dynamics(v, x, u)]
     end
+    (aug_dyn_v, aug_dyn_x)
+end
 
-    callback = DiscreteCallback((_, _, _) -> true, (integrator) -> begin
+function toi_callback(toi)
+    DiscreteCallback((_, _, _) -> true, (integrator) -> begin
         # In some cases (eg toi_test6.jl) there is a zero-crossing, but the integrators are sufficiently smart as to
         # skip it entirely. Ie, you cross zero twice and so you would never notice without some more careful testing.
         test_times = range(integrator.tprev, integrator.t, length=10)
@@ -92,6 +95,10 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
             DiffEqBase.terminate!(integrator)
         end
     end)
+end
+
+function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
+    (aug_dyn_v, aug_dyn_x) = augmented_dynamics(v_dynamics, x_dynamics, cost, policy)
 
     # See https://discourse.julialang.org/t/why-the-separation-of-odeproblem-and-solve-in-differentialequations-jl/43737
     # for a discussion of the performance of the pullbacks.
@@ -123,7 +130,7 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                 ),
                 solvealg,
                 p = policy_params;
-                callback = callback,
+                callback = toi_callback(toi),
                 solve_kwargs...,
             )
 
