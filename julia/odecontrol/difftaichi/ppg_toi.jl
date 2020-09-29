@@ -148,7 +148,10 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                 push!(tape, (fwd_sol, toi_pullback))
             else
                 @assert fwd_sol.retcode == :Success
-                push!(tape, (fwd_sol, (vx_tuple) -> ArrayPartition(vx_tuple[1], vx_tuple[2])))
+                push!(tape, (fwd_sol, (vx_tuple) -> begin
+                    # We need to wrap in a tuple because that's what Zygote's adjoints do.
+                    (ArrayPartition(vx_tuple[1], vx_tuple[2]), )
+                end))
                 done = true
             end
         end
@@ -172,7 +175,7 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                     ODEAdjointProblem(
                         fwd_sol,
                         sensealg,
-                        (out, x, p, t, i) -> (out[:] = ArrayPartition(g_v, g_x)),
+                        (out, x, p, t, i) -> (out[:] = g_vx),
                         [fwd_sol.t[end]],
                     ),
                     solvealg;
@@ -198,7 +201,7 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
             end
 
             (
-                g_z0 = (-g_v, -g_x),
+                g_z0 = (g_v, g_x),
                 g_p = g_p,
                 nf = 0,
                 n∇ₓf = n∇ₓf,
