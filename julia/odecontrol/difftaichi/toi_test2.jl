@@ -6,26 +6,36 @@ import DifferentialEquations: Tsit5
 import UnicodePlots: lineplot
 
 gravity = -9.8
-dynamics(state, u) = [state[2], gravity]
-cost(state, u) = 0
-policy(state, t, p) = 0
-toi_affect(state, dt) = [-dt * state[2] - state[1], -state[2]]
-terminal_cost(state) = (state[1] - 5) ^ 2
+v_dynamics(v, x, u) = [gravity]
+x_dynamics(v, x, u) = v
+cost(v, x, u) = 0.0
+policy(v, x, t, p) = 0.0
+toi_affect(v, x, dt) = (-v, -dt * v - x)
+terminal_cost(x) = (x[1] - 5) ^ 2
 
 T = 2.0
-goodies = ppg_toi_goodies(dynamics, cost, policy, TOIStuff([(x) -> x[1]], toi_affect, 1e-6), T)
+loss_pullback = ppg_toi_goodies(
+    v_dynamics,
+    x_dynamics,
+    cost,
+    policy,
+    TOIStuff([(v, x) -> x[1]], toi_affect, 1e-6),
+    T
+)
 
-x0 = [10.0, 0.0]
+v0 = [0.0]
+x0 = [10.0]
+
 cost_per_iter = []
 for iter in 1:1000
-    sol, pb1 = goodies.loss_pullback(x0, zeros(1), Tsit5(), Dict())
-    xT = sol.solutions[end].u[end][2:end]
+    sol, pb1 = loss_pullback(v0, x0, zeros(), Tsit5(), Dict())
+    xT = sol.solutions[end].u[end].x[2][2:end]
     local cost, pb2 = Zygote.pullback(terminal_cost, xT)
 
     (g_xT, ) = pb2(1.0)
-    local g = [0; g_xT]
+    local g = ([0; zero(v0)], [0; g_xT])
     g = pb1(g, InterpolatingAdjoint()).g_z0
-    g = [g[2], 0]
+    g = g[2][2:end]
 
     global x0 -= 0.01 * g
 

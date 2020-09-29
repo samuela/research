@@ -7,6 +7,7 @@ import DiffEqSensitivity:
     InterpolatingAdjoint,
     AdjointSensitivityIntegrand
 import Zygote
+import RecursiveArrayTools: ArrayPartition
 
 struct TOIStuff
     conditions
