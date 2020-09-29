@@ -9,6 +9,10 @@ import DiffEqSensitivity:
 import Zygote
 import RecursiveArrayTools: ArrayPartition
 
+# Note that there's a tradeoff in picking time_epsilon: We find event times approximately, based on the interpolation.
+# If that's incorrect and you have a super small time_epsilon you may get weird behavior. However, it should always be
+# the case that we kick off events where the condition was still positive, and then roll the TOI affect forward before
+# resuming with the ODE solve.
 struct TOIStuff
     conditions
     affect
