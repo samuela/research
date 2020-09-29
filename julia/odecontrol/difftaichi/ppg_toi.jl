@@ -46,13 +46,13 @@ function augmented_dynamics(v_dynamics, x_dynamics, cost, policy)
     aug_dyn_v(v_aug, x_aug, policy_params, t) = begin
         v = v_aug[2:end]
         x = x_aug[2:end]
-        u = policy(x, v, policy_params, t)
+        u = policy(v, x, policy_params, t)
         [0.0; v_dynamics(v, x, u)]
     end
     aug_dyn_x(v_aug, x_aug, policy_params, t) = begin
         v = v_aug[2:end]
         x = x_aug[2:end]
-        u = policy(x, v, policy_params, t)
+        u = policy(v, x, policy_params, t)
         [cost(v, x, u); x_dynamics(v, x, u)]
     end
     (aug_dyn_v, aug_dyn_x)
