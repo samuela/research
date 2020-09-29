@@ -15,7 +15,7 @@ import ReverseDiff
 # MassSpringEnv module imports
 import PyCall: @pyimport, @py_str, pyimport
 import Statistics: mean
-import DifferentialEquations: VectorContinuousCallback
+import Zygote
 
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
@@ -33,7 +33,7 @@ importlib.reload(mass_spring)
 importlib.reload(mass_spring_robot_config)
 
 # mass_spring.main(1; visualize = false)
-objects, springs = mass_spring_robot_config.robots[1]()
+objects, springs = mass_spring_robot_config.robots[4]()
 mass_spring.setup_robot(objects, springs)
 
 # The y position of the ground. As defined in the Python version.
@@ -59,8 +59,6 @@ n_springs = size(springs, 1)
 
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
-
-import Zygote
 
 # Specifying Array types here is important for ReverseDiff.jl to be able to hit the tracked version of this function
 # below. Why is this the case? Who knows. Because x and v are actually ReshapedArrays, it ends up being easier to
@@ -95,27 +93,25 @@ end
 import Test: @test
 import FiniteDifferences
 
-begin
-    @info "Testing DiffTaichi gradients"
-    seed!(123)
-    for i in 1:10
-        local x = randn(Float32, (n_objects, 2))
-        local v = randn(Float32, (n_objects, 2))
-        local u = randn(Float32, (n_springs, ))
-        local g = randn(Float32, (n_objects, 2))
-        f(x, v, u) = sum(forces_fn(x, v, u) .* g)
-        local x̄1, v̄1, ū1 = FiniteDifferences.grad(FiniteDifferences.central_fdm(3, 1), f, x, v, u)
-        # local x̄2, v̄2, ū2 = ReverseDiff.gradient(f, (x, v, u))
-        local x̄2, v̄2, ū2 = Zygote.gradient(f, x, v, u)
-        @test isapprox(x̄1, x̄2; rtol=1e-3)
-        @test maximum(abs.(v̄1 - v̄2)) <= 1e-2
-        @test isapprox(ū1, ū2, rtol = 1e-2)
-    end
-end
+# begin
+#     @info "Testing DiffTaichi gradients"
+#     seed!(123)
+#     for i in 1:10
+#         local x = randn(Float32, (n_objects, 2))
+#         local v = randn(Float32, (n_objects, 2))
+#         local u = randn(Float32, (n_springs, ))
+#         local g = randn(Float32, (n_objects, 2))
+#         f(x, v, u) = sum(forces_fn(x, v, u) .* g)
+#         local x̄1, v̄1, ū1 = FiniteDifferences.grad(FiniteDifferences.central_fdm(3, 1), f, x, v, u)
+#         # local x̄2, v̄2, ū2 = ReverseDiff.gradient(f, (x, v, u))
+#         local x̄2, v̄2, ū2 = Zygote.gradient(f, x, v, u)
+#         @test isapprox(x̄1, x̄2; rtol=1e-3)
+#         @test maximum(abs.(v̄1 - v̄2)) <= 1e-2
+#         @test isapprox(ū1, ū2, rtol = 1e-2)
+#     end
+# end
 
-function dynamics(state, u)
-    x_flat = @view state[1:2*n_objects]
-    v_flat = @view state[2*n_objects+1:end]
+v_dynamics(v_flat, x_flat, u) = begin
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
     v_acc = forces_fn(x, v, u)
@@ -128,42 +124,44 @@ function dynamics(state, u)
     v_acc_y = [if x[i, 2] > ground_height v_acc[i, 2] else max(0.0, v_acc[i, 2]) end for i in 1:n_objects]
 
     # We need to flatten everything back down to a vector. Reuse v_flat == v[:].
-    [v_flat; v_acc_x; v_acc_y]
+    [v_acc_x; v_acc_y]
 end
-
-begin
-    @info "Testing dynamics gradients"
-    seed!(123)
-    for i in 1:10
-        local state = 0.01 * randn(Float32, (4 * n_objects, ))
-        local u = 0.01 * randn(Float32, (n_springs, ))
-        local g = 0.01 * randn(Float32, (4 * n_objects, ))
-        f(state, u) = sum(dynamics(state, u) .* g)
-        local g_state_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, u)
-        # local g_state_rd, g_u_rd = ReverseDiff.gradient(f, (state, u))
-        local g_state_rd, g_u_rd = Zygote.gradient(f, state, u)
-        @test isapprox(g_state_fd, g_state_rd; rtol=1e-1)
-        @test maximum(abs.(g_u_fd - g_u_rd)) <= 1e-1
-    end
+x_dynamics(v_flat, x_flat, u) = begin
+    v = reshape(v_flat, (n_objects, 2))
+    x = reshape(x_flat, (n_objects, 2))
+    # This is important so that we don't end up penetrating the floor.
+    (v .* (x[:, 2] .> ground_height))[:]
 end
+# begin
+#     @info "Testing dynamics gradients"
+#     seed!(123)
+#     for i in 1:10
+#         local state = 0.01 * randn(Float32, (4 * n_objects, ))
+#         local u = 0.01 * randn(Float32, (n_springs, ))
+#         local g = 0.01 * randn(Float32, (4 * n_objects, ))
+#         f(state, u) = sum(dynamics(state, u) .* g)
+#         local g_state_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, u)
+#         # local g_state_rd, g_u_rd = ReverseDiff.gradient(f, (state, u))
+#         local g_state_rd, g_u_rd = Zygote.gradient(f, state, u)
+#         @test isapprox(g_state_fd, g_state_rd; rtol=1e-1)
+#         @test maximum(abs.(g_u_fd - g_u_rd)) <= 1e-1
+#     end
+# end
 
-function cost(state, u)
-    x_flat = @view state[1:2*n_objects]
+function cost(v_flat, x_flat, u)
     x = reshape(x_flat, (n_objects, 2))
     -x[head_id, 1]
 end
 
+# The name sample_x0 is a hold-over from the other stuff, but really we're getting (v0, x0).
 function sample_x0()
     # objects doubles as the initial condition, and we start with zero velocity.
     x0 = np.array(objects)[:]
-    [x0; zero(x0)]
+    (zero(x0), x0)
 end
 
-function observation(state, t)
-    x_flat = @view state[1:2*n_objects]
-    v_flat = @view state[2*n_objects+1:end]
+function observation(v_flat, x_flat, t)
     x = reshape(x_flat, (n_objects, 2))
-    v = reshape(v_flat, (n_objects, 2))
 
     # Note there is a subtle difference between this and the difftaichi code in
     # that we are doing 1..10, but in Python they do 0..9. It's all just
@@ -178,19 +176,19 @@ function observation(state, t)
     [periodic_signal; center[:]; offsets[:]]
 end
 
-begin
-    @info "Testing observation gradients"
-    seed!(123)
-    for i in 1:10
-        local state = 0.1 * randn(Float32, (4 * n_objects, ))
-        local t = randn(Float32)
-        local g = randn(Float32, (n_sin_waves + 2 + 2 * n_objects, ))
-        f(state, t) = sum(observation(state, t) .* g)
-        local g_state_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, t)
-        local g_state_rd, _ = Zygote.gradient(f, state, t)
-        @test maximum(abs.(g_state_fd - g_state_rd)) <= 1e-3
-    end
-end
+# begin
+#     @info "Testing observation gradients"
+#     seed!(123)
+#     for i in 1:10
+#         local state = 0.1 * randn(Float32, (4 * n_objects, ))
+#         local t = randn(Float32)
+#         local g = randn(Float32, (n_sin_waves + 2 + 2 * n_objects, ))
+#         f(state, t) = sum(observation(state, t) .* g)
+#         local g_state_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, t)
+#         local g_state_rd, _ = Zygote.gradient(f, state, t)
+#         @test maximum(abs.(g_state_fd - g_state_rd)) <= 1e-3
+#     end
+# end
 
 ################
 
@@ -205,11 +203,9 @@ policy = FastChain(
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, n_springs),
 )
-init_policy_params = 0.1 * initial_params(policy)
+init_policy_params = initial_params(policy)
 
-toi_affect(state, dt) = begin
-    x_flat = @view state[1:2*n_objects]
-    v_flat = @view state[2*n_objects+1:end]
+toi_affect(v_flat, x_flat, dt) = begin
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
 
@@ -222,24 +218,40 @@ toi_affect(state, dt) = begin
     new_v2 = [if tois[i] < dt impact_velocities[i, 2] else v[i, 2] end for i in 1:n_objects]
     new_x1 = x[:, 1] + min.(tois, dt) .* v[:, 1] + max.(dt .- tois, 0) .* new_v1
     new_x2 = x[:, 2] + min.(tois, dt) .* v[:, 2] + max.(dt .- tois, 0) .* new_v2
-    [new_x1; new_x2; new_v1; new_v2]
+    ([new_v1; new_v2], [new_x1; new_x2])
 end
 
-learned_policy_goodies = ppg_toi_goodies(
-    dynamics,
+ppg_loss_pullback = ppg_toi_goodies(
+    v_dynamics,
+    x_dynamics,
     cost,
-    (x, t, params) -> policy(observation(x, t), params),
-    TOIStuff([(x) -> x[n_objects + i] for i in 1:n_objects], toi_affect, 1e-6),
+    (v_flat, x_flat, params, t) -> policy(observation(v_flat, x_flat, t), params),
+    TOIStuff([(v_flat, x_flat) -> reshape(x_flat, (n_objects, 2))[i, 2] - ground_height for i in 1:n_objects], toi_affect, 1e-6),
     T
 )
-@time fwd_sol, pullback = learned_policy_goodies.loss_pullback(
-    sample_x0(),
+v0, x0 = sample_x0()
+@time fwd_sol, pullback = ppg_loss_pullback(
+    v0,
+    x0,
     init_policy_params,
     Tsit5(),
-    Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3),
-    # Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
+    Dict(:rtol => 1e-3, :atol => 1e-3),
+    # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
-@time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+
+# Visualize a rollout:
+ts = 0:0.004:T
+zs = fwd_sol.(ts)
+vs_flat = [z.x[1][2:end] for z in zs]
+xs_flat = [z.x[2][2:end] for z in zs]
+vs = [reshape(z, (n_objects, 2)) for z in vs_flat]
+xs = [reshape(z, (n_objects, 2)) for z in xs_flat]
+acts = [policy(observation(v, x, t), init_policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
+
+# This doesn't work on headless machines.
+mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+
+# @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
 
 # Train
 function run(goodies)
@@ -312,16 +324,6 @@ end
 
 # import JLSO
 # JLSO.save("mass_spring_results.jlso", :results => interp_results)
-
-# Visualize a rollout:
-# ts = 0:0.01:T
-# zs = fwd_sol.(ts)
-# xs_flat = [z[2:end] for z in zs]
-# xs = [reshape(z[1:2*n_objects], (n_objects,2)) for z in xs_flat]
-# acts = [policy(observation(x, t), interp_results.policy_params_per_iter[end, :]) for (x, t) in zip(xs_flat, ts)]
-
-# This doesn't work on headless machines.
-# mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
 
 # mass_spring2 = pyimport("mass_spring2")
 # mass_spring2.main(1)
