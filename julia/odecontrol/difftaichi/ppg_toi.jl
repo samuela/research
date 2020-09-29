@@ -7,7 +7,6 @@ import DiffEqSensitivity:
     InterpolatingAdjoint,
     AdjointSensitivityIntegrand
 import Zygote
-import RecursiveArrayTools: ArrayPartition
 
 struct TOIStuff
     conditions
@@ -36,41 +35,34 @@ function (sol::TOISolution)(t)
 end
 
 function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
-    # x and v are ArrayPartitions(cost::Real, 2-d Array).
+    # Incoming v_aug and x_aug are [cost::Real; actual_x/v].
     # Our trick for shoehorning cost accumulation into a DynamicalODEProblem is to include it in both x and v. Then we
     # update it in the aug_dyn_x dynamics. The space for it in v is unused and left at zero.
-    aug_dyn_v(v_ap, x_ap, policy_params, t) = begin
-        # TODO this might be the problem. Need to isolate minimal reproduction.
-        v = v_ap.x[2]
-        x = x_ap.x[2]
-        # Don't know the original shapes of x, v which makes this a bit difficult.
-        # v = reshape(@view(v_ap[2:end]), (:, 2))
-        # x = reshape(@view(x_ap[2:end]), (:, 2))
+    aug_dyn_v(v_aug, x_aug, policy_params, t) = begin
+        v = v_aug[2:end]
+        x = x_aug[2:end]
         u = policy(x, v, policy_params, t)
-        ArrayPartition(zeros(), v_dynamics(v, x, u))
+        [0.0; v_dynamics(v, x, u)]
     end
-    aug_dyn_x(v_ap, x_ap, policy_params, t) = begin
-        v = v_ap.x[2]
-        x = x_ap.x[2]
-        # v = reshape(@view(v_ap[2:end]), (:, 2))
-        # x = reshape(@view(x_ap[2:end]), (:, 2))
+    aug_dyn_x(v_aug, x_aug, policy_params, t) = begin
+        v = v_aug[2:end]
+        x = x_aug[2:end]
         u = policy(x, v, policy_params, t)
-        # See https://github.com/FluxML/Zygote.jl/issues/800.
-        ArrayPartition(fill(cost(v, x, u)), x_dynamics(v, x, u))
+        [cost(v, x, u); x_dynamics(v, x, u)]
     end
 
     callback = DiscreteCallback((_, _, _) -> true, (integrator) -> begin
         # In some cases (eg toi_test6.jl) there is a zero-crossing, but the integrators are sufficiently smart as to
         # skip it entirely. Ie, you cross zero twice and so you would never notice without some more careful testing.
         test_times = range(integrator.tprev, integrator.t, length=10)
-        # This is an Array of ArrayPartition(ArrayPartition(cost, v), ArrayPartition(cost, x)).
+        # This is an Array of ArrayPartition(v_aug, x_aug).
         test_vals = integrator.(test_times)
 
         # There's a little tiny droplet of optimization that could be squeezed out here. We could be lazier.
         # For each condition, find the index of the time span with the first down-crossing. `nothing` if no
         # down-crossing is found.
         ixs = filter((a) -> !isnothing(a[1]), [begin
-            cs = [condition(vx_aug.x[1].x[2], vx_aug.x[2].x[2]) for vx_aug in test_vals]
+            cs = [condition(vx_aug.x[1][2:end], vx_aug.x[2][2:end]) for vx_aug in test_vals]
             # Only fire for down-crossings: positive -> negative.
             (findfirst((j) -> cs[j] > 0 > cs[j + 1], 1:(length(cs) - 1)), i)
         end for (i, condition) in enumerate(toi.conditions)])
@@ -82,7 +74,7 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
             event_t = DiffEqBase.bisection(
                 (t) -> begin
                     vx_aug = integrator(t)
-                    toi.conditions[condition_ix](vx_aug.x[1].x[2], vx_aug.x[2].x[2])
+                    toi.conditions[condition_ix](vx_aug.x[1][2:end], vx_aug.x[2][2:end])
                 end,
                 (test_times[t_ix], test_times[t_ix + 1]),
                 isone(integrator.tdir)
@@ -107,9 +99,8 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
         # working properly.
         done = false
         current_t = 0.0
-        current_vx = ArrayPartition(
-            ArrayPartition(zeros(), v0),
-            ArrayPartition(zeros(), x0))
+        current_v = [0.0; v0]
+        current_x = [0.0; x0]
         tape = []
         while !done
             # There's some very small chance that we TOI jump past the final time T. I don't want to find out what
@@ -120,8 +111,8 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                 DynamicalODEProblem(
                     aug_dyn_v,
                     aug_dyn_x,
-                    current_vx.x[1],
-                    current_vx.x[2],
+                    current_v,
+                    current_x,
                     (current_t, T),
                     policy_params
                 ),
@@ -133,21 +124,19 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
 
             if fwd_sol.retcode == :Terminated
                 current_t = fwd_sol.t[end] + 2 * toi.time_epsilon
-                current_vx[:], toi_pullback = Zygote.pullback(
+                (current_v[:], current_x[:]), toi_pullback = Zygote.pullback(
                     (vx) -> begin
-                        v = vx.x[1].x[2]
-                        x = vx.x[2].x[2]
-                        accum_cost = vx.x[2].x[1]
+                        v = vx.x[1][2:end]
+                        x = vx.x[2][2:end]
+                        accum_cost = vx.x[2][1]
                         new_v, new_x = toi.affect(v, x, 2 * toi.time_epsilon)
-                        ArrayPartition(
-                            ArrayPartition(zeros(), new_v),
-                            ArrayPartition(accum_cost, new_x))
+                        ([0.0; new_v], [accum_cost; new_x])
                     end,
                     fwd_sol[end])
                 push!(tape, (fwd_sol, toi_pullback))
             else
                 @assert fwd_sol.retcode == :Success
-                push!(tape, (fwd_sol, (x) -> (x, )))
+                push!(tape, (fwd_sol, (vx_tuple) -> ArrayPartition(vx_tuple[1], vx_tuple[2])))
                 done = true
             end
         end
@@ -159,19 +148,19 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
         function pullback(g_zT, sensealg::InterpolatingAdjoint)
             # See https://diffeq.sciml.ai/stable/analysis/sensitivity/#Syntax-1
             # and https://github.com/SciML/DiffEqSensitivity.jl/blob/master/src/local_sensitivity/sensitivity_interface.jl#L9.
-            g_z = g_zT
+            (g_v, g_x) = g_zT
             g_p = zero(tape[1][1].prob.p)
             n∇ₓf = 0
             n∇ᵤf = 0
             for (fwd_sol, pb) in reverse(tape)
                 # Backprop through the TOI step...
-                (g_z, ) = pb(g_z)
+                (g_vx, ) = pb((g_v, g_x))
                 # Backprop through the ODE solve...
                 bwd_sol = solve(
                     ODEAdjointProblem(
                         fwd_sol,
                         sensealg,
-                        (out, x, p, t, i) -> (out[:] = g_z),
+                        (out, x, p, t, i) -> (out[:] = ArrayPartition(g_v, g_x)),
                         [fwd_sol.t[end]],
                     ),
                     solvealg;
@@ -179,7 +168,6 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                     save_everystep = false,
                     save_start = false,
                 )
-                @error "yay bwd_sol"
                 # We do exactly as many f calls as there are function calls in the
                 # forward pass, and in the backward pass we don't need to call f,
                 # but instead we call ∇f.
@@ -188,14 +176,17 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
 
                 # The first z_dim elements of bwd_sol.u are the gradient wrt z0,
                 # next however many are the gradient wrt policy_params.
-                g_z = bwd_sol[end][1:length(fwd_sol.prob.u0)]
+                n = length(g_v)
+                g_v = bwd_sol[end][1:n]
+                g_x = bwd_sol[end][n+1:2*n]
 
                 # No clue why DiffEqSensitivity negates this...
+                # TODO: this is not tested...
                 g_p -= bwd_sol[end][(1:length(g_p)).+length(fwd_sol.prob.u0)]
             end
 
             (
-                g_z0 = g_z,
+                g_z0 = (-g_v, -g_x),
                 g_p = g_p,
                 nf = 0,
                 n∇ₓf = n∇ₓf,
