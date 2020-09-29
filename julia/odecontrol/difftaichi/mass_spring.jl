@@ -226,7 +226,7 @@ ppg_loss_pullback = ppg_toi_goodies(
     x_dynamics,
     cost,
     (v_flat, x_flat, params, t) -> policy(observation(v_flat, x_flat, t), params),
-    TOIStuff([(v_flat, x_flat) -> reshape(x_flat, (n_objects, 2))[i, 2] - ground_height for i in 1:n_objects], toi_affect, 1e-6),
+    TOIStuff([(v_flat, x_flat) -> reshape(x_flat, (n_objects, 2))[i, 2] - ground_height - 1e-4 for i in 1:n_objects], toi_affect, 1e-6),
     T
 )
 v0, x0 = sample_x0()
