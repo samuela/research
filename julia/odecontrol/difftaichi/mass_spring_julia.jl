@@ -59,19 +59,15 @@ n_springs = size(springs, 1)
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
-function forces_fn(x, v, u)
-    acc = zeros((n_objects, 2))
-    for (i, (a, b, spring_length, stiffness, actuation)) in enumerate(eachrow(springs))
-        dist = x[a+1, :] - x[b+1, :]
-        length = norm(dist) + 1e-4
-        target_length = spring_length * (1 + actuation * u[i])
-        impulse = (length - target_length) * stiffness / length * dist
-        acc[a+1, :] += -impulse
-        acc[b+1, :] += impulse
-    end
-    acc[:, 2] .+= gravity
-    acc
-end
+
+# begin
+#     # local x = randn(Float32, (n_objects, 2))
+#     # local v = randn(Float32, (n_objects, 2))
+#     # local u = randn(Float32, (n_springs, ))
+#     local g = randn(Float32, (n_objects, 2))
+
+#     @show ReverseDiff.gradient((state, u) -> sum(forces_fn(state, u) .* g), (randn(Float32, ( n_objects, 2)), randn(Float32, (n_springs, ))))
+# end
 
 function dynamics(state, u)
     x_flat = @view state[1:2*n_objects]
@@ -79,24 +75,33 @@ function dynamics(state, u)
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
     # TODO: did the original difftaichi example damp gravity as well? We are.
-    v_acc = forces_fn(x, v, u)
+    v_acc = forces_fn(x, u)
     v_acc -= damping * v
 
     # Positions are [x, y]. The ground has infinite friction in the difftaichi model.
     # We need to do this in order to work with ReverseDiff.jl since a for-loop requires setindex! which isn't allowed in
     # AD code.
-    v_acc_x = [if x[i, 2] > ground_height v_acc[i, 1] else 0 end for i in 1:n_objects]
-    v_acc_y = [if x[i, 2] > ground_height v_acc[i, 2] else max(0, v_acc[i, 2]) end for i in 1:n_objects]
+    v_acc_x = [if x[i, 2] > ground_height v_acc[i, 1] else 0.0 end for i in 1:n_objects]
+    v_acc_y = [if x[i, 2] > ground_height v_acc[i, 2] else max(0.0, v_acc[i, 2]) end for i in 1:n_objects]
 
     # We need to flatten everything back down to a vector. Reuse v_flat == v[:].
     [v_flat; v_acc_x; v_acc_y]
 end
 
+# begin
+#     # local x = randn(Float32, (n_objects, 2))
+#     # local v = randn(Float32, (n_objects, 2))
+#     # local u = randn(Float32, (n_springs, ))
+#     local g = randn(Float32, (4*n_objects, ))
+
+#     @show n_objects
+#     @show ReverseDiff.gradient((state, u) -> sum(dynamics(state, u) .* g), (randn(Float32, (4 * n_objects, )), randn(Float32, (n_springs, ))))
+# end
+
 function cost(state, u)
     x_flat = @view state[1:2*n_objects]
     x = reshape(x_flat, (n_objects, 2))
     -x[head_id, 1]
-    # state[1]
 end
 
 function sample_x0()
@@ -105,6 +110,7 @@ function sample_x0()
     [x0; zero(x0)]
 end
 
+# This is tested
 function observation(state, t)
     x_flat = @view state[1:2*n_objects]
     v_flat = @view state[2*n_objects+1:end]
@@ -117,7 +123,8 @@ function observation(state, t)
     # difference.
     # See https://github.com/JuliaDiff/ReverseDiff.jl/issues/151 for why the
     # `collect` is necessary.
-    periodic_signal = sin.(spring_omega * t .+ 2 * π / n_sin_waves .* collect(1:n_sin_waves))
+    # periodic_signal = sin.(spring_omega * t .+ 2 * π / n_sin_waves .* collect(1:n_sin_waves))
+    periodic_signal = [sin.(spring_omega * t .+ 2 * π / n_sin_waves * i)[1] for i in 1:10]
 
     center = mean(x, dims = 1)
     offsets = x .- center
@@ -168,7 +175,7 @@ learned_policy_goodies =
     # Dict(:callback => callback, :rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
     # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
 )
-@show stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+@show stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ReverseDiffVJP()))
 
 # Train
 # function run(loss_and_grad)

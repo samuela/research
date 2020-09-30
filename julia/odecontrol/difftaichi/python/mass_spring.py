@@ -20,7 +20,7 @@ vec = lambda: ti.Vector(2, dt=real)
 loss = scalar()
 
 x = vec()
-v = vec()
+# v = vec()
 v_acc = vec()
 act = scalar()
 # Incoming gradient on v_acc.
@@ -36,7 +36,7 @@ spring_actuation = scalar()
 
 @ti.layout
 def place():
-    ti.root.dense(ti.i, n_objects).place(x, v, v_acc, v_acc_bar)
+    ti.root.dense(ti.i, n_objects).place(x, v_acc, v_acc_bar)
     ti.root.dense(ti.i, n_springs).place(spring_anchor_a, spring_anchor_b,
                                          spring_length, spring_stiffness,
                                          spring_actuation)
@@ -97,16 +97,14 @@ def forces_vjp():
         ti.atomic_add(loss, v_acc[i][1] * v_acc_bar[i][1])
 
 # Can't write this function until we get rid of the x for every step thing.
-def forces_fn(x_np, v_np, act_np):
+def forces_fn(x_np, act_np):
     x.from_numpy(x_np)
-    v.from_numpy(v_np)
     act.from_numpy(act_np)
     forces()
     return v_acc.to_numpy()
 
-def forces_fn_vjp(x_np, v_np, act_np, v_acc_bar_np):
+def forces_fn_vjp(x_np, act_np, v_acc_bar_np):
     x.from_numpy(x_np)
-    v.from_numpy(v_np)
     act.from_numpy(act_np)
     v_acc_bar.from_numpy(v_acc_bar_np)
 
@@ -117,22 +115,19 @@ def forces_fn_vjp(x_np, v_np, act_np, v_acc_bar_np):
         forces()
         forces_vjp()
 
-    return x.grad.to_numpy(), v.grad.to_numpy(), act.grad.to_numpy()
+    return x.grad.to_numpy(), act.grad.to_numpy()
 
-def animate(xs, acts, ground_height: float, output=None, head_id=0):
+def animate(xs, acts, ground_height: float, outputdir=None, head_id=0):
     """Animate a the policy controlling the robot.
 
     * `total_steps` controls the number of time steps to animate for. This is
         necessary since the final animation is run for more time steps than in
         training.
-    * `output` controls whether or not frames of the animation are screenshotted
+    * `outputdir` controls whether or not frames of the animation are screenshotted
         and dumped to a results directory.
     """
     assert len(xs) == len(acts)
     gui = ti.GUI("Mass Spring Robot", (512, 512), background_color=0xFFFFFF, show_gui=False)
-
-    if output:
-        os.makedirs("{}/{}/".format(RESULTS_DIR, output))
 
     for t in range(len(xs)):
         gui.line(
@@ -164,7 +159,7 @@ def animate(xs, acts, ground_height: float, output=None, head_id=0):
                 color = (0.8, 0.2, 0.3)
             circle(xs[t][i][0], xs[t][i][1], color)
 
-        if output:
-            gui.show("{}/{}/{:04d}.png".format(RESULTS_DIR, output, t + 1))
+        if outputdir is not None:
+            gui.show(os.path.join(outputdir, "{:04d}.png".format(t + 1)))
         else:
             gui.show()

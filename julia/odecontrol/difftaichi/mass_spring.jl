@@ -2,7 +2,7 @@ include("ppg_toi.jl")
 
 # Training imports
 import DiffEqFlux: FastChain, FastDense, initial_params
-import DifferentialEquations: solve, Euler, Tsit5, VCABM
+import DifferentialEquations: solve, Euler, Tsit5, VCABM, VelocityVerlet
 import DiffEqSensitivity: ReverseDiffVJP, ZygoteVJP
 import Random: seed!
 import Flux
@@ -60,61 +60,55 @@ n_springs = size(springs, 1)
 # We go back and forth between flat and non-flat representations for x and v. These flattened representations are
 # column-major since that's how Julia does things. Note that Numpy is row-major by default however!
 
-# Specifying Array types here is important for ReverseDiff.jl to be able to hit the tracked version of this function
-# below. Why is this the case? Who knows. Because x and v are actually ReshapedArrays, it ends up being easier to
-# dispatch on u. See https://github.com/JuliaDiff/ReverseDiff.jl/issues/150#issuecomment-692649803.
-function forces_fn(x, v, u::Array)
-    mass_spring.forces_fn(np.array(x, dtype=np.float32), np.array(v, dtype=np.float32), np.array(u, dtype=np.float32))
-end
-function forces_fn(x, v, u::ReverseDiff.TrackedArray)
-    ReverseDiff.track(forces_fn, x, v, u)
-end
-ReverseDiff.@grad function forces_fn(x, v, u)
-    # We reuse these for both the forward and backward.
-    x_np = np.array(x, dtype=np.float32)
-    v_np = np.array(v, dtype=np.float32)
-    u_np = np.array(u, dtype=np.float32)
-    function pullback(ΔΩ)
-        mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ, dtype=np.float32))
-    end
-    mass_spring.forces_fn(x_np, v_np, u_np), pullback
-end
-Zygote.@adjoint function forces_fn(x, v, u)
-    # We reuse these for both the forward and backward.
-    x_np = np.array(x, dtype=np.float32)
-    v_np = np.array(v, dtype=np.float32)
-    u_np = np.array(u, dtype=np.float32)
-    function pullback(ΔΩ)
-        mass_spring.forces_fn_vjp(x_np, v_np, u_np, np.array(ΔΩ, dtype=np.float32))
-    end
-    mass_spring.forces_fn(x_np, v_np, u_np), pullback
-end
-
 import Test: @test
 import FiniteDifferences
 
-# begin
-#     @info "Testing DiffTaichi gradients"
-#     seed!(123)
-#     for i in 1:10
-#         local x = randn(Float32, (n_objects, 2))
-#         local v = randn(Float32, (n_objects, 2))
-#         local u = randn(Float32, (n_springs, ))
-#         local g = randn(Float32, (n_objects, 2))
-#         f(x, v, u) = sum(forces_fn(x, v, u) .* g)
-#         local x̄1, v̄1, ū1 = FiniteDifferences.grad(FiniteDifferences.central_fdm(3, 1), f, x, v, u)
-#         # local x̄2, v̄2, ū2 = ReverseDiff.gradient(f, (x, v, u))
-#         local x̄2, v̄2, ū2 = Zygote.gradient(f, x, v, u)
-#         @test isapprox(x̄1, x̄2; rtol=1e-3)
-#         @test maximum(abs.(v̄1 - v̄2)) <= 1e-2
-#         @test isapprox(ū1, ū2, rtol = 1e-2)
-#     end
-# end
+include("difftaichi_forces_fn.jl")
+include("julia_forces_fn.jl")
+
+begin
+    @info "Testing forces_fns are equivalent"
+    seed!(123)
+    for i in 1:100
+        local x = randn(Float32, (n_objects, 2))
+        local v = randn(Float32, (n_objects, 2))
+        local u = randn(Float32, (n_springs, ))
+        @test difftaichi_forces_fn(x, u) ≈ julia_forces_fn(x, u)
+    end
+end
+
+begin
+    @info "Testing forces_fn gradients"
+    seed!(123)
+    for _ in 1:10
+        # We don't shrink x too small because we have the length of the spring in the denominator somewhere in the
+        # forces calculation, aka don't squish the springs too much to avoid crazy forces.
+        local x = randn(Float32, (n_objects, 2))
+        local u = 0.01 * randn(Float32, (n_springs, ))
+        local g = 0.01 * randn(Float32, (n_objects, 2))
+        local g_x_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), (x, u) -> sum(julia_forces_fn(x, u) .* g), x, u)
+        local g_x_dt, g_u_dt = Zygote.gradient((x, u) -> sum(difftaichi_forces_fn(x, u) .* g), x, u)
+        local g_x_j, g_u_j = Zygote.gradient((x, u) -> sum(julia_forces_fn(x, u) .* g), x, u)
+        # println(hcat(g_x_fd, g_x_dt, g_x_j) |> display)
+        # println(hcat(g_u_fd, g_u_dt, g_u_j) |> display)
+
+        # We assume at this point that the julia and difftaichi versions have been produce the same output, and assuming
+        # we trust Zygote's AD, this is a safe way to test that our difftaichi gradients are good.
+        @test g_x_dt ≈ g_x_j
+        @test g_u_dt ≈ g_u_j
+
+        @test isapprox(g_x_fd, g_x_dt; rtol = 0.1)
+        # @test isapprox(ū1, ū2, rtol = 0.1)
+    end
+end
+
+forces_fn(x, u) = julia_forces_fn(x, u)
+# forces_fn(x, u) = difftaichi_forces_fn(x, u)
 
 v_dynamics(v_flat, x_flat, u) = begin
     x = reshape(x_flat, (n_objects, 2))
     v = reshape(v_flat, (n_objects, 2))
-    v_acc = forces_fn(x, v, u)
+    v_acc = forces_fn(x, u)
     v_acc -= damping * v
 
     # Positions are [x, y]. The ground has infinite friction in the difftaichi model.
@@ -123,32 +117,55 @@ v_dynamics(v_flat, x_flat, u) = begin
     v_acc_x = [if x[i, 2] > ground_height v_acc[i, 1] else 0.0 end for i in 1:n_objects]
     v_acc_y = [if x[i, 2] > ground_height v_acc[i, 2] else max(0.0, v_acc[i, 2]) end for i in 1:n_objects]
 
-    # We need to flatten everything back down to a vector. Reuse v_flat == v[:].
+    # We need to flatten everything back down to a vector.
     [v_acc_x; v_acc_y]
 end
 x_dynamics(v_flat, x_flat, u) = begin
     v = reshape(v_flat, (n_objects, 2))
     x = reshape(x_flat, (n_objects, 2))
     # This is important so that we don't end up penetrating the floor.
-    (v .* ((x[:, 2] .> ground_height) .| (v[:, 2] .> 0)))[:]
+    new_v_x = [if (x[i, 2] > ground_height) || (v[i, 2] > 0) v[i, 1] else 0.0 end for i in 1:n_objects]
+    new_v_y = [if (x[i, 2] > ground_height) || (v[i, 2] > 0) v[i, 2] else 0.0 end for i in 1:n_objects]
+    [new_v_x; new_v_y]
 end
-# TODO test the new dynamics!
 
-# begin
-#     @info "Testing dynamics gradients"
-#     seed!(123)
-#     for i in 1:10
-#         local state = 0.01 * randn(Float32, (4 * n_objects, ))
-#         local u = 0.01 * randn(Float32, (n_springs, ))
-#         local g = 0.01 * randn(Float32, (4 * n_objects, ))
-#         f(state, u) = sum(dynamics(state, u) .* g)
-#         local g_state_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, u)
-#         # local g_state_rd, g_u_rd = ReverseDiff.gradient(f, (state, u))
-#         local g_state_rd, g_u_rd = Zygote.gradient(f, state, u)
-#         @test isapprox(g_state_fd, g_state_rd; rtol=1e-1)
-#         @test maximum(abs.(g_u_fd - g_u_rd)) <= 1e-1
-#     end
-# end
+begin
+    @info "Testing v_dynamics gradients"
+    seed!(123)
+    for i in 1:10
+        local v_flat = 0.01 * randn(Float32, (2 * n_objects, ))
+        local x_flat = 0.01 * randn(Float32, (2 * n_objects, ))
+        local u = 0.01 * randn(Float32, (n_springs, ))
+        local g = 0.01 * randn(Float32, (2 * n_objects, ))
+        f(v, x, u) = sum(v_dynamics(v, x, u) .* g)
+        local g_v_fd, g_x_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, v_flat, x_flat, u)
+        # local g_state_rd, g_u_rd = ReverseDiff.gradient(f, (state, u))
+        local g_v_rd, g_x_rd, g_u_rd = Zygote.gradient(f, v_flat, x_flat, u)
+        # The gradients on x can be quite large, so don't be alarmed by "large" deviations in the absolute value sense.
+        @test isapprox(g_v_fd, g_v_rd; rtol=1e-1)
+        @test isapprox(g_x_fd, g_x_rd; rtol=1e-1)
+        @test maximum(abs.(g_u_fd - g_u_rd)) <= 1e-1
+    end
+end
+
+begin
+    @info "Testing x_dynamics gradients"
+    seed!(123)
+    for _ in 1:10
+        local v_flat = 0.01 * randn(Float32, (2 * n_objects, ))
+        local x_flat = 0.01 * randn(Float32, (2 * n_objects, ))
+        local u = 0.01 * randn(Float32, (n_springs, ))
+        local g = 0.01 * randn(Float32, (2 * n_objects, ))
+        f(v, x, u) = sum(x_dynamics(v, x, u) .* g)
+        local g_v_fd, g_x_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, v_flat, x_flat, u)
+        local g_v_rd, g_x_rd, g_u_rd = Zygote.gradient(f, v_flat, x_flat, u)
+        @test g_x_rd |> isnothing
+        @test g_u_rd |> isnothing
+        @test isapprox(g_v_fd, g_v_rd; atol=1e-2)
+        @test isapprox(g_x_fd, zero(g_x_fd); atol=1e-2)
+        @test maximum(abs.(g_u_fd)) < eps()
+    end
+end
 
 function cost(v_flat, x_flat, u)
     x = reshape(x_flat, (n_objects, 2))
@@ -178,26 +195,25 @@ function observation(v_flat, x_flat, t)
     [periodic_signal; center[:]; offsets[:]]
 end
 
-# begin
-#     @info "Testing observation gradients"
-#     seed!(123)
-#     for i in 1:10
-#         local state = 0.1 * randn(Float32, (4 * n_objects, ))
-#         local t = randn(Float32)
-#         local g = randn(Float32, (n_sin_waves + 2 + 2 * n_objects, ))
-#         f(state, t) = sum(observation(state, t) .* g)
-#         local g_state_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, t)
-#         local g_state_rd, _ = Zygote.gradient(f, state, t)
-#         @test maximum(abs.(g_state_fd - g_state_rd)) <= 1e-3
-#     end
-# end
+begin
+    @info "Testing observation gradients"
+    seed!(123)
+    for i in 1:10
+        local state = 0.1 * randn(Float32, (4 * n_objects, ))
+        local t = randn(Float32)
+        local g = randn(Float32, (n_sin_waves + 2 + 2 * n_objects, ))
+        f(state, t) = sum(observation(state, t) .* g)
+        local g_state_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, t)
+        local g_state_rd, _ = Zygote.gradient(f, state, t)
+        @test maximum(abs.(g_state_fd - g_state_rd)) <= 1e-3
+    end
+end
 
 ################
 
 # Difftaichi trains for 2048 // 3 steps, each being 0.004s long. That all works out to 2.728s.
 T = 2.728
-num_iters = 10
-batch_size = 1
+num_iters = 100
 num_hidden = 64
 policy = FastChain(
     # We have n_sin_waves scalars, n_objects 2-vectors for each offset, and 1 2-vector for the center.
@@ -233,30 +249,52 @@ ppg_loss_pullback = ppg_toi_goodies(
 )
 
 # Run a test rollout and visualize the results
-begin
-    v0, x0 = sample_x0()
-    @time fwd_sol, pullback = ppg_loss_pullback(
-        v0,
-        x0,
-        init_policy_params,
-        Tsit5(),
-        Dict(:rtol => 1e-3, :atol => 1e-3),
-        # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
-    )
+# begin
+#     @info "Test rollout"
+#     v0, x0 = sample_x0()
+#     @time fwd_sol, pullback = ppg_loss_pullback(
+#         v0,
+#         x0,
+#         init_policy_params,
+#         Tsit5(),
+#         # VCABM(),
+#         # nothing,
+#         Dict(:rtol => 1e-3, :atol => 1e-3),
+#         # Dict(:rtol => 1e-3, :atol => 1e-3, :dt => 0.004),
+#     )
+#     # TODO: why does alg = nothing => loss = 0?
+#     @show fwd_sol.solutions[end].u[end]
+#     @show fwd_sol.solutions[end].u[end].x[2][1]
 
-    # Visualize a rollout:
+#     # Visualize a rollout:
+#     ts = 0:0.004:T
+#     zs = fwd_sol.(ts)
+#     vs_flat = [z.x[1][2:end] for z in zs]
+#     xs_flat = [z.x[2][2:end] for z in zs]
+#     vs = [reshape(z, (n_objects, 2)) for z in vs_flat]
+#     xs = [reshape(z, (n_objects, 2)) for z in xs_flat]
+#     acts = [policy(observation(v, x, t), init_policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
+
+#     # This doesn't work on headless machines.
+#     mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
+
+#     # @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+# end
+
+video_rollout(sol, policy_params, path) = begin
     ts = 0:0.004:T
-    zs = fwd_sol.(ts)
+    zs = sol.(ts)
     vs_flat = [z.x[1][2:end] for z in zs]
     xs_flat = [z.x[2][2:end] for z in zs]
     vs = [reshape(z, (n_objects, 2)) for z in vs_flat]
     xs = [reshape(z, (n_objects, 2)) for z in xs_flat]
-    acts = [policy(observation(v, x, t), init_policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
+    acts = [policy(observation(v, x, t), policy_params) for (v, x, t) in zip(vs_flat, xs_flat, ts)]
 
-    # This doesn't work on headless machines.
-    mass_spring.animate(xs, acts, ground_height, output = "poopypoops")
-
-    # @time stuff = pullback(ones(1 + size(sample_x0(), 1)), InterpolatingAdjoint(autojacvec=ZygoteVJP()))
+    Base.Filesystem.mktempdir() do dir
+        mass_spring.animate(xs, acts, ground_height, outputdir = dir)
+        # -y option overwrites existing video. See https://stackoverflow.com/questions/39788972/ffmpeg-override-output-file-if-exists
+        Base.run(`ffmpeg -y -framerate 100 -i $dir/%04d.png $path`, wait = true)
+    end
 end
 
 # Train
@@ -275,7 +313,7 @@ function run()
     # opt = ADAM()
     opt = Momentum(0.001)
     # opt = Optimiser(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
-    # opt =LBFGS(
+    # opt = LBFGS(
     #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
     #     linesearch = LineSearches.Static(),
     # )
@@ -287,14 +325,25 @@ function run()
             x0,
             policy_params,
             # Euler(),
-            nothing,
+            Tsit5(),
+            # VelocityVerlet(),
             Dict(:rtol => 1e-3, :atol => 1e-3)
             # Dict(:dt => 0.004)
         )
-        @show loss = sol.solutions[end].u[end].x[2][1]
-        @error "yay"
-        pb_stuff = pullback([1.0; zero(x0)], InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+        terminal_cost = cost(sol.solutions[end].u[end].x[1][2:end], sol.solutions[end].u[end].x[2][2:end], nothing)
+        loss = sol.solutions[end].u[end].x[2][1]
+
+        # Terminal cost version. This is what DiffTaichi does.
+        poop = zero(x0)
+        poop[head_id, 1] = -1
+        pb_stuff = pullback(([0.0; zeros(length(v0))], [0.0; poop[:]]), InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+
+        # Intermediate costs version.
+        # pb_stuff = pullback(([0.0; zeros(length(v0))], [1.0; zeros(length(x0))]), InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+
         g = pb_stuff.g_p
+
+        video_rollout(sol, policy_params, "mass_spring_iter$iter.mp4")
 
         loss_per_iter[iter] = loss
         policy_params_per_iter[iter, :] = policy_params
@@ -310,6 +359,7 @@ function run()
             showvalues = [
                 (:iter, iter),
                 (:loss, loss),
+                (:terminal_cost, terminal_cost),
                 (:nf, nf_per_iter[iter]),
                 (:n∇ₓf, n∇ₓf_per_iter[iter]),
                 (:n∇ᵤf, n∇ᵤf_per_iter[iter]),
