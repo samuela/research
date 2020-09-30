@@ -199,13 +199,16 @@ begin
     @info "Testing observation gradients"
     seed!(123)
     for i in 1:10
-        local state = 0.1 * randn(Float32, (4 * n_objects, ))
+        local x_flat = 0.1 * randn(Float32, (2 * n_objects, ))
+        local v_flat = 0.1 * randn(Float32, (2 * n_objects, ))
         local t = randn(Float32)
         local g = randn(Float32, (n_sin_waves + 2 + 2 * n_objects, ))
-        f(state, t) = sum(observation(state, t) .* g)
-        local g_state_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, state, t)
-        local g_state_rd, _ = Zygote.gradient(f, state, t)
-        @test maximum(abs.(g_state_fd - g_state_rd)) <= 1e-3
+        f(x, v, t) = sum(observation(x, v, t) .* g)
+        local g_v_fd, g_x_fd, _ = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), f, v_flat, x_flat, t)
+        local g_v_rd, g_x_rd, _ = Zygote.gradient(f, v_flat, x_flat, t)
+        @test g_v_rd |> isnothing
+        @test maximum(abs.(g_v_fd)) <= 1e-3
+        @test maximum(abs.(g_x_fd - g_x_rd)) <= 1e-3
     end
 end
 
