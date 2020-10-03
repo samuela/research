@@ -53,7 +53,7 @@ function augmented_dynamics(v_dynamics, x_dynamics, cost, policy)
         v = v_aug[2:end]
         x = x_aug[2:end]
         u = policy(v, x, policy_params, t)
-        [cost(v, x, u); x_dynamics(v, x, u)]
+        [cost(v, x, u, t); x_dynamics(v, x, u)]
     end
     (aug_dyn_v, aug_dyn_x)
 end
@@ -196,7 +196,6 @@ function ppg_toi_goodies(v_dynamics, x_dynamics, cost, policy, toi, T)
                 g_x = bwd_sol[end][n+1:2*n]
 
                 # No clue why DiffEqSensitivity negates this...
-                # TODO: this is not tested...
                 g_p -= bwd_sol[end][(1:length(g_p)).+length(fwd_sol.prob.u0)]
             end
 
