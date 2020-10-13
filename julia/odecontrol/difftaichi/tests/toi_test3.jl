@@ -1,6 +1,6 @@
 """Test that we can handle multiple contacts."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations
 import UnicodePlots: lineplot

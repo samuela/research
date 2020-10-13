@@ -3,7 +3,7 @@ because although the true solution goes above zero, the integrators are smart
 enough to actually skip any concrete steps above zero. So we need to do this
 testing the interpolated points thing."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations
 import UnicodePlots: lineplot

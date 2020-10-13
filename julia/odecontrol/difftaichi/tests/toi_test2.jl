@@ -1,6 +1,6 @@
 """A bouncy ball with gravity. Goal is to reach a specific height at t = T."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations: Tsit5
 import UnicodePlots: lineplot

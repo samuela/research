@@ -1,6 +1,6 @@
 """Test that we can handle multiple contacts with bouncy balls and gradients."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations
 import UnicodePlots: lineplot

@@ -1,6 +1,6 @@
 """LQR example to test whether the gradients on parameters work."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations: Tsit5
 import UnicodePlots: lineplot

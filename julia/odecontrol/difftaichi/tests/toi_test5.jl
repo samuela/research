@@ -1,6 +1,6 @@
 """Same as test 4 except that we test multiple, simultaneous contacts."""
 
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DifferentialEquations
 import UnicodePlots: lineplot
