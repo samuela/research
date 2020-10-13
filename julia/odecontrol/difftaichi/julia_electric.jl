@@ -1,3 +1,11 @@
+"""A pure julia rewrite of the DiffTaichi electric example.
+
+This script will run both PPG and BPTT, create a new folder like "2020-10-12T17:06:12.846-electric-pure-julia" and dump
+results and videos into there.
+"""
+
+# Note: we use ppg_toi.jl instead of ppg.jl simply because ppg_toi.jl supports DynamicalODEProblems. There are no
+# contacts in this problem.
 include("ppg_toi.jl")
 
 import DiffEqFlux: FastChain, FastDense, initial_params
