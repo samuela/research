@@ -6,7 +6,7 @@ results and videos into there.
 
 # Note: we use ppg_toi.jl instead of ppg.jl simply because ppg_toi.jl supports DynamicalODEProblems. There are no
 # contacts in this problem.
-include("ppg_toi.jl")
+include("../ppg_toi.jl")
 
 import DiffEqFlux: FastChain, FastDense, initial_params
 import Random: seed!
@@ -21,7 +21,7 @@ import PyCall: @pyimport, @py_str, pyimport
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
 import sys
-sys.path.insert(0, "./difftaichi/python")
+sys.path.insert(0, "./difftaichi/electric")
 """
 
 importlib = pyimport("importlib")
