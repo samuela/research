@@ -1,6 +1,5 @@
 import LinearAlgebra: norm
 
-
 SPRING_CONNECTIVITY = let
     arr = zeros(n_objects, n_springs)
     for (i, (a, b, _, _, _)) in enumerate(eachrow(springs))
