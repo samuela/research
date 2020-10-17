@@ -1,8 +1,17 @@
-"""A pure julia rewrite of the DiffTaichi electric example.
+"""A rewrite of the DiffTaichi electric example.
 
 This script will run both PPG and BPTT, create a new folder like "2020-10-12T17:06:12.846-electric-pure-julia" and dump
 results and videos into there.
+
+Select whether to use pure julia definition of the dynamics or call out to the DiffTaichi version by changing
+`forces_fn`. Only affects wallclock performance since we verify that they are numerically equivalent and their gradients
+agree with finite differences.
 """
+
+# We test that the julia and DiffTaichi implementations are equivalent for Float32 inputs, but we don't get floating
+# point equivalent results when training because the Julia version ends up not casting to Float32 in `forces_fn`.
+# Forcing the julia `forces_fn` to do everything in Float32 instead of Float64 is actually kind of obnoxious and of
+# little value so we don't bother. Float64's are higher accuracy anyhow.
 
 # Note: we use ppg_toi.jl instead of ppg.jl simply because ppg_toi.jl supports DynamicalODEProblems. There are no
 # contacts in this problem.
@@ -17,6 +26,8 @@ import DifferentialEquations: Tsit5
 import LinearAlgebra: norm
 import DiffEqSensitivity: ZygoteVJP
 import PyCall: @pyimport, @py_str, pyimport
+import Test: @test
+import FiniteDifferences
 
 # See https://github.com/JuliaPy/PyCall.jl/issues/48#issuecomment-515787405.
 py"""
@@ -24,10 +35,12 @@ import sys
 sys.path.insert(0, "./difftaichi/electric")
 """
 
-importlib = pyimport("importlib")
+np = pyimport("numpy")
 electric = pyimport("electric")
+importlib = pyimport("importlib")
 importlib.reload(electric)
 
+# DiffTaichi does everything in float32, so in order to test equivalence with them we need to be able to do the same.
 difftaichi_dt = 0.03
 
 # DiffTaichi takes 512 steps each of length dt = 0.03.
@@ -36,17 +49,75 @@ T = 15.36
 # DiffTaichi uses 512 // 256 = 2.
 num_segments = 2
 
-pad = 0.1
-gravitation_position = [[pad, pad], [pad, 1 - pad], [1 - pad, 1 - pad],
-                        [1 - pad, pad], [0.5, 1 - pad], [0.5, pad], [pad, 0.5],
-                        [1 - pad, 0.5]]
-
 # The exact equivalent from the difftaichi code is that our dampening = (1 - exp(-dt * d)) / d where d is their damping.
 # In difftaichi d = 0.2 and dt = 0.03 which comes out to...
 damping = 0.029910179730323616
 @assert damping >= 0
 
-K = 1e-3
+# We need to copy `gravitation_position` to Julia land in order to please Zygote.
+const gravitation_position = deepcopy(electric.gravitation_position)
+const K = deepcopy(electric.K)
+const n_gravitation = size(gravitation_position, 1)
+
+# Here's the pure Julia version:
+julia_forces_fn(x, u) = begin
+    sum([begin
+        r = x - gravitation_position[i, :]
+        len_r = max(norm(r), 1e-1)
+        K * u[i] / (len_r ^ 3) * r
+    end for i in 1:n_gravitation])
+end
+
+# Here's the DiffTaichi version:
+function difftaichi_forces_fn(x, u)
+    electric.forces_fn(np.array(x, dtype=np.float32), np.array(u, dtype=np.float32))
+end
+Zygote.@adjoint function difftaichi_forces_fn(x, u)
+    # We reuse these for both the forward and backward.
+    x_np = np.array(x, dtype=np.float32)
+    u_np = np.array(u, dtype=np.float32)
+    function pullback(ΔΩ)
+        electric.forces_fn_vjp(x_np, u_np, np.array(ΔΩ, dtype=np.float32))
+    end
+    electric.forces_fn(x_np, u_np), pullback
+end
+
+begin
+    @info "Testing forces_fns are equivalent"
+    seed!(123)
+    for i in 1:100
+        local x = randn(Float32, (2, ))
+        local u = randn(Float32, (n_gravitation, ))
+        @test difftaichi_forces_fn(x, u) ≈ julia_forces_fn(x, u)
+    end
+end
+
+begin
+    @info "Testing forces_fn gradients"
+    seed!(123)
+    for _ in 1:10
+        # We don't shrink x too small because we have the length of the spring in the denominator somewhere in the
+        # forces calculation, aka don't squish the springs too much to avoid crazy forces.
+        local x = randn(Float32, (2, ))
+        local u = 0.01 * randn(Float32, (n_gravitation, ))
+        local g = 0.01 * randn(Float32, (2, ))
+        local g_x_fd, g_u_fd = FiniteDifferences.grad(FiniteDifferences.central_fdm(5, 1), (x, u) -> sum(julia_forces_fn(x, u) .* g), x, u)
+        local g_x_dt, g_u_dt = Zygote.gradient((x, u) -> sum(difftaichi_forces_fn(x, u) .* g), x, u)
+        local g_x_j, g_u_j = Zygote.gradient((x, u) -> sum(julia_forces_fn(x, u) .* g), x, u)
+
+        # We assume at this point that the julia and difftaichi versions have been produce the same output, and assuming
+        # we trust Zygote's AD, this is a safe way to test that our difftaichi gradients are good.
+        @test g_x_dt ≈ g_x_j
+        @test g_u_dt ≈ g_u_j
+        @test g_x_fd ≈ g_x_dt
+    end
+end
+
+# Pick whether to use `julia_forces_fn` or `difftaichi_forces_fn`. Note that the julia version is more than 10x faster
+# than the DiffTaichi version, and we test that they're equivalent so we generally take a shortcut and run the julia
+# version.
+forces_fn = julia_forces_fn
+# forces_fn = difftaichi_forces_fn
 
 function sample_task()
     # Not really sure why DiffTaichi samples goal points this way, but this is what it is.
@@ -67,13 +138,7 @@ function sample_task()
         (goal, goal_v)
     end
 
-    v_dynamics(v, x, u) = begin
-        sum([begin
-            r = x - gravitation_position[i]
-            len_r = max(norm(r), 1e-1)
-            K * u[i] / (len_r ^ 3) * r
-        end for i in 1:length(gravitation_position)]) - damping * v
-    end
+    v_dynamics(v, x, u) = forces_fn(x, u) - damping * v
     x_dynamics(v, x, u) = v
     cost(v, x, u, t) = begin
         goal, _ = goal_stuff(t)
@@ -95,12 +160,12 @@ end
 num_hidden = 64
 policy = FastChain(
     FastDense(8, num_hidden, tanh),
-    FastDense(num_hidden, size(gravitation_position, 1), tanh),
+    FastDense(num_hidden, n_gravitation, tanh),
 )
 init_policy_params = initial_params(policy)
 
 # DiffTaichi does 200,000 iterations
-num_iters = 1000
+num_iters = 100000
 
 # Optimizers are stateful, so we shouldn't just reuse them. DiffTaichi does SGD with 2e-2 learning rate.
 make_optimizer = () -> Momentum(2e-2, 0.0)
@@ -172,7 +237,7 @@ function run_ppg(rng_seed, outputdir)
             goals = [goal for (goal, _) in goal_stuff.(ts)]
 
             Base.Filesystem.mktempdir() do dir
-                electric.animate(xs, goals, acts, gravitation_position, outputdir = dir)
+                electric.animate(xs, goals, acts, outputdir = dir)
                 # -y option overwrites existing video. See https://stackoverflow.com/questions/39788972/ffmpeg-override-output-file-if-exists
                 Base.run(`ffmpeg -y -framerate 100 -i $dir/%04d.png $dir/video.mp4`)
                 # For some reason ffmpeg isn't happy just outputting to outputdir.
@@ -270,14 +335,15 @@ import Dates
 import JLSO
 
 @info "pure julia version"
-experiment_dir = "$(Dates.now())-electric-pure-julia"
+rng_seed = get(ENV, "rng_seed", 123)
+experiment_dir = get(ENV, "experiment_dir", "$(Dates.now())-electric-seed=$(rng_seed)")
 mkdir(experiment_dir)
 
 @info "PPG"
-ppg_results = run_ppg(123, experiment_dir)
+ppg_results = run_ppg(rng_seed, experiment_dir)
 
 @info "BPTT"
 # DiffTaichi does 512 steps.
-bptt_results = run_bptt(123, 512, difftaichi_dt)
+bptt_results = run_bptt(rng_seed, 512, difftaichi_dt)
 
-JLSO.save("$experiment_dir/electric_results.jlso", :ppg_results => ppg_results, :bptt_results => bptt_results)
+JLSO.save("$experiment_dir/results.jlso", :ppg_results => ppg_results, :bptt_results => bptt_results)
