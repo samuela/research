@@ -336,7 +336,7 @@ import JLSO
 
 @info "pure julia version"
 rng_seed = get(ENV, "rng_seed", 123)
-experiment_dir = get(ENV, "experiment_dir", "$(Dates.now())-electric-seed=$(rng_seed)")
+experiment_dir = get(ENV, "experiment_dir", "results/$(Dates.now())-electric-seed=$(rng_seed)")
 mkdir(experiment_dir)
 
 @info "PPG"
