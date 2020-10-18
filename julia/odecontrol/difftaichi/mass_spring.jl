@@ -71,7 +71,6 @@ begin
     seed!(123)
     for i in 1:100
         local x = randn(Float32, (n_objects, 2))
-        local v = randn(Float32, (n_objects, 2))
         local u = randn(Float32, (n_springs, ))
         @test difftaichi_forces_fn(x, u) ≈ julia_forces_fn(x, u)
     end
@@ -124,6 +123,7 @@ x_dynamics(v_flat, x_flat, u) = begin
     v = reshape(v_flat, (n_objects, 2))
     x = reshape(x_flat, (n_objects, 2))
     # This is important so that we don't end up penetrating the floor.
+    # TODO difftaichi doesn't seem to need this...
     new_v_x = [if (x[i, 2] > ground_height) || (v[i, 2] > 0) v[i, 1] else 0.0 end for i in 1:n_objects]
     new_v_y = [if (x[i, 2] > ground_height) || (v[i, 2] > 0) v[i, 2] else 0.0 end for i in 1:n_objects]
     [new_v_x; new_v_y]
@@ -231,7 +231,7 @@ toi_affect(v_flat, x_flat, dt) = begin
     v = reshape(v_flat, (n_objects, 2))
 
     # We want to make sure that we only register for negative velocities.
-    tois = [-x[i, 2] / min(v[i, 2], -eps()) for i in 1:n_objects]
+    tois = [-(x[i, 2] - ground_height) / min(v[i, 2], -eps()) for i in 1:n_objects]
     impact_velocities = zero(v)
 
     # Can't use zip. See https://github.com/FluxML/Zygote.jl/issues/221.
@@ -296,12 +296,12 @@ video_rollout(sol, policy_params, path) = begin
     Base.Filesystem.mktempdir() do dir
         mass_spring.animate(xs, acts, ground_height, outputdir = dir)
         # -y option overwrites existing video. See https://stackoverflow.com/questions/39788972/ffmpeg-override-output-file-if-exists
-        Base.run(`ffmpeg -y -framerate 100 -i $dir/%04d.png $path`, wait = true)
+        Base.run(`ffmpeg -y -framerate 100 -i $dir/%04d.png $path`)
     end
 end
 
 # Train
-function run()
+function run_ppg()
     # Seed here so that both interp and euler get the same batches.
     seed!(123)
 
@@ -380,8 +380,117 @@ function run()
     )
 end
 
+function run_bptt()
+    # Seed here so that both interp and euler get the same batches.
+    seed!(123)
+
+    loss_per_iter = fill(NaN, num_iters)
+    policy_params_per_iter = fill(NaN, num_iters, length(init_policy_params))
+    g_per_iter = fill(NaN, num_iters, length(init_policy_params))
+    nf_per_iter = fill(NaN, num_iters)
+    n∇ₓf_per_iter = fill(NaN, num_iters)
+    n∇ᵤf_per_iter = fill(NaN, num_iters)
+
+    advance_toi(old_v, old_x, policy_params, t, dt) = begin
+        u = policy(old_v, old_x, policy_params, t)
+        new_v = old_v + dt * v_dynamics(old_v, old_x, u)
+        # new_x = old_x + dt * x_dynamics(new_v, old_x, u)
+        tois = -(old_x[:, 2] - ground_height) ./ min.(new_v[:, 2], -eps())
+
+    end
+
+    policy_params = deepcopy(init_policy_params)
+
+    # opt = ADAM()
+    opt = Momentum(0.001)
+    # opt = Optimiser(ExpDecay(0.001, 0.5, 1000, 1e-5), Momentum(0.001))
+    # opt = LBFGS(
+    #     alphaguess = LineSearches.InitialStatic(alpha = 0.001),
+    #     linesearch = LineSearches.Static(),
+    # )
+    progress = ProgressMeter.Progress(num_iters)
+    for iter = 1:num_iters
+        v0, x0 = sample_x0()
+        g = Zygote.pullback(v0, x0) do
+            v = v0
+            x = x0
+            for _ = 1:(T/dt)
+                old_v = v
+                old_x = x
+                new_v = v
+                # This is technically semi-implicit Euler if you think about it.
+                new_x = old_x + dt * new_v
+                toi = 0.0
+                if new_x[1] < 0 && new_v[1] < 0
+                    new_v = -new_v
+                    toi = -old_x[1] / old_v[1]
+                end
+                v = new_v
+                x = old_x + toi * old_v + (dt - toi) * new_v
+            end
+            (v, x)
+        end
+
+
+        sol, pullback = ppg_loss_pullback(
+            v0,
+            x0,
+            policy_params,
+            # Euler(),
+            Tsit5(),
+            # VelocityVerlet(),
+            Dict(:rtol => 1e-3, :atol => 1e-3)
+            # Dict(:dt => 0.004)
+        )
+        terminal_cost = cost(sol.solutions[end].u[end].x[1][2:end], sol.solutions[end].u[end].x[2][2:end], nothing)
+        loss = sol.solutions[end].u[end].x[2][1]
+
+        # Terminal cost version. This is what DiffTaichi does.
+        poop = zero(x0)
+        poop[head_id, 1] = -1
+        pb_stuff = pullback(([0.0; zeros(length(v0))], [0.0; poop[:]]), InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+
+        # Intermediate costs version.
+        # pb_stuff = pullback(([0.0; zeros(length(v0))], [1.0; zeros(length(x0))]), InterpolatingAdjoint(autojacvec = ZygoteVJP()))
+
+        g = pb_stuff.g_p
+
+        video_rollout(sol, policy_params, "mass_spring_iter$iter.mp4")
+
+        loss_per_iter[iter] = loss
+        policy_params_per_iter[iter, :] = policy_params
+        g_per_iter[iter, :] = g
+        nf_per_iter[iter] = pb_stuff.nf + sum(s.destats.nf for s in sol.solutions)
+        n∇ₓf_per_iter[iter] = pb_stuff.n∇ₓf
+        n∇ᵤf_per_iter[iter] = pb_stuff.n∇ᵤf
+
+        # clamp!(g, -10, 10)
+        Flux.Optimise.update!(opt, policy_params, g)
+        ProgressMeter.next!(
+            progress;
+            showvalues = [
+                (:iter, iter),
+                (:loss, loss),
+                (:terminal_cost, terminal_cost),
+                (:nf, nf_per_iter[iter]),
+                (:n∇ₓf, n∇ₓf_per_iter[iter]),
+                (:n∇ᵤf, n∇ᵤf_per_iter[iter]),
+            ],
+        )
+    end
+
+    (
+        loss_per_iter = loss_per_iter,
+        policy_params_per_iter = policy_params_per_iter,
+        g_per_iter = g_per_iter,
+        nf_per_iter = nf_per_iter,
+        n∇ₓf_per_iter = n∇ₓf_per_iter,
+        n∇ᵤf_per_iter = n∇ᵤf_per_iter,
+    )
+end
+
 # @info "InterpolatingAdjoint"
-# interp_results = run()
+# interp_results = run_ppg()
 
 # import JLSO
 # JLSO.save("mass_spring_results.jlso", :results => interp_results)
