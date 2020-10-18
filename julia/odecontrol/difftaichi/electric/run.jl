@@ -333,10 +333,26 @@ end
 
 import Dates
 import JLSO
+import ArgParse
+
+# It's far more convenient (for `run_many.jl`) to pass CLI args than environment variables for better or worse.
+args = begin
+    s = ArgParse.ArgParseSettings()
+    ArgParse.@add_arg_table! s begin
+        "--experiment_dir"
+            help = "where to dump results"
+            arg_type = String
+        "--rng_seed"
+            help = "random seed"
+            arg_type = Int
+            default = 123
+    end
+    ArgParse.parse_args(s)
+end
 
 @info "pure julia version"
-rng_seed = get(ENV, "rng_seed", 123)
-experiment_dir = get(ENV, "experiment_dir", "results/$(Dates.now())-electric-seed=$(rng_seed)")
+rng_seed = args["rng_seed"]
+experiment_dir = isnothing(args["experiment_dir"]) ? "results/$(Dates.now())-electric-seed$(rng_seed)" : args["experiment_dir"]
 mkdir(experiment_dir)
 
 @info "PPG"
