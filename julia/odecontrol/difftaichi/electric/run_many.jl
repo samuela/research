@@ -19,7 +19,7 @@ num_random_seeds = 32
 dir = @__DIR__
 jobs = [
     pipeline(
-        `julia --project $dir/run.jl --experiment_dir=$experiment_dir/seed=$i --rng_seed=$i`,
+        `julia --project $dir/run.jl --experiment_dir=$experiment_dir/seed$i --rng_seed=$i`,
         stdout="$experiment_dir/seed$(i)_stdout.txt",
         stderr="$experiment_dir/seed$(i)_stderr.txt")
     for i in 1:num_random_seeds
