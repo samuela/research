@@ -2,11 +2,13 @@
 install all the right dependencies in that environment. Note that you need to
 restart Julia after running this in order to be able to @pyimport the installed
 packages. Run this with `] build`.
+"""
 
-See https://gist.github.com/Luthaf/368a23981c8ec095c3eb."""
+import PyCall: pyimport
 
-import PyCall: @pyimport
-
-@pyimport pip
+# See https://stackoverflow.com/questions/12332975/installing-python-module-within-code and https://gist.github.com/Luthaf/368a23981c8ec095c3eb.
 const PIP_PACKAGES = ["taichi", "matplotlib"]
-pip.main(["install", "--user", "--upgrade", "--force-reinstall", PIP_PACKAGES...])
+
+sys = pyimport("sys")
+subprocess = pyimport("subprocess")
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "--upgrade", "--force-reinstall", PIP_PACKAGES...])
