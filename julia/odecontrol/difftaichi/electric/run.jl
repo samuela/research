@@ -22,7 +22,7 @@ import Random: seed!
 import Flux
 import Flux: Momentum
 import ProgressMeter
-import DifferentialEquations: Tsit5
+import DifferentialEquations: Tsit5, BS3
 import LinearAlgebra: norm
 import DiffEqSensitivity: ZygoteVJP
 import PyCall: @pyimport, @py_str, pyimport
@@ -162,13 +162,14 @@ policy = FastChain(
     FastDense(8, num_hidden, tanh),
     FastDense(num_hidden, n_gravitation, tanh),
 )
-init_policy_params = initial_params(policy)
+init_policy_params = 0.1 * initial_params(policy)
 
 # DiffTaichi does 200,000 iterations
 num_iters = 100000
 
 # Optimizers are stateful, so we shouldn't just reuse them. DiffTaichi does SGD with 2e-2 learning rate.
 make_optimizer = () -> Momentum(2e-2, 0.0)
+# make_optimizer = () -> Momentum(1e-3)
 
 function run_ppg(rng_seed, outputdir)
     # Seed here so that both interp and euler get the same batches.
@@ -180,8 +181,8 @@ function run_ppg(rng_seed, outputdir)
     n∇ₓf_per_iter = fill(NaN, num_iters)
     n∇ᵤf_per_iter = fill(NaN, num_iters)
     # julia is column-major so this way is more cache-efficient.
-    policy_params_per_iter = fill(NaN, length(init_policy_params), num_iters)
-    g_per_iter = fill(NaN, length(init_policy_params), num_iters)
+    # policy_params_per_iter = fill(NaN, length(init_policy_params), num_iters)
+    # g_per_iter = fill(NaN, length(init_policy_params), num_iters)
 
     policy_params = deepcopy(init_policy_params)
     opt = make_optimizer()
@@ -213,8 +214,8 @@ function run_ppg(rng_seed, outputdir)
         nf_per_iter[iter] = pb_stuff.nf + sum(s.destats.nf for s in sol.solutions)
         n∇ₓf_per_iter[iter] = pb_stuff.n∇ₓf
         n∇ᵤf_per_iter[iter] = pb_stuff.n∇ᵤf
-        policy_params_per_iter[:, iter] = policy_params
-        g_per_iter[:, iter] = g
+        # policy_params_per_iter[:, iter] = policy_params
+        # g_per_iter[:, iter] = g
 
         ProgressMeter.next!(
             progress;
@@ -252,8 +253,8 @@ function run_ppg(rng_seed, outputdir)
         nf_per_iter = nf_per_iter,
         n∇ₓf_per_iter = n∇ₓf_per_iter,
         n∇ᵤf_per_iter = n∇ᵤf_per_iter,
-        policy_params_per_iter = policy_params_per_iter,
-        g_per_iter = g_per_iter,
+        # policy_params_per_iter = policy_params_per_iter,
+        # g_per_iter = g_per_iter,
     )
 end
 
@@ -266,8 +267,8 @@ function run_bptt(rng_seed, num_timesteps, dt)
     n∇ₓf_per_iter = fill(NaN, num_iters)
     n∇ᵤf_per_iter = fill(NaN, num_iters)
     # julia is column-major so this way is more cache-efficient.
-    policy_params_per_iter = fill(NaN, length(init_policy_params), num_iters)
-    g_per_iter = fill(NaN, length(init_policy_params), num_iters)
+    # policy_params_per_iter = fill(NaN, length(init_policy_params), num_iters)
+    # g_per_iter = fill(NaN, length(init_policy_params), num_iters)
 
     policy_params = deepcopy(init_policy_params)
     opt = make_optimizer()
@@ -302,8 +303,8 @@ function run_bptt(rng_seed, num_timesteps, dt)
         nf_per_iter[iter] = num_timesteps
         n∇ₓf_per_iter[iter] = num_timesteps
         n∇ᵤf_per_iter[iter] = num_timesteps
-        policy_params_per_iter[:, iter] = policy_params
-        g_per_iter[:, iter] = g
+        # policy_params_per_iter[:, iter] = policy_params
+        # g_per_iter[:, iter] = g
 
         ProgressMeter.next!(
             progress;
@@ -326,8 +327,8 @@ function run_bptt(rng_seed, num_timesteps, dt)
         nf_per_iter = nf_per_iter,
         n∇ₓf_per_iter = n∇ₓf_per_iter,
         n∇ᵤf_per_iter = n∇ᵤf_per_iter,
-        policy_params_per_iter = policy_params_per_iter,
-        g_per_iter = g_per_iter,
+        # policy_params_per_iter = policy_params_per_iter,
+        # g_per_iter = g_per_iter,
     )
 end
 
