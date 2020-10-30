@@ -168,8 +168,8 @@ init_policy_params = 0.1 * initial_params(policy)
 num_iters = 100000
 
 # Optimizers are stateful, so we shouldn't just reuse them. DiffTaichi does SGD with 2e-2 learning rate.
-make_optimizer = () -> Momentum(2e-2, 0.0)
-# make_optimizer = () -> Momentum(1e-3)
+# make_optimizer = () -> Momentum(2e-2, 0.0)
+make_optimizer = () -> Momentum(1e-3)
 
 function run_ppg(rng_seed, outputdir)
     # Seed here so that both interp and euler get the same batches.
