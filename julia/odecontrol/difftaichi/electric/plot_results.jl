@@ -6,13 +6,13 @@ import PyCall: pyimport
 
 np = pyimport("numpy")
 
-results_dir = "results/2020-10-22T15:46:21.706-802622ec9b0e41b0570360dc6bd9deb540ecdc70-electric-many"
+results_dir = "results/2020-10-28T14:45:12.999-6c49e0ed4bb8fd7a6cb1c1b819eff9369d0a670f-electric-many"
 
 # Parallel version doesn't give any speedup.
 # @time results = qmap(1:32) do i
 #     JLSO.load(joinpath(results_dir, "seed$i/results.jlso"))
 # end
-@time results = [JLSO.load(joinpath(results_dir, "seed$i/results.jlso")) for i in 1:32]
+# @time results = [JLSO.load(joinpath(results_dir, "seed$i/results.jlso")) for i in 1:32]
 
 # (n_iter, n_seeds)
 ppg_losses_per_iter = hcat([res[:ppg_results].loss_per_iter for res in results]...)
@@ -57,7 +57,7 @@ Plots.plot!(
 Plots.savefig("poop_per_iter.pdf")
 
 # per nf
-nf_eval = 1:1e6:1e8
+nf_eval = range(1, 1.5e8, length = 100)
 ppg_losses_per_nf = hcat([begin
     r = res[:ppg_results]
     nfs = cumsum(r.nf_per_iter + r.n∇ₓf_per_iter + r.n∇ᵤf_per_iter)
@@ -95,7 +95,7 @@ Plots.savefig("poop_per_nf.pdf")
 
 # per wallclock
 # time_eval = 1:1e6:1e7
-time_eval = range(1, 1e4, length=100)
+time_eval = range(1, 2.25e4, length=100)
 ppg_losses_per_time = hcat([begin
     r = res[:ppg_results]
     time = cumsum(r.elapsed_per_iter) / 1e9
