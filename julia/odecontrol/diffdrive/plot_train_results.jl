@@ -17,7 +17,7 @@ Plots.savefig(
     Plots.plot(
         1:num_iter,
         [results[:euler_results].loss_per_iter, results[:interp_results].loss_per_iter],
-        label = ["Euler BPTT" "PPG (ours)"],
+        label = ["Euler BPTT" "CTPG (ours)"],
         xlabel = "Iteration",
         ylabel = "Loss",
     ),
@@ -36,7 +36,7 @@ begin
             results[:interp_results].nf_per_iter + results[:interp_results].n∇f_per_iter,
         ),
         results[:interp_results].loss_per_iter,
-        label = "PPG (ours)",
+        label = "CTPG (ours)",
     )
     Plots.savefig(p, "diffdrive_loss_per_nf.pdf")
 end
@@ -126,7 +126,7 @@ anim = Plots.Animation()
         label = "Initial conditions",
     )
     Plots.plot!([], color = :blue, linestyle = :dash, label = "Euler BPTT")
-    Plots.plot!([], color = :red, label = "PPG (ours)")
+    Plots.plot!([], color = :red, label = "CTPG (ours)")
     Plots.frame(anim)
     if iter in stills
         Plots.savefig(p, "diffdrive_still_$iter.pdf")
