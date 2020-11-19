@@ -36,11 +36,11 @@ const R = Matrix{floatT}(I, x_dim, x_dim)
 const K = ControlSystems.lqr(A, B, Q, R)
 dynamics, cost, sample_x0 = LinearEnv.linear_env(floatT, x_dim, 0 * I, I, I, I)
 
-lqr_goodies = ppg_goodies(dynamics, cost, (x, _) -> -K * x, T)
-lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing)
+lqr_goodies = ppg_goodies(dynamics, cost, (x, _, _) -> -K * x, T)
+lqr_sol, _ = lqr_goodies.loss_pullback(x0, nothing, Tsit5(), Dict())
 lqr_loss = lqr_sol[end][1]
 
-learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
+learned_policy_goodies = ppg_goodies(dynamics, cost, (x, t, θ) -> policy(x, θ), T)
 
 function plot_neural_ode()
     policy_params = deepcopy(init_policy_params)
@@ -49,7 +49,7 @@ function plot_neural_ode()
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
+            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, Tsit5(), Dict())
             bwd = vjp(vcat(1, zero(x0)), BacksolveAdjoint(checkpointing = false))
             loss, _ = extract_loss_and_xT(fwd_sol)
             Flux.Optimise.update!(opt, policy_params, bwd.g)
@@ -88,7 +88,7 @@ function plot_quad()
     opt = ADAM()
     for iter = 1:num_iters
         @time begin
-            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params)
+            fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, Tsit5(), Dict())
             # bwd_sol = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
             bwd = vjp(vcat(1, zero(x0)), QuadratureAdjoint())
             loss, _ = extract_loss_and_xT(fwd_sol)
