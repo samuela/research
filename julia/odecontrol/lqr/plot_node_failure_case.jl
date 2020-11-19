@@ -9,11 +9,16 @@ import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, ODEAdjointProb
 import LinearAlgebra: I, norm
 import ControlSystems
 import PyPlot
+import PyCall: PyDict
 
 include("common.jl")
 include("../ppg.jl")
 
 seed!(123)
+
+rcParams = PyDict(PyPlot.matplotlib["rcParams"])
+rcParams["font.size"] = 16
+rcParams["figure.figsize"] = (8, 4)
 
 floatT = Float32
 x_dim = 2
@@ -89,8 +94,8 @@ function plot_quad()
     for iter = 1:num_iters
         @time begin
             fwd_sol, vjp = learned_policy_goodies.loss_pullback(x0, policy_params, Tsit5(), Dict())
-            # bwd_sol = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
-            bwd = vjp(vcat(1, zero(x0)), QuadratureAdjoint())
+            bwd = vjp(vcat(1, zero(x0)), InterpolatingAdjoint())
+            # bwd = vjp(vcat(1, zero(x0)), QuadratureAdjoint())
             loss, _ = extract_loss_and_xT(fwd_sol)
             Flux.Optimise.update!(opt, policy_params, bwd.g)
             learned_loss_per_iter[iter] = loss
@@ -110,7 +115,7 @@ function plot_quad()
         ax2 = ax1.twinx()
         ax2.set_ylabel("L2 error", color = "tab:red")
         ax2.tick_params(axis = "y", labelcolor = "tab:red")
-        ax2.plot([], color = "tab:blue", label = "PPG solution (ours)")
+        ax2.plot([], color = "tab:blue", label = "CTPG (ours)")
         ax2.plot([], linestyle = "--", color = "grey", label = "LQR solution")
 
         # Interpolated forward pass has no reconstruction error since we have a
