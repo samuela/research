@@ -49,7 +49,7 @@ function plot_line!(results_flat, label)
         map(median, nf_calls),
         map(median, g_errors),
         xlabel = "Function evaluations",
-        ylabel = "L2 error in the gradient",
+        ylabel = "L2 error in the policy gradient",
         xaxis = :log10,
         yaxis = :log10,
         xerror = safe_error_bars(nf_calls),
@@ -79,7 +79,9 @@ function plot_scatter!(results_flat, label)
         flatten(nf_calls),
         flatten(g_errors),
         xlabel = "Function evaluations",
-        ylabel = "L2 error in the gradient",
+        ylabel = "L2 error in the policy gradient",
+        xguidefontsize=16,
+        yguidefontsize=16,
         xaxis = :log10,
         yaxis = :log10,
         alpha = 0.25,
@@ -107,7 +109,7 @@ function plot_ribbon!(results_flat, label)
         map(median, nf_calls),
         map(median, g_errors),
         xlabel = "Function evaluations",
-        ylabel = "L2 error in the gradient",
+        ylabel = "L2 error in the policy gradient",
         ribbon = (
             map(median, g_errors) - map(minimum, g_errors),
             map(maximum, g_errors) - map(median, g_errors),
@@ -126,6 +128,6 @@ Plots.PyPlotBackend()
 Plots.plot(title = "Compute/accuracy tradeoff")
 plot_scatter!(euler_bptt_results_fixed, "Euler, BPTT")
 plot_scatter!(backsolve_results, "Neural ODE")
-plot_scatter!(backsolve_checkpointing_results, "Neural ODE with checkpointing")
-plot_scatter!(interp_results, "Ours")
+plot_scatter!(backsolve_checkpointing_results, "Neural ODE with chkpt.")
+plot_scatter!(interp_results, "CTPG (ours)")
 Plots.savefig("lqr_tradeoff.pdf")
