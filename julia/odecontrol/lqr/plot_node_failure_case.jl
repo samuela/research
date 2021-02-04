@@ -88,10 +88,10 @@ function run_ctpg()
 end
 
 @info "Neural ODE"
-# node_learned_loss_per_iter, node_reconst_error_per_iter = run_neural_ode()
+node_learned_loss_per_iter, node_reconst_error_per_iter = run_neural_ode()
 
 @info "CTPG"
-# ctpg_learned_loss_per_iter = run_ctpg()
+ctpg_learned_loss_per_iter = run_ctpg()
 
 begin
     _, ax1 = PyPlot.subplots()
