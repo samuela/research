@@ -195,7 +195,9 @@ function ppg_goodies(dynamics, cost, policy, T)
         x = x0
         cost_accum = 0.0
         for _ = 1:num_steps
-            u = policy(x, policy_params)
+            # For now we assume that policy isn't doing anything with the `t`
+            # input, at least for Euler integration.
+            u = policy(x, nothing, policy_params)
             cost_accum += dt * cost(x, u)
             x += dt * dynamics(x, u)
         end

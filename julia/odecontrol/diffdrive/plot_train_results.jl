@@ -3,6 +3,12 @@ import Plots
 import ProgressMeter: @showprogress
 import Random
 import LinearAlgebra: norm
+import Statistics: mean
+import DiffEqFlux: FastChain, FastDense
+import DifferentialEquations: Tsit5
+
+include("common.jl")
+include("../ppg.jl")
 
 Random.seed!(123)
 ENV["GKSwstype"] = "nul"
@@ -17,6 +23,7 @@ Plots.savefig(
     Plots.plot(
         1:num_iter,
         [results[:euler_results].loss_per_iter, results[:interp_results].loss_per_iter],
+        # Not a typo: `label` needs to be 1x2 for some reason...
         label = ["Euler BPTT" "CTPG (ours)"],
         xlabel = "Iteration",
         ylabel = "Loss",
@@ -27,13 +34,13 @@ Plots.savefig(
 begin
     p = Plots.plot(xlabel = "Number of function evaluations", ylabel = "Loss")
     Plots.plot!(
-        cumsum(results[:euler_results].nf_per_iter + results[:euler_results].n∇f_per_iter),
+        cumsum(results[:euler_results].nf_per_iter + results[:euler_results].n∇ₓf_per_iter + results[:euler_results].n∇ᵤf_per_iter),
         results[:euler_results].loss_per_iter,
         label = "Euler BPTT",
     )
     Plots.plot!(
         cumsum(
-            results[:interp_results].nf_per_iter + results[:interp_results].n∇f_per_iter,
+            results[:interp_results].nf_per_iter + results[:interp_results].n∇ₓf_per_iter + results[:interp_results].n∇ᵤf_per_iter,
         ),
         results[:interp_results].loss_per_iter,
         label = "CTPG (ours)",
@@ -43,20 +50,20 @@ end
 
 Plots.savefig(
     Plots.plot(
-        map(mean, eachrow(abs.(interp_results.policy_params_per_iter))),
+        map(mean, eachrow(abs.(results[:interp_results].policy_params_per_iter))),
         label = "mean abs of each weight",
     ),
     "diffdrive_weights_per_iter.pdf",
 )
 
 Plots.savefig(
-    Plots.plot(map(norm, eachrow(interp_results.g_per_iter)), label = "norm of gradients"),
+    Plots.plot(map(norm, eachrow(results[:interp_results].g_per_iter)), label = "norm of gradients"),
     "diffdrive_grads_per_iter.pdf",
 )
 
 Plots.savefig(
     Plots.plot(
-        map(mean, eachrow(abs.(interp_results.g_per_iter))),
+        map(mean, eachrow(abs.(results[:interp_results].g_per_iter))),
         label = "mean abs of gradients",
         yaxis = :log10,
     ),
@@ -71,17 +78,21 @@ Plots.savefig(
 #     )
 # Plots.savefig(Plots.plot(euler_dt_per_iter, label="Average Euler dt over time"), "deleteme.pdf")
 
-# NOTE: Make sure this is the same as in train.jl!
-dynamics, cost, sample_x0, obs = DiffDriveEnv.diffdrive_env(floatT, 1.0f0, 0.5f0)
-learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
 x0_test_batch = [sample_x0() for _ = 1:10]
-# num_hidden = 32
-# policy = FastChain(
-#     (x, _) -> obs(x),
-#     FastDense(7, num_hidden, tanh),
-#     FastDense(num_hidden, num_hidden, tanh),
-#     FastDense(num_hidden, 2),
-# )
+
+# NOTE: Make sure this is exactly the same as in train.jl when the results were
+# gathered!
+T = 5.0
+floatT = Float32
+dynamics, cost, sample_x0, obs = DiffDriveEnv.env(floatT, 1.0f0, 0.5f0)
+num_hidden = 32
+policy = FastChain(
+    (x, _) -> obs(x),
+    FastDense(7, num_hidden, tanh),
+    FastDense(num_hidden, num_hidden, tanh),
+    FastDense(num_hidden, 2),
+)
+learned_policy_goodies = ppg_goodies(dynamics, cost, (x, _, pp) -> policy(x, pp), T)
 
 function rollout(x0, θ)
     sol = solve(

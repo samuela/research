@@ -16,7 +16,7 @@ import DiffEqFlux: FastChain, FastDense, initial_params
 import Random: seed!
 import Plots
 import Statistics: mean
-import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint
+import DiffEqSensitivity: InterpolatingAdjoint, BacksolveAdjoint, QuadratureAdjoint, ReverseDiffVJP
 import JLSO
 import Optim: LBFGS
 import LineSearches
@@ -28,16 +28,16 @@ import ProgressMeter
 seed!(123)
 
 floatT = Float32
-T = 10.0
+T = 5.0
 num_iters = 10000
 batch_size = 8
 
 dynamics, cost, sample_x0, obs = DiffDriveEnv.env(floatT, 1.0f0, 0.5f0)
 
-num_hidden = 64
+num_hidden = 32
 policy = FastChain(
     (x, _) -> obs(x),
-    FastDense(11, num_hidden, tanh),
+    FastDense(7, num_hidden, tanh),
     FastDense(num_hidden, num_hidden, tanh),
     FastDense(num_hidden, 2),
 )
@@ -46,7 +46,7 @@ policy = FastChain(
 # policy = FastChain((x, _) -> obs(x), FastDense(7, 2))
 
 init_policy_params = initial_params(policy) * 0.1
-learned_policy_goodies = ppg_goodies(dynamics, cost, policy, T)
+learned_policy_goodies = ppg_goodies(dynamics, cost, (x, _, pp) -> policy(x, pp), T)
 
 function run(loss_and_grad)
     # Seed here so that both interp and euler get the same batches.
@@ -107,8 +107,11 @@ interp_results = run(
     (x0_batch, θ) -> learned_policy_goodies.ez_loss_and_grad_many(
         x0_batch,
         θ,
-        VCABM(),
-        InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
+        Tsit5(),
+        # For some reason `ReverseDiffVJP(true)` is way faster but gives bad
+        # gradients.
+        # InterpolatingAdjoint(autojacvec = ReverseDiffVJP(true)),
+        InterpolatingAdjoint(),
     ),
 )
 
