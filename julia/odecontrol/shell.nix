@@ -1,10 +1,15 @@
 let
-  pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
+  # Last updated: 2/4/21
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/2c58a9dac0bd5f5620394c7c6f623355f9f476d2.tar.gz")) {};
+
+  # Rolling updates, not deterministic.
+  # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
 in pkgs.mkShell {
   buildInputs = [
     pkgs.python3
     pkgs.python3.pkgs.pip
     pkgs.julia
+    pkgs.ffmpeg
   ];
   shellHook = ''
     # Hacks to make taichi work:
