@@ -1,0 +1,18 @@
+using JuMP
+using GLPK
+model = Model(GLPK.Optimizer)
+@variable(model, 0 <= x <= 2)
+@variable(model, 0 <= y <= 3)
+@objective(model, Max, x^2 + y^2)
+# @constraint(model, c1, 6x + 8y >= 100)
+# @constraint(model, c2, 7x + 12y >= 120)
+print(model)
+optimize!(model)
+@show termination_status(model)
+@show primal_status(model)
+@show dual_status(model)
+@show objective_value(model)
+@show value(x)
+@show value(y)
+@show shadow_price(c1)
+@show shadow_price(c2)
