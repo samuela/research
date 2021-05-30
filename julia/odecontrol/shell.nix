@@ -1,6 +1,9 @@
 let
-  # Last updated: 2/4/21
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/2c58a9dac0bd5f5620394c7c6f623355f9f476d2.tar.gz")) {};
+  # Last updated: 4/26/21. From status.nixos.org.
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/32f7980afb5e33f1e078a51e715b9f102f396a69.tar.gz")) {};
+
+  # We can get rid of this once https://github.com/NixOS/nixpkgs/pull/117881 merges.
+  pkgs_with_julia = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/b82a21edaedb1b3687d5dce63a433f56456c80e8.tar.gz")) {};
 
   # Rolling updates, not deterministic.
   # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
@@ -8,7 +11,7 @@ in pkgs.mkShell {
   buildInputs = [
     pkgs.python3
     pkgs.python3.pkgs.pip
-    pkgs.julia
+    pkgs_with_julia.julia_16
     pkgs.ffmpeg
   ];
   shellHook = ''
