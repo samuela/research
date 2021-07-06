@@ -27,7 +27,7 @@ jobs:
         run: julia --eval "using InteractiveUtils; versioninfo()"
 
       - name: instantiate and build
-        working-directory: $GITHUB_WORKSPACE
+        # working-directory: $GITHUB_WORKSPACE
         run: |
           ls -al
           julia --project --check-bounds=yes --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
