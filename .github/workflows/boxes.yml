@@ -28,7 +28,9 @@ jobs:
 
       - name: instantiate and build
         working-directory: $GITHUB_WORKSPACE/research/julia/boxes
-        run: julia --project --check-bounds=yes --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
+        run: |
+          ls
+          julia --project --check-bounds=yes --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
 
       # Runs a set of commands using the runners shell
       - name: Run tests
