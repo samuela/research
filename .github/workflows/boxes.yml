@@ -17,21 +17,19 @@ jobs:
   build:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: julia/boxes
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
       - name: Check julia version
         run: julia --eval "using InteractiveUtils; versioninfo()"
 
       - name: instantiate and build
-        working-directory: ./julia/boxes
-        run: julia --project --check-bounds=yes --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
+        run: julia --project --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
 
-      - name: Run tests
-        working-directory: ./julia/boxes
-        run: |
-          julia --project src/test_biggest_box.jl
-          julia --project src/test_boxes.jl
+      - run: julia --project src/test_biggest_box.jl
+      - run: julia --project src/test_boxes.jl
