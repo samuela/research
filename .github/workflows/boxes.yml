@@ -39,13 +39,16 @@ jobs:
       - name: Install ffmpeg
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg
+          sudo apt install -y ffmpeg tree
 
       - run: julia --project src/test_biggest_box.jl
       - run: julia --project src/test_boxes.jl
       - run: julia --project src/pluto_maze.jl
 
+      - run: tree
+        working-directory: ~
+
       - uses: actions/upload-artifact@v2
         with:
           name: results
-          path: results
+          path: ./julia/boxes/results
