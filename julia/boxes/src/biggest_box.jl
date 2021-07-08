@@ -1,4 +1,4 @@
-import Base: +, -, *, ==, <=, <, big, convert, isfinite, isless, iszero, show, zero
+import Base: +, -, *, ==, <=, <, big, convert, isfinite, isless, iszero, iterate, length, show, zero
 import Ipopt
 import JuMP
 import MathOptInterface: MAX_SENSE
@@ -67,6 +67,11 @@ same_world(x::TracedExpr, y::TracedExpr) = (@assert x.world === y.world; x.world
 big(x::TracedExpr) = big(x.value)
 iszero(x::TracedExpr) = iszero(x.value)
 isfinite(x::TracedExpr) = isfinite(x.value)
+
+# Necessary for broadcasting like `in_box.(y_boxes, Ref(TC(y)))`.
+# length(x::TracedExpr) = length(x.value)
+# iterate(x::TracedExpr) = iterate(x.value)
+# iterate(x::TracedExpr, state) = iterate(x.value, state)
 
 +(lhs::TracedExpr, rhs::TracedExpr) = TracedAdd(lhs, rhs)
 -(lhs::TracedExpr, rhs::TracedExpr) = TracedSub(lhs, rhs)

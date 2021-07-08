@@ -153,12 +153,32 @@ function is_free_naive(x, y)
 	!any(in_box(b, [x, y]) for b in wall_boxes)
 end
 
+# ╔═╡ c0ec67e3-8a3f-4d73-bc98-fd7a8c6e6416
+begin
+	x_boxes = [Box([b.mins[1]], [b.maxs[1]]) for b in wall_boxes]
+	y_boxes = [Box([b.mins[2]], [b.maxs[2]]) for b in wall_boxes]
+	
+	function is_free_fancy(x, y)
+		if rand(Bool)
+			x_in = findall([in_box(b, [x]) for b in x_boxes])
+			!any(in_box(b, [y]) for b in y_boxes[x_in])
+		else
+			y_in = findall([in_box(b, [y]) for b in y_boxes])
+			!any(in_box(b, [x]) for b in x_boxes[y_in])
+		end
+	end
+end
+
+# ╔═╡ 1247d7ed-abf4-4bd0-ac38-e657da065b39
+rand(Bool)
+
 # ╔═╡ 85dca7ad-28be-49f6-bbe2-38535f0ca06f
 begin
 	_, _ax = plot_maze()
 	Random.seed!(123)
 	# x, y = rand_inside(bounds)
 	# x, y = 6.45, 0.45
+	# TODO: this is a naughty point. Write a test for it.
 	x, y = [0.9240324194846694, 4.999788161150534]
 	@show _, box = biggest_box_2d(is_free_naive, x, y, bounds)
 
@@ -168,6 +188,9 @@ begin
 	PyPlot.gcf()
 end
 
+# ╔═╡ 017bc257-ade5-40f0-abe5-b6b12334ef7c
+results_dir = mkpath("../results/pluto_maze")
+
 # ╔═╡ 70e09838-02ac-4c9d-a081-c5429968a6e2
 begin
 	Random.seed!(123)
@@ -175,19 +198,20 @@ begin
 	free_boxset = BoxSet(Box[], Dict())
 
 	function sample_point()
-		while true
+		for _ in 1:1000
 			x, y = rand_inside(bounds)
 			if !any(in_box.(free_boxset.boxes, Ref([x, y])))
 				# Not in any existing box yet: try evaluating...
-				free, box = biggest_box_2d(is_free_naive, x, y, bounds)
+				free, box = biggest_box_2d(is_free_fancy, x, y, bounds)
 				if free
 					return [x, y], box
 				end
 			end
 		end
+		error("oopsie: couldn't reasonably find free point")
 	end
-
-	map(1:60) do i
+	
+	figs = map(1:27) do i
 		@show i
 		@time xy, box = sample_point()
 		# This is a stupid hack to get around pluto include module issues...
@@ -195,16 +219,21 @@ begin
 
 		_, _ax = plot_maze()
 		PyPlot.scatter([xy[1]], [xy[2]], s = 10, zorder = 2)
-		PyPlot.scatter([0.9240324194846694], [4.999788161150534], s = 10, zorder = 2, color = :red)
 		for b in free_boxset.boxes
 			plot_box(_ax, b, color = :lightblue, alpha = 0.5)
 		end
+		
+		# .. to get up from the src directory. pdf's for 
+		PyPlot.savefig("$results_dir/step$i.pdf")
+		PyPlot.savefig("$results_dir/step$i.jpg")
 		PyPlot.gcf()
 	end
+
+	# -r: framerate
+	run(`ffmpeg -y -r 2 -i $results_dir/step%d.jpg $results_dir/maze.gif`)
+
+	figs
 end
-
-# ╔═╡ fe6a33db-ea1d-43a0-963b-27e0c2c05a1e
-
 
 # ╔═╡ Cell order:
 # ╠═fef90971-2b5d-4ee0-a7cb-f91e46a06ebb
@@ -230,6 +259,8 @@ end
 # ╟─619e142a-3265-470b-9b07-e155ed88ddd6
 # ╟─cf593cd7-bb3c-4dfa-9ed6-97a6741c1789
 # ╠═05da4d08-292b-423b-9fa7-266a67daf81d
+# ╠═c0ec67e3-8a3f-4d73-bc98-fd7a8c6e6416
+# ╠═1247d7ed-abf4-4bd0-ac38-e657da065b39
 # ╠═85dca7ad-28be-49f6-bbe2-38535f0ca06f
+# ╠═017bc257-ade5-40f0-abe5-b6b12334ef7c
 # ╠═70e09838-02ac-4c9d-a081-c5429968a6e2
-# ╠═fe6a33db-ea1d-43a0-963b-27e0c2c05a1e

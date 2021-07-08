@@ -33,3 +33,9 @@ jobs:
 
       - run: julia --project src/test_biggest_box.jl
       - run: julia --project src/test_boxes.jl
+      - run: julia --project src/pluto_maze.jl
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: results
+          path: julia/boxes/results
