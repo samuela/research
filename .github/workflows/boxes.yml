@@ -28,8 +28,13 @@ jobs:
       - name: Check julia version
         run: julia --eval "using InteractiveUtils; versioninfo()"
 
-      - name: instantiate and build
+      - name: Julia instantiate and build
         run: julia --project --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install --upgrade matplotlib
 
       - run: julia --project src/test_biggest_box.jl
       - run: julia --project src/test_boxes.jl
