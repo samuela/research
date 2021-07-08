@@ -189,7 +189,7 @@ begin
 end
 
 # ╔═╡ 017bc257-ade5-40f0-abe5-b6b12334ef7c
-results_dir = mkpath("../results/pluto_maze")
+results_dir = mkpath("/tmp/results/pluto_maze")
 
 # ╔═╡ 70e09838-02ac-4c9d-a081-c5429968a6e2
 begin
