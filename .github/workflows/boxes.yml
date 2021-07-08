@@ -36,6 +36,11 @@ jobs:
           python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install --upgrade matplotlib
 
+      - name: Install ffmpeg
+        run: |
+          sudo apt update
+          sudo apt install -y ffmpeg
+
       - run: julia --project src/test_biggest_box.jl
       - run: julia --project src/test_boxes.jl
       - run: julia --project src/pluto_maze.jl
