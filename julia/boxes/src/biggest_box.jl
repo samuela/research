@@ -1,5 +1,5 @@
-import Base: +, -, *, ==, <=, <, big, convert, isfinite, isless, iszero, iterate, length, show, zero
-import Ipopt
+import Base: +, -, *, /, ==, <=, <, big, convert, isfinite, isless, iszero, iterate, length, show, zero, push!
+# import Ipopt
 import JuMP
 import MathOptInterface: MAX_SENSE
 import NLopt
@@ -8,7 +8,14 @@ import Printf: @printf
 include("boxes.jl")
 include("intervals.jl")
 
-abstract type TracedExpr end
+# Subtyping `Number` helps with the automatic promotion of types in arithmetic
+# operations.
+abstract type TracedExpr <: Number end
+
+"A NothingWorld is world for constant expressions. Adding a constraint to it is
+a no-op."
+struct NothingWorld end
+Base.push!(w::NothingWorld, _) = w
 
 """
 These are constants that we meet along the way.
@@ -18,7 +25,10 @@ isn't strictly a requirement anymore now that we stopped using
 IntervalArithmetic.jl and rolled our own.
 """
 struct TracedConstant <: TracedExpr
+  world::NothingWorld
   value
+
+  TracedConstant(x) = new(NothingWorld(), x)
 end
 
 """These are the "leaves" of the computation graph and have names."""
@@ -28,22 +38,13 @@ struct TracedLeaf <: TracedExpr
   value
 end
 
-struct TracedMul <: TracedExpr
-  world
-  lhs::TracedExpr
-  rhs::TracedExpr
-  value
-
-  TracedMul(lhs::TracedExpr, rhs::TracedExpr) = new(same_world(lhs, rhs), lhs, rhs, lhs.value * rhs.value)
-end
-
 struct TracedAdd <: TracedExpr
   world
   lhs::TracedExpr
   rhs::TracedExpr
   value
 
-  TracedAdd(lhs::TracedExpr, rhs::TracedExpr) = new(same_world(lhs, rhs), lhs, rhs, lhs.value + rhs.value)
+  TracedAdd(lhs::TracedExpr, rhs::TracedExpr) = new(promote_world(lhs.world, rhs.world), lhs, rhs, lhs.value + rhs.value)
 end
 
 struct TracedSub <: TracedExpr
@@ -52,34 +53,97 @@ struct TracedSub <: TracedExpr
   rhs::TracedExpr
   value
 
-  TracedSub(lhs::TracedExpr, rhs::TracedExpr) = new(same_world(lhs, rhs), lhs, rhs, lhs.value - rhs.value)
+  TracedSub(lhs::TracedExpr, rhs::TracedExpr) = new(promote_world(lhs.world, rhs.world), lhs, rhs, lhs.value - rhs.value)
+end
+
+struct TracedMul <: TracedExpr
+  world
+  lhs::TracedExpr
+  rhs::TracedExpr
+  value
+
+  TracedMul(lhs::TracedExpr, rhs::TracedExpr) = new(promote_world(lhs.world, rhs.world), lhs, rhs, lhs.value * rhs.value)
+end
+
+struct TracedDiv <: TracedExpr
+  world
+  lhs::TracedExpr
+  rhs::TracedExpr
+  value
+
+  TracedDiv(lhs::TracedExpr, rhs::TracedExpr) = new(promote_world(lhs.world, rhs.world), lhs, rhs, lhs.value / rhs.value)
+end
+
+struct TracedCos <: TracedExpr
+  world
+  x::TracedExpr
+  value
+
+  TracedCos(x::TracedExpr) = new(x.world, x, cos(x.value))
+end
+
+struct TracedSin <: TracedExpr
+  world
+  x::TracedExpr
+  value
+
+  TracedSin(x::TracedExpr) = new(x.world, x, sin(x.value))
+end
+
+struct TracedSqrt <: TracedExpr
+  world
+  x::TracedExpr
+  value
+
+  TracedSqrt(x::TracedExpr) = new(x.world, x, sqrt(x.value))
 end
 
 "Assert that two TracedExpr's have the same world, and then return that world."
-same_world(::TracedConstant, y::TracedExpr) = y.world
-same_world(x::TracedExpr, ::TracedConstant) = x.world
-same_world(x::TracedExpr, y::TracedExpr) = (@assert x.world === y.world; x.world)
-# NOTE: do we need `same_world(::TracedConstant, ::TracedConstant)`?
+promote_world(::NothingWorld, ::NothingWorld) = NothingWorld()
+promote_world(::NothingWorld, y) = y
+promote_world(x, ::NothingWorld) = x
+promote_world(x, y) = (@assert x === y; x)
 
-# Note: this assumes that the value of TracedThings is Float64.
-# zero(::Type{T}) where {T <: TracedExpr} = TracedConstant(0.0)
-
-big(x::TracedExpr) = big(x.value)
-iszero(x::TracedExpr) = iszero(x.value)
-isfinite(x::TracedExpr) = isfinite(x.value)
+# When dealing with TracedExpr's everything else should be promoted to TracedExpr.
+Base.promote_rule(::Type{T}, ::Type{Float64}) where {T <: TracedExpr} = TracedExpr
+# Converting a TracedExpr to a TracedExpr is a no-op.
+Base.convert(::Type{TracedExpr}, x::T) where {T <: TracedExpr} = x
+# Converting other things into TracedExpr's means wrapping them in a TracedConstant.
+Base.convert(::Type{TracedExpr}, x::Number) = TracedConstant(x)
 
 # Necessary for broadcasting like `in_box.(y_boxes, Ref(TC(y)))`.
 # length(x::TracedExpr) = length(x.value)
 # iterate(x::TracedExpr) = iterate(x.value)
 # iterate(x::TracedExpr, state) = iterate(x.value, state)
 
+big(x::TracedExpr) = big(x.value)
+iszero(x::TracedExpr) = iszero(x.value)
+isfinite(x::TracedExpr) = isfinite(x.value)
+
 +(lhs::TracedExpr, rhs::TracedExpr) = TracedAdd(lhs, rhs)
 -(lhs::TracedExpr, rhs::TracedExpr) = TracedSub(lhs, rhs)
 *(lhs::TracedExpr, rhs::TracedExpr) = TracedMul(lhs, rhs)
+/(lhs::TracedExpr, rhs::TracedExpr) = TracedDiv(lhs, rhs)
+Base.cos(x::TracedExpr) = TracedCos(x)
+Base.sin(x::TracedExpr) = TracedSin(x)
+Base.sincos(x::TracedExpr) = (TracedSin(x), TracedCos(x))
+Base.sqrt(x::TracedExpr) = TracedSqrt(x)
+Base.one(x::TracedExpr) = TracedConstant(one(x.value))
+# We assume that there's not imaginary nonsense in TracedExpr's, but we also
+# need to implement `conj` in order for `dot` to work.
+Base.conj(x::TracedExpr) = x
+# Base.zero(::Type{TracedExpr}) = TracedConstant(zero(x.value))
 
-# TODO actually respect RoundingMode
-# +(lhs::TracedExpr, rhs::TracedExpr, ::RoundingMode) = TracedAdd(lhs, rhs)
-# *(lhs::TracedExpr, rhs::TracedExpr, ::RoundingMode) = TracedMul(lhs, rhs)
+# This one is a little bit tricky. We can't pass a discontinuous function like
+# rem2pi to NLP solvers.
+Base.rem2pi(x::TracedExpr, rm::RoundingMode) = x - TracedConstant(x.value - rem2pi(x.value, rm))
+
+begin
+  @test (TracedConstant(0.0) + 1.0).value == 1.0
+  @test (1.0 + TracedConstant(0.0)).value == 1.0
+  @test (TracedConstant(0.0) - 1.0).value == -1.0
+  @test (1.0 - TracedConstant(2.0)).value == -1.0
+end
 
 abstract type Constraint end
 # TODO constructors that check worlds are ===
@@ -107,49 +171,56 @@ struct NotEqual <: Constraint
   lhs
   rhs
 end
-function <(lhs::Float64, rhs::TracedExpr)
+# Use `Real` so that we capture Float64 and Irrational types.
+function <(lhs::Real, rhs::TracedExpr)
+  # TODO could we simplify this as follows?
+  # TracedConstant(lhs) < rhs
+
   res = lhs < rhs.value
   push!(rhs.world, (res ? LessThan : GreaterThanOrEq)(TracedConstant(lhs), rhs))
   res
 end
-function <(lhs::TracedExpr, rhs::Float64)
+function <(lhs::TracedExpr, rhs::Real)
   res = lhs.value < rhs
   push!(lhs.world, (res ? LessThan : GreaterThanOrEq)(lhs, TracedConstant(rhs)))
   res
 end
 function <(lhs::TracedExpr, rhs::TracedExpr)
   res = lhs.value < rhs.value
-  push!(lhs.world, (res ? LessThan : GreaterThanOrEq)(lhs, rhs))
+  push!(promote_world(lhs.world, rhs.world), (res ? LessThan : GreaterThanOrEq)(lhs, rhs))
   res
 end
 function isless(lhs::TracedExpr, rhs::TracedExpr)
   res = lhs.value < rhs.value
-  push!(lhs.world, (res ? LessThan : GreaterThanOrEq)(lhs, rhs))
+  push!(promote_world(lhs.world, rhs.world), (res ? LessThan : GreaterThanOrEq)(lhs, rhs))
   res
 end
-function ==(lhs::Float64, rhs::TracedExpr)
+
+function ==(lhs::Real, rhs::TracedExpr)
   res = lhs == rhs.value
   push!(rhs.world, (res ? Equal : NotEqual)(TracedConstant(lhs), rhs))
   res
 end
-function ==(lhs::TracedExpr, rhs::Float64)
+function ==(lhs::TracedExpr, rhs::Real)
   res = lhs.value == rhs
   push!(lhs.world, (res ? Equal : NotEqual)(lhs, TracedConstant(rhs)))
   res
 end
-function <=(lhs::Float64, rhs::TracedExpr)
+# TODO: do we need a version of == for TracedExpr's?
+
+function <=(lhs::Real, rhs::TracedExpr)
   res = lhs <= rhs.value
   push!(rhs.world, (res ? LessThanOrEq : GreaterThan)(TracedConstant(lhs), rhs))
   res
 end
-function <=(lhs::TracedExpr, rhs::Float64)
+function <=(lhs::TracedExpr, rhs::Real)
   res = lhs.value <= rhs
   push!(lhs.world, (res ? LessThanOrEq : GreaterThan)(lhs, TracedConstant(rhs)))
   res
 end
 function <=(lhs::TracedExpr, rhs::TracedExpr)
   res = lhs.value <= rhs.value
-  push!(same_world(lhs, rhs), (res ? LessThanOrEq : GreaterThan)(lhs, rhs))
+  push!(promote_world(lhs.world, rhs.world), (res ? LessThanOrEq : GreaterThan)(lhs, rhs))
   res
 end
 
@@ -180,8 +251,12 @@ interval_eval(_, expr::TracedConstant) = Interval(expr, expr)
 interval_eval(w, expr::TracedLeaf) = Interval(TracedLeaf(w, expr.name * "_lo", expr.value),
                                               TracedLeaf(w, expr.name * "_hi", expr.value))
 interval_eval(w, expr::TracedMul) = interval_eval(w, expr.lhs) * interval_eval(w, expr.rhs)
+interval_eval(w, expr::TracedDiv) = interval_eval(w, expr.lhs) / interval_eval(w, expr.rhs)
 interval_eval(w, expr::TracedAdd) = interval_eval(w, expr.lhs) + interval_eval(w, expr.rhs)
 interval_eval(w, expr::TracedSub) = interval_eval(w, expr.lhs) - interval_eval(w, expr.rhs)
+interval_eval(w, expr::TracedCos) = cos(interval_eval(w, expr.x))
+interval_eval(w, expr::TracedSin) = sin(interval_eval(w, expr.x))
+interval_eval(w, expr::TracedSqrt) = sqrt(interval_eval(w, expr.x))
 
 # TODO this is a hack so that we can create pairs with intervals
 # See
@@ -200,10 +275,16 @@ normalize_constraint(c::GreaterThanOrEq) = c.rhs - c.lhs
 
 quotify(_, expr::TracedConstant) = expr.value
 quotify(env, expr::TracedLeaf) = env[expr.name]
-quotify(env, expr::TracedMul) = :($(quotify(env, expr.lhs)) * $(quotify(env, expr.rhs)))
 quotify(env, expr::TracedAdd) = :($(quotify(env, expr.lhs)) + $(quotify(env, expr.rhs)))
 quotify(env, expr::TracedSub) = :($(quotify(env, expr.lhs)) - $(quotify(env, expr.rhs)))
+quotify(env, expr::TracedMul) = :($(quotify(env, expr.lhs)) * $(quotify(env, expr.rhs)))
+quotify(env, expr::TracedDiv) = :($(quotify(env, expr.lhs)) / $(quotify(env, expr.rhs)))
+quotify(env, expr::TracedCos) = :(cos($(quotify(env, expr.x))))
+quotify(env, expr::TracedSin) = :(sin($(quotify(env, expr.x))))
+quotify(env, expr::TracedSqrt) = :(sqrt($(quotify(env, expr.x))))
 
+# This function isn't really used anywhere, but it can still be handy for
+# debugging, etc.
 eval(_, expr::TracedConstant) = expr.value
 eval(env, expr::TracedLeaf) = env[expr.name]
 eval(env, expr::TracedMul) = eval(env, expr.lhs) * eval(env, expr.rhs)

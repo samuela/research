@@ -3,13 +3,13 @@ struct Box
   maxs
 end
 
-function intersect_boxes(b1::Box, b2::Box)
+function intersect_boxes(b1, b2)
   Box(max.(b1.mins, b2.mins), min.(b1.maxs, b2.maxs))
 end
 
-is_empty(box::Box) = any(box.mins .> box.maxs)
-in_box(box::Box, x) = all(box.mins .<= x) && all(x .<= box.maxs)
-rand_inside(box::Box) = box.mins + (box.maxs - box.mins) .* rand(length(box.mins))
+is_empty(box) = any(box.mins .> box.maxs)
+in_box(box, x) = all(box.mins .<= x) && all(x .<= box.maxs)
+rand_inside(box) = box.mins + (box.maxs - box.mins) .* rand(length(box.mins))
 
 # TODO would performance be better with more type hints? Right now we're getting
 # a buncy of Any's.
