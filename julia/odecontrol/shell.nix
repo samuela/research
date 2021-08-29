@@ -1,18 +1,15 @@
 let
-  # Last updated: 4/26/21. From status.nixos.org.
-  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/32f7980afb5e33f1e078a51e715b9f102f396a69.tar.gz")) {};
-
-  # We can get rid of this once https://github.com/NixOS/nixpkgs/pull/117881 merges.
-  pkgs_with_julia = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/b82a21edaedb1b3687d5dce63a433f56456c80e8.tar.gz")) {};
+  # Last updated: 8/28/21. From status.nixos.org.
+  pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/503209808cd613daed238e21e7a18ffcbeacebe3.tar.gz")) {};
 
   # Rolling updates, not deterministic.
   # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
 in pkgs.mkShell {
-  buildInputs = [
-    pkgs.python3
-    pkgs.python3.pkgs.pip
-    pkgs_with_julia.julia_16
-    pkgs.ffmpeg
+  buildInputs = with pkgs; [
+    python3
+    python3Packages.pip
+    julia_16-bin
+    ffmpeg
   ];
   shellHook = ''
     # Hacks to make taichi work:
