@@ -7,7 +7,7 @@ packages. Run this with `] build`.
 import PyCall: pyimport
 
 # See https://stackoverflow.com/questions/12332975/installing-python-module-within-code and https://gist.github.com/Luthaf/368a23981c8ec095c3eb.
-const PIP_PACKAGES = ["taichi==0.7.12", "matplotlib==3.3.4"]
+const PIP_PACKAGES = ["taichi==0.7.29", "matplotlib==3.3.4"]
 
 sys = pyimport("sys")
 subprocess = pyimport("subprocess")
