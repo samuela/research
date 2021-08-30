@@ -6,10 +6,14 @@ let
   # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
 in pkgs.mkShell {
   buildInputs = with pkgs; [
+    # See https://github.com/NixOS/nixpkgs/issues/66716. Necessary for julia to
+    # be able to download packages.
+    cacert
+
+    ffmpeg
+    julia_16-bin
     python3
     python3Packages.pip
-    julia_16-bin
-    ffmpeg
   ];
   shellHook = ''
     # Hacks to make taichi work:
