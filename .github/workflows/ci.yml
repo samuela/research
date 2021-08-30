@@ -14,13 +14,12 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   odecontrol:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: julia/odecontrol
+        shell: nix-shell --pure --run "sh {0}"
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: actions/checkout@v2
 
@@ -30,7 +29,11 @@ jobs:
 
       - name: Check julia version
         run: julia --eval "using InteractiveUtils; versioninfo()"
-        shell: nix-shell --pure --run "sh {0}"
+
+      - name: Julia instantiate and build
+        run: julia --project --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
+
+      - run: julia --project difftaichi/tests/test_zero_cost_bug.jl
 
   boxes:
     # The type of runner that the job will run on

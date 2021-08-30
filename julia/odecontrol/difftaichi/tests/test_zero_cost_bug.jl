@@ -1,6 +1,4 @@
-"""https://github.com/SciML/DifferentialEquations.jl/issues/681
-
-Currently failing"""
+"""See https://github.com/SciML/DifferentialEquations.jl/issues/681"""
 
 import DifferentialEquations: Tsit5, DynamicalODEProblem, solve
 
@@ -16,21 +14,39 @@ aug_dyn_x(v_aug, x_aug, p, t) = begin
 end
 
 # automatic solver selection => loss = 0.0
-solvealg = nothing
+begin
+    solvealg = nothing
+    sol = solve(
+        DynamicalODEProblem(
+            aug_dyn_v,
+            aug_dyn_x,
+            [0.0; v0],
+            [0.0; x0],
+            (0.0, 1.0),
+        ),
+        solvealg,
+    )
+
+    loss = sol.u[end].x[2][1]
+    @assert loss > 0
+    println(loss)
+end
 
 # Tsit5 => loss > 0.0 (as expected)
-# solvealg = Tsit5()
+begin
+    solvealg = Tsit5()
+    sol = solve(
+        DynamicalODEProblem(
+            aug_dyn_v,
+            aug_dyn_x,
+            [0.0; v0],
+            [0.0; x0],
+            (0.0, 1.0),
+        ),
+        solvealg,
+    )
 
-sol = solve(
-    DynamicalODEProblem(
-        aug_dyn_v,
-        aug_dyn_x,
-        [0.0; v0],
-        [0.0; x0],
-        (0.0, 1.0),
-    ),
-    solvealg,
-)
-
-loss = sol.u[end].x[2][1]
-@assert loss > 0
+    loss = sol.u[end].x[2][1]
+    @assert loss > 0
+    println(loss)
+end
