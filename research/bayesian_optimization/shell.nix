@@ -2,7 +2,7 @@ let
   # Last updated: 8/22/21. Check for new commits at status.nixos.org.
   # pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/14b0f20fa1f56438b74100513c9b1f7c072cf789.tar.gz")) {};
 
-  # Personal scratch repo
+  # Personal scratch repo. Needed to get jax, jaxlib, and botorch. See https://github.com/NixOS/nixpkgs/pull/134894.
   pkgs = import (fetchTarball("https://github.com/samuela/nixpkgs/archive/769ca7e87aebb24ed34cd7a91854ef2ef186f28f.tar.gz")) {};
 
   # Rolling updates, not deterministic.
