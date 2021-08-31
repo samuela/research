@@ -7,7 +7,7 @@ import UnicodePlots: lineplot
 
 v_dynamics(v, x, u) = [0.0]
 x_dynamics(v, x, u) = v
-cost(v, x, u) = 0.0
+cost(v, x, u, t) = 0.0
 policy(v, x, p, t) = 0.0
 toi_affect(v, x, dt) = (-v, -dt * v - x)
 terminal_cost(x) = (x[1] - 0.6) ^ 2
@@ -36,7 +36,7 @@ lineplot(ts, [z.x[1][2] for z in sol.(ts)], title = "v") |> show
 for _ in 1:100
     local sol, pb1 = loss_pullback(v0, x0, zeros(), nothing, Dict())
     xT = sol.solutions[end].u[end].x[2][2:end]
-    local cost, pb2 = Zygote.pullback(terminal_cost, xT)
+    local _cost, pb2 = Zygote.pullback(terminal_cost, xT)
 
     (g_xT, ) = pb2(1.0)
     local g = ([0.0; zero(v0)], [0.0; g_xT])

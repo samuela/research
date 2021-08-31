@@ -78,14 +78,17 @@ function toi_callback(toi)
         if length(ixs) > 0
             (t_ix, condition_ix) = ixs[argmin(map(first, ixs))]
 
-            # See https://github.com/SciML/DiffEqBase.jl/blob/d4973e21ff31dc1d355e84ae2b4c1d3c9546b6b2/src/callbacks.jl#L673.
+            # See https://github.com/SciML/DiffEqBase.jl/blob/df596ee69029daf5014b6580fb64dfaf1cfefa37/src/callbacks.jl#L694
             event_t = DiffEqBase.bisection(
-                (t) -> begin
+                (t, p=nothing) -> begin
                     vx_aug = integrator(t)
                     toi.conditions[condition_ix](vx_aug.x[1][2:end], vx_aug.x[2][2:end])
                 end,
                 (test_times[t_ix], test_times[t_ix + 1]),
-                isone(integrator.tdir)
+                isone(integrator.tdir),
+                DiffEqBase.LeftRootFind,
+                toi.time_epsilon / 2,
+                0.0
             )
 
             # If, on the off chance, event_t - time_epsilon < tprev, this will return an error. Soluton is

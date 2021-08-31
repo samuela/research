@@ -11,7 +11,7 @@ seed!(123)
 d = 3
 v_dynamics(v, x, u) = u
 x_dynamics(v, x, u) = v
-cost(v, x, u) = sum(x .^ 2)
+cost(v, x, u, t) = sum(x .^ 2)
 policy(v, x, p_flat, t) = begin
     p = reshape(p_flat, (d, 2 * d))
     p * [v; x]

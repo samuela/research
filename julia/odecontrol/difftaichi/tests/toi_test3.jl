@@ -8,7 +8,7 @@ import UnicodePlots: lineplot
 n_objects = 2
 v_dynamics(v, x, u) = zeros(n_objects)
 x_dynamics(v, x, u) = v
-cost(v, x, u) = 0
+cost(v, x, u, t) = 0
 policy(v, x, t, p) = 0
 toi_affect(old_v, old_x, dt) = begin
     # We want to make sure that we only register for negative velocities.

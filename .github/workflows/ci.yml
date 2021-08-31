@@ -34,6 +34,17 @@ jobs:
         run: julia --project --eval "using Pkg; Pkg.instantiate(); Pkg.build()"
 
       - run: julia --project difftaichi/tests/test_zero_cost_bug.jl
+      - run: julia --project difftaichi/tests/toi_test1.jl
+      - run: julia --project difftaichi/tests/toi_test2.jl
+      - run: julia --project difftaichi/tests/toi_test3.jl
+      - run: julia --project difftaichi/tests/toi_test4.jl
+      - run: julia --project difftaichi/tests/toi_test5.jl
+      - run: julia --project difftaichi/tests/toi_test6.jl
+      - run: julia --project difftaichi/tests/toi_test7.jl
+      - run: julia --project difftaichi/tests/toi_test8.jl
+      - run: julia --project difftaichi/tests/toi_test9.jl
+      - run: julia --project difftaichi/tests/toi_test10.jl
+      - run: julia --project difftaichi/tests/toi_test11.jl
 
   boxes:
     # The type of runner that the job will run on

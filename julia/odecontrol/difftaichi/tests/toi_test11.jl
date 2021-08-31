@@ -7,7 +7,7 @@ import UnicodePlots: lineplot
 
 v_dynamics(v, x, u) = [0.0]
 x_dynamics(v, x, u) = v
-cost(v, x, u) = 0.0
+cost(v, x, u, t) = 0.0
 policy(v, x, p, t) = 0.0
 terminal_cost(x) = (x[1] - 0.6) ^ 2
 

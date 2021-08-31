@@ -8,7 +8,7 @@ import UnicodePlots: lineplot
 gravity = -9.8
 v_dynamics(v, x, u) = [gravity]
 x_dynamics(v, x, u) = v
-cost(v, x, u) = 0.0
+cost(v, x, u, t) = 0.0
 policy(v, x, t, p) = 0.0
 toi_affect(v, x, dt) = (-v, -dt * v - x)
 terminal_cost(x) = (x[1] - 5) ^ 2
