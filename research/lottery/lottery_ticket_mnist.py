@@ -18,6 +18,7 @@ from jax.experimental import optimizers, stax
 from jax.experimental.stax import Dense, LogSoftmax, Relu, Tanh
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map
+from tqdm import tqdm
 
 import jax_examples_datasets as datasets
 import wandb
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     itercount = itertools.count()
     batches = data_stream()
     start_time = time.time()
-    for epoch in range(config.num_epochs):
+    for epoch in tqdm(range(config.num_epochs)):
       for _ in range(num_batches):
         step = next(itercount)
         opt_state, batch_loss = update(step, opt_state, next(batches), mask)
@@ -105,11 +106,11 @@ if __name__ == "__main__":
       test_loss = loss(params, (test_images, test_labels))
       train_acc = accuracy(params, (train_images, train_labels))
       test_acc = accuracy(params, (test_images, test_labels))
-      print("Epoch {}".format(epoch))
-      print("  Train loss            {}".format(train_loss))
-      print("  Test loss             {}".format(test_loss))
-      print("  Training set accuracy {}".format(train_acc))
-      print("  Test set accuracy     {}".format(test_acc))
+      # print("Epoch {}".format(epoch))
+      # print("  Train loss            {}".format(train_loss))
+      # print("  Test loss             {}".format(test_loss))
+      # print("  Training set accuracy {}".format(train_acc))
+      # print("  Test set accuracy     {}".format(test_acc))
 
       wandb.log({
           f"{log_prefix}/train_loss": train_loss,
@@ -125,21 +126,20 @@ if __name__ == "__main__":
 
   print("Training normal model...")
   everything_mask = tree_map(lambda x: jnp.ones_like(x, dtype=jnp.dtype("bool")), init_params)
-  final_params = train(init_params, everything_mask, "original")
-
-  # Calculate lottery ticket mask
-  final_params_flat, unravel = ravel_pytree(final_params)
+  final_params = train(init_params, everything_mask, "no_mask")
 
   # Mask as was implemented in the original paper
+  print("Training lottery ticket model...")
+  final_params_flat, unravel = ravel_pytree(final_params)
   cutoff = jnp.percentile(jnp.abs(final_params_flat), config.remove_percentile)
-  mask_flat = jnp.abs(final_params_flat) > cutoff
-
-  # Totally random mask
-  # mask_flat = random.uniform(rp.poop(), final_params_flat.shape) > config.remove_percentile / 100
-
-  mask = unravel(mask_flat)
+  mask = unravel(jnp.abs(final_params_flat) > cutoff)
   # See https://github.com/google/jax/issues/7809.
   mask = tree_map(lambda x: x > 0.5, mask)
+  train(init_params, mask, "lottery_mask")
 
-  # print("Training lottery ticket model...")
-  train(init_params, mask, "lottery")
+  # Totally random mask
+  print("Training random mask model...")
+  mask = unravel(
+      random.uniform(rp.poop(), final_params_flat.shape) > config.remove_percentile / 100)
+  mask = tree_map(lambda x: x > 0.5, mask)
+  train(init_params, mask, "random_mask")

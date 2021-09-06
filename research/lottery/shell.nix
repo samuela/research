@@ -14,10 +14,8 @@ in pkgs.mkShell {
     python3Packages.jax
     (python3Packages.jaxlib.override { cudaSupport = true; })
     python3Packages.matplotlib
+    python3Packages.tqdm
     python3Packages.wandb
     yapf
   ];
-
-  # See https://github.com/google/jax/issues/5723#issuecomment-913038780
-  XLA_FLAGS = "--xla_gpu_force_compilation_parallelism=1";
 }
