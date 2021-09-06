@@ -24,6 +24,9 @@ import jax_examples_datasets as datasets
 import wandb
 from utils import RngPooper
 
+def l1prox(x, alpha):
+  return jnp.sign(x) * jnp.maximum(0, jnp.abs(x) - alpha)
+
 def loss(params, batch):
   inputs, targets = batch
   preds = predict(params, inputs)
@@ -102,27 +105,20 @@ if __name__ == "__main__":
         })
 
       params = get_params(opt_state)
-      train_loss = loss(params, (train_images, train_labels))
-      test_loss = loss(params, (test_images, test_labels))
-      train_acc = accuracy(params, (train_images, train_labels))
-      test_acc = accuracy(params, (test_images, test_labels))
-      # print("Epoch {}".format(epoch))
-      # print("  Train loss            {}".format(train_loss))
-      # print("  Test loss             {}".format(test_loss))
-      # print("  Training set accuracy {}".format(train_acc))
-      # print("  Test set accuracy     {}".format(test_acc))
-
       wandb.log({
-          f"{log_prefix}/train_loss": train_loss,
-          f"{log_prefix}/test_loss": test_loss,
-          f"{log_prefix}/train_accuracy": train_acc,
-          f"{log_prefix}/test_accuracy": test_acc,
+          f"{log_prefix}/train_loss": loss(params, (train_images, train_labels)),
+          f"{log_prefix}/test_loss": loss(params, (test_images, test_labels)),
+          f"{log_prefix}/train_accuracy": accuracy(params, (train_images, train_labels)),
+          f"{log_prefix}/test_accuracy": accuracy(params, (test_images, test_labels)),
           "step": step,
           "epoch": epoch,
           "wallclock": time.time() - start_time
       })
 
     return get_params(opt_state)
+
+  # See https://github.com/google/jax/issues/7809.
+  binarize = lambda arr: tree_map(lambda x: x > 0.5, arr)
 
   print("Training normal model...")
   everything_mask = tree_map(lambda x: jnp.ones_like(x, dtype=jnp.dtype("bool")), init_params)
@@ -132,14 +128,24 @@ if __name__ == "__main__":
   print("Training lottery ticket model...")
   final_params_flat, unravel = ravel_pytree(final_params)
   cutoff = jnp.percentile(jnp.abs(final_params_flat), config.remove_percentile)
-  mask = unravel(jnp.abs(final_params_flat) > cutoff)
-  # See https://github.com/google/jax/issues/7809.
-  mask = tree_map(lambda x: x > 0.5, mask)
+  mask = binarize(unravel(jnp.abs(final_params_flat) > cutoff))
   train(init_params, mask, "lottery_mask")
+
+  print("Training lottery ticket sign model...")
+  # The lottery ticket mask but instead of using the initial weights, just use
+  # the sign of the initial weights.
+  mask = binarize(unravel(jnp.abs(final_params_flat) > cutoff))
+  w0 = tree_map(lambda x, m: 0.01 * jnp.sign(x) * m, final_params, mask)
+  train(w0, mask, "lottery_sign_mask")
 
   # Totally random mask
   print("Training random mask model...")
-  mask = unravel(
-      random.uniform(rp.poop(), final_params_flat.shape) > config.remove_percentile / 100)
-  mask = tree_map(lambda x: x > 0.5, mask)
+  mask = binarize(
+      unravel(random.uniform(rp.poop(), final_params_flat.shape) > config.remove_percentile / 100))
   train(init_params, mask, "random_mask")
+
+  # "Proximal" mask
+  print("Training proximal mask model...")
+  w0 = tree_map(lambda x: l1prox(x, cutoff), final_params)
+  mask = binarize(unravel(jnp.abs(final_params_flat) > cutoff))
+  train(w0, mask, "proximal")
