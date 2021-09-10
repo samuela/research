@@ -22,10 +22,7 @@ from tqdm import tqdm
 
 import jax_examples_datasets as datasets
 import wandb
-from utils import RngPooper
-
-def l1prox(x, alpha):
-  return jnp.sign(x) * jnp.maximum(0, jnp.abs(x) - alpha)
+from utils import RngPooper, l1prox
 
 def loss(params, batch):
   inputs, targets = batch

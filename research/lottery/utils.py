@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from jax import random
 
 class RngPooper:
@@ -8,3 +9,6 @@ class RngPooper:
   def poop(self):
     self.rng, rng_key = random.split(self.rng)
     return rng_key
+
+def l1prox(x, alpha):
+  return jnp.sign(x) * jnp.maximum(0, jnp.abs(x) - alpha)
