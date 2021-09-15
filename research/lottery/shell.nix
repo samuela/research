@@ -3,14 +3,15 @@ let
   # pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/14b0f20fa1f56438b74100513c9b1f7c072cf789.tar.gz")) {};
 
   # Personal scratch repo. Needed to get jax, jaxlib. See https://github.com/NixOS/nixpkgs/pull/134894.
-  pkgs = import (fetchTarball("https://github.com/samuela/nixpkgs/archive/0d04b5d087222d2e1a2f2370004995c07e88375a.tar.gz")) {};
+  pkgs = import (fetchTarball ("https://github.com/samuela/nixpkgs/archive/607934fba6f291bffbfe3ab4d633e7f57e974c5e.tar.gz")) { };
 
   # Rolling updates, not deterministic.
   # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
-in pkgs.mkShell {
+in
+pkgs.mkShell {
   buildInputs = with pkgs; [
     python3
-    python3Packages.haiku
+    python3Packages.flax
     python3Packages.ipython
     python3Packages.jax
     (python3Packages.jaxlib.override { cudaSupport = true; })
