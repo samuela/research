@@ -1,10 +1,9 @@
 """TODO:
-* implement "gains" module
 * implement L1 prox operator
 """
 import itertools
 import time
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 import flax
 import jax.numpy as jnp
@@ -52,14 +51,30 @@ def merge_params(a, b):
       traverse_util.unflatten_dict({tuple(k.split("/")): v
                                     for k, v in combined_params.items()}))
 
+class OGDense(nn.Module):
+  features: int
+  activation: Callable = nn.relu
+
+  @nn.compact
+  def __call__(self, x):
+    gain = self.param("gain", lambda rng, shape: random.choice(rng, jnp.array([-1.0, 1.0]), shape),
+                      (self.features, ))
+
+    x = nn.Dense(self.features)(x)
+    x = self.activation(x)
+    x = gain * x
+    return x
+
 class _net(nn.Module):
   @nn.compact
   def __call__(self, x):
-    x = nn.Dense(1024)(x)
-    x = nn.relu(x)
-    x = nn.Dense(1024)(x)
-    x = nn.relu(x)
-    x = nn.Dense(10)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(2048)(x)
+    x = OGDense(10, activation=lambda x: x)(x)
     x = nn.log_softmax(x)
     return x
 
@@ -164,15 +179,10 @@ if __name__ == "__main__":
   print("Training normal model...")
   train(random.PRNGKey(0), trainable_predicate=lambda k: True, log_prefix="normal")
 
-  print("Training only weights model...")
+  print("Training only gains model...")
   train(random.PRNGKey(0),
-        trainable_predicate=lambda k: k.endswith("/kernel"),
-        log_prefix="only_weights")
-
-  print("Training only biases model...")
-  train(random.PRNGKey(0),
-        trainable_predicate=lambda k: k.endswith("/bias"),
-        log_prefix="only_biases")
+        trainable_predicate=lambda k: k.endswith("/gain"),
+        log_prefix="only_gain")
 
   # print("Training L1 gain with dense_gradients model...")
   # final_params = train(random.PRNGKey(0),
