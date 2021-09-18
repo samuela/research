@@ -68,13 +68,13 @@ class OGDense(nn.Module):
 class _net(nn.Module):
   @nn.compact
   def __call__(self, x):
+    x = OGDense(2048, name="first")(x)
     x = OGDense(2048)(x)
     x = OGDense(2048)(x)
     x = OGDense(2048)(x)
     x = OGDense(2048)(x)
     x = OGDense(2048)(x)
-    x = OGDense(2048)(x)
-    x = OGDense(10, activation=lambda x: x)(x)
+    x = OGDense(10, activation=lambda x: x, name="last")(x)
     x = nn.log_softmax(x)
     return x
 
@@ -183,6 +183,16 @@ if __name__ == "__main__":
   train(random.PRNGKey(0),
         trainable_predicate=lambda k: k.endswith("/gain"),
         log_prefix="only_gain")
+
+  print("Training gains+first model...")
+  train(random.PRNGKey(0),
+        trainable_predicate=lambda k: k.endswith("/gain") or "/first/" in k,
+        log_prefix="gain_and_first")
+
+  print("Training gains+last model...")
+  train(random.PRNGKey(0),
+        trainable_predicate=lambda k: k.endswith("/gain") or "/last/" in k,
+        log_prefix="gain_and_last")
 
   # print("Training L1 gain with dense_gradients model...")
   # final_params = train(random.PRNGKey(0),
