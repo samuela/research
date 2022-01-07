@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 import jax_examples_datasets as datasets
 import wandb
-from utils import RngPooper, l1prox
+from utils import RngPooper, ec2_get_instance_type, l1prox
 
 def partition(pred, iterable):
   trues = []
@@ -80,6 +80,9 @@ assert kmatch("**/*", "abc/def/ghi/jkl").group(1) == "abc/def/ghi"
 assert kmatch("**/*", "abc/def/ghi/jkl").group(2) == "jkl"
 
 class OGDense(nn.Module):
+  """An "only-gains" layer. This wraps a standard dense layer, applies an
+  activation function, and then element-wise multiplies the output by a gain
+  vector. The gain values are initialized to +/-1."""
   features: int
   activation: Callable = nn.relu
 
@@ -94,6 +97,8 @@ class OGDense(nn.Module):
     return x
 
 def make_net(layer_features):
+  """Create a flax.linen Module with a "first" layer, some number of
+  intermediate layers, and a "last" layer."""
   first, *rest = layer_features
 
   class _net(nn.Module):
@@ -108,12 +113,11 @@ def make_net(layer_features):
 
   return _net()
 
-net = make_net([2048] * 6)
-
 if __name__ == "__main__":
   wandb.init(project="playing-the-lottery", entity="skainswo")
 
   config = wandb.config
+  config.ec2_instance_type = ec2_get_instance_type()
   config.learning_rate = 0.001
   config.num_epochs = 100
   config.batch_size = 128
@@ -210,6 +214,7 @@ if __name__ == "__main__":
   binarize = lambda arr: tree_map(lambda x: x > 0.5, arr)
 
   print("Training normal model...")
+  # Train all weights.
   net = make_net([2048] * 6)
   train(net,
         init_params=net.init(random.PRNGKey(0), jnp.zeros((1, 28 * 28))),
@@ -217,6 +222,7 @@ if __name__ == "__main__":
         log_prefix="normal")
 
   print("Training only gains model...")
+  # Train only gains, keeping all other weights fixed.
   net = make_net([2048] * 6)
   only_gains_final_params = train(net,
                                   init_params=net.init(random.PRNGKey(0), jnp.zeros((1, 28 * 28))),
@@ -228,10 +234,17 @@ if __name__ == "__main__":
   gain_params = {k: v for k, v in only_gains_final_params_flat.items() if kmatch("**/gain", k)}
   gain_params_flat, unravel = ravel_pytree(gain_params)
   cutoff = jnp.percentile(jnp.abs(gain_params_flat), config.remove_percentile)
+  # A mask that identifies only those gains that have the largest absolute
+  # value. Only keep the top `(100 - config.remove_percentile)%` gains. Note
+  # that this isn't the traditional LTH approach. It's more accurately described
+  # as a structural lottery ticket.
   gain_mask = binarize(unravel(jnp.abs(gain_params_flat) > cutoff))
   print(tree_map(jnp.sum, gain_mask))
 
   def _lotteryify(k, v):
+    """Take a parameter (key, value pair) and return a new parameter value with
+    only the units in the `gain_mask` retained. This requires removing rows and
+    columns across weight matrices in adjacent layers."""
     if kmatch("**/gain", k):
       return v[gain_mask[k]]
 
@@ -268,13 +281,15 @@ if __name__ == "__main__":
     else:
       raise ValueError(f"Unknown key: {k}")
 
+  # TODO: Shouldn't this be only_gains_init_params_flat instead of the final ones?
   lottery_init_params = unflatten_params(
       {k: _lotteryify(k, v)
        for k, v in only_gains_final_params_flat.items()})
-  print("  lottery params:")
+  print("  lottery ticket param shapes:")
   shapes = tree_map(jnp.shape, flatten_params(lottery_init_params))
   print(shapes)
 
+  print("  structured LTH, train all params...")
   # See https://github.com/google/flax/discussions/1555.
   net = make_net([shapes["params/first/gain"][0]] +
                  [shapes[f"params/OGDense_{i}/gain"][0] for i in range(len(gain_params) - 1)])
@@ -283,7 +298,16 @@ if __name__ == "__main__":
         trainable_predicate=lambda k: True,
         log_prefix="only_gain_lottery")
 
+  print("  lottery ticket model, random params:")
+  # Like the structured LTH model, but with random initial parameters instead of
+  # initial parameters starting from the final values of the only-gain training.
+  train(net,
+        init_params=net.init(random.PRNGKey(0), jnp.zeros((1, 28 * 28))),
+        trainable_predicate=lambda k: True,
+        log_prefix="lottery_model_random_init")
+
   print("Training gains+first model...")
+  # Random initial parameters, only train the gain terms and the first layer.
   net = make_net([2048] * 6)
   gains_and_first_final_params = train(
       net,
@@ -292,6 +316,7 @@ if __name__ == "__main__":
       log_prefix="gain_and_first")
 
   print("Training gains+last model...")
+  # Random initial parameters, only train the gain terms and the last layer.
   net = make_net([2048] * 6)
   gains_and_last_final_params = train(
       net,

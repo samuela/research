@@ -12,3 +12,7 @@ class RngPooper:
 
 def l1prox(x, alpha):
   return jnp.sign(x) * jnp.maximum(0, jnp.abs(x) - alpha)
+
+def ec2_get_instance_type():
+  # See also https://stackoverflow.com/questions/51486405/aws-ec2-command-line-display-instance-type/51486782
+  return open("/sys/devices/virtual/dmi/id/product_name").read().strip()
