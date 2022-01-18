@@ -1,6 +1,7 @@
 let
-  # Last updated: 8/22/21. Check for new commits at status.nixos.org.
-  # pkgs = import (fetchTarball("https://github.com/NixOS/nixpkgs/archive/14b0f20fa1f56438b74100513c9b1f7c072cf789.tar.gz")) {};
+  # Last updated: 1/6/2022. Check for new commits at status.nixos.org.
+  # Can't use mainline until https://github.com/NixOS/nixpkgs/pull/153761 lands.
+  # pkgs = import (fetchTarball ("https://github.com/NixOS/nixpkgs/archive/77fda7f672726e1a95c8cd200f27bccfc86c870b.tar.gz")) { };
 
   # Personal scratch repo. Needed to get jax, jaxlib. See https://github.com/NixOS/nixpkgs/pull/134894.
   pkgs = import (fetchTarball ("https://github.com/samuela/nixpkgs/archive/72a96723ae1f7e3c7a7fa486e5c9160b4145d58a.tar.gz")) { };

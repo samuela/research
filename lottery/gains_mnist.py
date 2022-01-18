@@ -101,6 +101,7 @@ def make_net(layer_features):
   intermediate layers, and a "last" layer."""
   first, *rest = layer_features
 
+  # Note: this is not missing activations since those happen in `OGDense`.
   class _net(nn.Module):
     @nn.compact
     def __call__(self, x):
