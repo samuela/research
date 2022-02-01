@@ -1,5 +1,4 @@
-import time
-from contextlib import contextmanager
+import sys
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -11,22 +10,13 @@ from jax import jit, random, tree_map, value_and_grad
 from tqdm import tqdm
 
 import wandb
-from utils import RngPooper, ec2_get_instance_type
+from utils import RngPooper, ec2_get_instance_type, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
 
-@contextmanager
-def timeblock(name):
-  start = time.time()
-  try:
-    yield
-  finally:
-    end = time.time()
-    print(f"{name} took {end - start:.5f} seconds")
-
 config = wandb.config
 config.ec2_instance_type = ec2_get_instance_type()
-config.smoke_test = False
+config.smoke_test = "--test" in sys.argv
 config.learning_rate = 0.001
 config.num_epochs = 10 if config.smoke_test else 100
 config.batch_size = 7 if config.smoke_test else 1024
