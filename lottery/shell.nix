@@ -1,13 +1,35 @@
 let
-  # Last updated: 1/6/2022. Check for new commits at status.nixos.org.
-  # Can't use mainline until https://github.com/NixOS/nixpkgs/pull/153761 lands.
-  # pkgs = import (fetchTarball ("https://github.com/NixOS/nixpkgs/archive/77fda7f672726e1a95c8cd200f27bccfc86c870b.tar.gz")) { };
+  # Last updated: 1/27/2022. Check for new commits at status.nixos.org.
+  # pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/83ab260bbe7e4c27bb1f467ada0265ba13bbeeb0.tar.gz") { };
+  # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
-  # Personal scratch repo. Needed to get jax, jaxlib. See https://github.com/NixOS/nixpkgs/pull/134894.
-  pkgs = import (fetchTarball ("https://github.com/samuela/nixpkgs/archive/72a96723ae1f7e3c7a7fa486e5c9160b4145d58a.tar.gz")) { };
-
-  # Rolling updates, not deterministic.
-  # pkgs = import (fetchTarball("channel:nixpkgs-unstable")) {};
+  # See https://nixos.wiki/wiki/FAQ/Pinning_Nixpkgs.
+  pkgs =
+    let
+      unstablePkgsSrc = fetchTarball "https://github.com/NixOS/nixpkgs/archive/376934f4b7ca6910b243be5fabcf3f4228043725.tar.gz";
+      unstablePkgs = import unstablePkgsSrc { };
+      patches = [
+        # For example,
+        # (unstablePkgs.fetchpatch {
+        #   url = "https://github.com/NixOS/nixpkgs/pull/157055.patch";
+        #   sha256 = "05sgxajdka9k1np0clsdl3i9iil4hbkc5zkzp09dv7c2fv545wmi";
+        # })
+      ];
+      patchedPkgsSrc =
+        if (builtins.length patches == 0) then
+          unstablePkgsSrc else
+          unstablePkgs.runCommand "patched-nixpkgs"
+            { inherit unstablePkgsSrc; inherit patches; }
+            ''
+              cp -r $unstablePkgsSrc $out
+              chmod -R +w $out
+              for p in $patches; do
+                echo "Applying patch $p";
+                patch -d $out -p1 < "$p";
+              done
+            '';
+    in
+    import patchedPkgsSrc { };
 in
 pkgs.mkShell {
   buildInputs = with pkgs; [
@@ -15,8 +37,11 @@ pkgs.mkShell {
     python3Packages.flax
     python3Packages.ipython
     python3Packages.jax
-    (python3Packages.jaxlib.override { cudaSupport = true; })
+    python3Packages.jaxlibWithCuda
     python3Packages.matplotlib
+    python3Packages.plotly
+    python3Packages.tensorflowWithCuda
+    python3Packages.tensorflow-datasets
     python3Packages.tqdm
     python3Packages.wandb
     yapf
