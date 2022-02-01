@@ -10,6 +10,7 @@ from jax import jit, random, tree_map, value_and_grad
 from tqdm import tqdm
 
 import wandb
+from permutations import permutify
 from utils import RngPooper, ec2_get_instance_type, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
@@ -18,7 +19,7 @@ config = wandb.config
 config.ec2_instance_type = ec2_get_instance_type()
 config.smoke_test = "--test" in sys.argv
 config.learning_rate = 0.001
-config.num_epochs = 10 if config.smoke_test else 100
+config.num_epochs = 10 if config.smoke_test else 50
 config.batch_size = 7 if config.smoke_test else 1024
 
 wandb.init(project="playing-the-lottery",
@@ -105,11 +106,32 @@ def dataset_loss(params, ds):
 def dataset_total_correct(params, ds):
   return jnp.sum(jnp.array([batch_num_correct(params, x, y) for x, y in ds]))
 
-def plot_interp_loss(epoch, lambdas, train_loss_interp, test_loss_interp):
+def plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
+                     train_loss_interp_clever, test_loss_interp_clever):
   fig = plt.figure()
   ax = fig.add_subplot(111)
-  ax.plot(lambdas, train_loss_interp, label="Train")
-  ax.plot(lambdas, test_loss_interp, label="Test")
+  ax.plot(lambdas,
+          train_loss_interp_naive,
+          linestyle="dashed",
+          color="tab:blue",
+          alpha=0.5,
+          label="Train, naïve interp.")
+  ax.plot(lambdas,
+          test_loss_interp_naive,
+          linestyle="dashed",
+          color="tab:orange",
+          alpha=0.5,
+          label="Test, naïve interp.")
+  ax.plot(lambdas,
+          train_loss_interp_clever,
+          linestyle="solid",
+          color="tab:blue",
+          label="Train, permuted interp.")
+  ax.plot(lambdas,
+          test_loss_interp_clever,
+          linestyle="solid",
+          color="tab:orange",
+          label="Test, permuted interp.")
   ax.set_xlabel("$\lambda$")
   ax.set_ylabel("Loss")
   # TODO label x=0 tick as \theta_1, and x=1 tick as \theta_2
@@ -118,11 +140,32 @@ def plot_interp_loss(epoch, lambdas, train_loss_interp, test_loss_interp):
   fig.tight_layout()
   return fig
 
-def plot_interp_acc(epoch, lambdas, train_acc_interp, test_acc_interp):
+def plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
+                    train_acc_interp_clever, test_acc_interp_clever):
   fig = plt.figure()
   ax = fig.add_subplot(111)
-  ax.plot(lambdas, train_acc_interp, label="Train")
-  ax.plot(lambdas, test_acc_interp, label="Test")
+  ax.plot(lambdas,
+          train_acc_interp_naive,
+          linestyle="dashed",
+          color="tab:blue",
+          alpha=0.5,
+          label="Train, naïve interp.")
+  ax.plot(lambdas,
+          test_acc_interp_naive,
+          linestyle="dashed",
+          color="tab:orange",
+          alpha=0.5,
+          label="Test, naïve interp.")
+  ax.plot(lambdas,
+          train_acc_interp_clever,
+          linestyle="solid",
+          color="tab:blue",
+          label="Train, permuted interp.")
+  ax.plot(lambdas,
+          test_acc_interp_clever,
+          linestyle="solid",
+          color="tab:orange",
+          label="Test, permuted interp.")
   ax.set_xlabel("$\lambda$")
   ax.set_ylabel("Accuracy")
   # TODO label x=0 tick as \theta_1, and x=1 tick as \theta_2
@@ -146,38 +189,59 @@ for epoch in tqdm(range(config.num_epochs)):
         train_ds.shuffle(num_train_examples, seed=hash(f"{epoch}-2")).batch(config.batch_size)):
       params2, opt_state2, loss2 = step(opt_state2, params2, images, labels)
 
-  # TODO
-  # - optimal matching algorithm
   train_ds_batched = tfds.as_numpy(train_ds.batch(config.batch_size))
   test_ds_batched = tfds.as_numpy(test_ds.batch(config.batch_size))
 
   # This is inclusive on both ends.
   lambdas = jnp.linspace(0, 1, num=10)
 
-  def interp(lam):
+  params2_permuted = permutify(params1, params2)
+
+  def interp_naive(lam):
     return tree_map(lambda a, b: b * lam + a * (1 - lam), params1, params2)
 
+  def interp_clever(lam):
+    return tree_map(lambda a, b: b * lam + a * (1 - lam), params1, params2_permuted)
+
   with timeblock("Interpolation plot"):
-    train_loss_interp = jnp.array([dataset_loss(interp(l), train_ds_batched) for l in lambdas])
-    test_loss_interp = jnp.array([dataset_loss(interp(l), test_ds_batched) for l in lambdas])
-    train_acc_interp = jnp.array(
-        [dataset_total_correct(interp(l), train_ds_batched) for l in lambdas]) / num_train_examples
-    test_acc_interp = jnp.array(
-        [dataset_total_correct(interp(l), test_ds_batched) for l in lambdas]) / num_test_examples
+    train_loss_interp_naive = jnp.array(
+        [dataset_loss(interp_naive(l), train_ds_batched) for l in lambdas])
+    test_loss_interp_naive = jnp.array(
+        [dataset_loss(interp_naive(l), test_ds_batched) for l in lambdas])
+    train_acc_interp_naive = jnp.array(
+        [dataset_total_correct(interp_naive(l), train_ds_batched)
+         for l in lambdas]) / num_train_examples
+    test_acc_interp_naive = jnp.array(
+        [dataset_total_correct(interp_naive(l), test_ds_batched)
+         for l in lambdas]) / num_test_examples
+
+    train_loss_interp_clever = jnp.array(
+        [dataset_loss(interp_clever(l), train_ds_batched) for l in lambdas])
+    test_loss_interp_clever = jnp.array(
+        [dataset_loss(interp_clever(l), test_ds_batched) for l in lambdas])
+    train_acc_interp_clever = jnp.array(
+        [dataset_total_correct(interp_clever(l), train_ds_batched)
+         for l in lambdas]) / num_train_examples
+    test_acc_interp_clever = jnp.array(
+        [dataset_total_correct(interp_clever(l), test_ds_batched)
+         for l in lambdas]) / num_test_examples
 
   # These are redundant with the full arrays above, but we want pretty plots in
   # wandb.
-  train_loss1 = train_loss_interp[0]
-  train_loss2 = train_loss_interp[-1]
-  test_loss1 = test_loss_interp[0]
-  test_loss2 = test_loss_interp[-1]
-  train_acc1 = train_acc_interp[0]
-  train_acc2 = train_acc_interp[-1]
-  test_acc1 = test_acc_interp[0]
-  test_acc2 = test_acc_interp[-1]
+  train_loss1 = train_loss_interp_naive[0]
+  train_loss2 = train_loss_interp_naive[-1]
+  test_loss1 = test_loss_interp_naive[0]
+  test_loss2 = test_loss_interp_naive[-1]
+  train_acc1 = train_acc_interp_naive[0]
+  train_acc2 = train_acc_interp_naive[-1]
+  test_acc1 = test_acc_interp_naive[0]
+  test_acc2 = test_acc_interp_naive[-1]
 
-  interp_loss_plot = plot_interp_loss(epoch, lambdas, train_loss_interp, test_loss_interp)
-  interp_acc_plot = plot_interp_acc(epoch, lambdas, train_acc_interp, test_acc_interp)
+  interp_loss_plot = plot_interp_loss(epoch, lambdas, train_loss_interp_naive,
+                                      test_loss_interp_naive, train_loss_interp_clever,
+                                      test_loss_interp_clever)
+  interp_acc_plot = plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
+                                    train_acc_interp_clever, test_acc_interp_clever)
   wandb.log({
       "epoch": epoch,
       "train_loss1": train_loss1,
@@ -188,10 +252,14 @@ for epoch in tqdm(range(config.num_epochs)):
       "test_loss2": test_loss2,
       "test_acc1": test_acc1,
       "test_acc2": test_acc2,
-      "train_loss_interp": train_loss_interp,
-      "test_loss_interp": test_loss_interp,
-      "train_acc_interp": train_acc_interp,
-      "test_acc_interp": test_acc_interp,
+      "train_loss_interp_naive": train_loss_interp_naive,
+      "test_loss_interp_naive": test_loss_interp_naive,
+      "train_acc_interp_naive": train_acc_interp_naive,
+      "test_acc_interp_naive": test_acc_interp_naive,
+      "train_loss_interp_clever": train_loss_interp_clever,
+      "test_loss_interp_clever": test_loss_interp_clever,
+      "train_acc_interp_clever": train_acc_interp_clever,
+      "test_acc_interp_clever": test_acc_interp_clever,
       "interp_loss_plot": wandb.Image(interp_loss_plot),
       "interp_acc_plot": wandb.Image(interp_acc_plot),
   })

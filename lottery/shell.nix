@@ -33,6 +33,7 @@ let
 in
 pkgs.mkShell {
   buildInputs = with pkgs; [
+    ffmpeg
     python3
     python3Packages.flax
     python3Packages.ipython
