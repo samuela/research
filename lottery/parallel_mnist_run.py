@@ -1,7 +1,6 @@
 import sys
 
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
@@ -10,6 +9,7 @@ from jax import jit, random, tree_map, value_and_grad
 from tqdm import tqdm
 
 import wandb
+from parallel_mnist_plots import plot_interp_acc, plot_interp_loss
 from permutations import permutify
 from utils import RngPooper, ec2_get_instance_type, timeblock
 
@@ -106,74 +106,6 @@ def dataset_loss(params, ds):
 def dataset_total_correct(params, ds):
   return jnp.sum(jnp.array([batch_num_correct(params, x, y) for x, y in ds]))
 
-def plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
-                     train_loss_interp_clever, test_loss_interp_clever):
-  fig = plt.figure()
-  ax = fig.add_subplot(111)
-  ax.plot(lambdas,
-          train_loss_interp_naive,
-          linestyle="dashed",
-          color="tab:blue",
-          alpha=0.5,
-          label="Train, naïve interp.")
-  ax.plot(lambdas,
-          test_loss_interp_naive,
-          linestyle="dashed",
-          color="tab:orange",
-          alpha=0.5,
-          label="Test, naïve interp.")
-  ax.plot(lambdas,
-          train_loss_interp_clever,
-          linestyle="solid",
-          color="tab:blue",
-          label="Train, permuted interp.")
-  ax.plot(lambdas,
-          test_loss_interp_clever,
-          linestyle="solid",
-          color="tab:orange",
-          label="Test, permuted interp.")
-  ax.set_xlabel("$\lambda$")
-  ax.set_ylabel("Loss")
-  # TODO label x=0 tick as \theta_1, and x=1 tick as \theta_2
-  ax.set_title(f"Loss landscape between the two models (epoch {epoch})")
-  ax.legend(loc="upper right", framealpha=0.5)
-  fig.tight_layout()
-  return fig
-
-def plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
-                    train_acc_interp_clever, test_acc_interp_clever):
-  fig = plt.figure()
-  ax = fig.add_subplot(111)
-  ax.plot(lambdas,
-          train_acc_interp_naive,
-          linestyle="dashed",
-          color="tab:blue",
-          alpha=0.5,
-          label="Train, naïve interp.")
-  ax.plot(lambdas,
-          test_acc_interp_naive,
-          linestyle="dashed",
-          color="tab:orange",
-          alpha=0.5,
-          label="Test, naïve interp.")
-  ax.plot(lambdas,
-          train_acc_interp_clever,
-          linestyle="solid",
-          color="tab:blue",
-          label="Train, permuted interp.")
-  ax.plot(lambdas,
-          test_acc_interp_clever,
-          linestyle="solid",
-          color="tab:orange",
-          label="Test, permuted interp.")
-  ax.set_xlabel("$\lambda$")
-  ax.set_ylabel("Accuracy")
-  # TODO label x=0 tick as \theta_1, and x=1 tick as \theta_2
-  ax.set_title(f"Accuracy between the two models (epoch {epoch})")
-  ax.legend(loc="upper right", framealpha=0.5)
-  fig.tight_layout()
-  return fig
-
 tx = optax.adam(config.learning_rate)
 
 params1 = model.init(rp.poop(), jnp.zeros((1, 28, 28, 1)))
@@ -252,6 +184,9 @@ for epoch in tqdm(range(config.num_epochs)):
       "test_loss2": test_loss2,
       "test_acc1": test_acc1,
       "test_acc2": test_acc2,
+      # This doesn't really change, but it's more convenient to store it here
+      # when we go to make videos/plots later.
+      "lambdas": lambdas,
       "train_loss_interp_naive": train_loss_interp_naive,
       "test_loss_interp_naive": test_loss_interp_naive,
       "train_acc_interp_naive": train_acc_interp_naive,
