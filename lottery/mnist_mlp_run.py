@@ -81,8 +81,31 @@ def make_stuff(model):
   ret.dataset_total_correct = dataset_total_correct
   return ret
 
-train_ds = tfds.load("mnist", split="train", as_supervised=True)
-test_ds = tfds.load("mnist", split="test", as_supervised=True)
+def get_datasets(test_mode):
+  """Return the training and test datasets, unbatched.
+
+  test_mode: Whether or not we're running in "smoke test" mode.
+  """
+  train_ds = tfds.load("mnist", split="train", as_supervised=True)
+  test_ds = tfds.load("mnist", split="test", as_supervised=True)
+  # Note: The take/cache warning:
+  #     2022-01-25 07:32:58.144059: W tensorflow/core/kernels/data/cache_dataset_ops.cc:768] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
+  # is not because we're actually doing this in the wrong order, but rather that
+  # the dataset is loaded in and called .cache() on before we receive it.
+  if test_mode:
+    train_ds = train_ds.take(13)
+    test_ds = test_ds.take(17)
+
+  # Normalize 0-255 pixel values to 0.0-1.0
+  normalize = lambda image, label: (tf.cast(image, tf.float32) / 255.0, tf.one_hot(label, depth=10))
+  train_ds = train_ds.map(normalize).cache()
+  test_ds = test_ds.map(normalize).cache()
+  return train_ds, test_ds
+
+def init_train_state(rng, learning_rate, model):
+  tx = optax.adam(learning_rate)
+  vars = model.init(rng, jnp.zeros((1, 28, 28, 1)))
+  return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
@@ -115,41 +138,22 @@ if __name__ == "__main__":
   model = TestModel() if config.test else MLPModel()
   stuff = make_stuff(model)
 
-  # Note: The take/cache warning:
-  #     2022-01-25 07:32:58.144059: W tensorflow/core/kernels/data/cache_dataset_ops.cc:768] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
-  # is not because we're actually doing this in the wrong order, but rather that
-  # the dataset is loaded in and called .cache() on before we receive it.
-  if config.test:
-    train_ds = train_ds.take(13)
-    test_ds = test_ds.take(17)
-
-  # Normalize 0-255 pixel values to 0.0-1.0
-  normalize = lambda image, label: (tf.cast(image, tf.float32) / 255.0, tf.one_hot(label, depth=10))
-  train_ds = train_ds.map(normalize).cache()
-  test_ds = test_ds.map(normalize).cache()
-
+  train_ds, test_ds = get_datasets(test_mode=config.test)
   num_train_examples = train_ds.cardinality().numpy()
   num_test_examples = test_ds.cardinality().numpy()
 
-  def get_train_state():
-    tx = optax.adam(config.learning_rate)
-    vars = model.init(rp.poop(), jnp.zeros((1, 28, 28, 1)))
-    train_state = TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
-    start_epoch = 0
+  train_state = init_train_state(rp.poop(), config.learning_rate, model)
+  start_epoch = 0
 
-    if args.resume is not None:
-      # Bring the the desired resume epoch into the wandb run directory so that it
-      # can then be picked up by `restore_checkpoint` below.
-      wandb.restore(f"checkpoint_{args.resume_epoch}")
-      last_epoch, train_state = restore_checkpoint(wandb.run.dir, (0, train_state))
-      # We need to increment last_epoch, because we store `(i, train_state)`
-      # where `train_state` is the state _after_ i'th epoch. So we're actually
-      # starting from the next epoch.
-      start_epoch = last_epoch + 1
-
-    return start_epoch, train_state
-
-  start_epoch, train_state = get_train_state()
+  if args.resume is not None:
+    # Bring the the desired resume epoch into the wandb run directory so that it
+    # can then be picked up by `restore_checkpoint` below.
+    wandb.restore(f"checkpoint_{args.resume_epoch}")
+    last_epoch, train_state = restore_checkpoint(wandb.run.dir, (0, train_state))
+    # We need to increment last_epoch, because we store `(i, train_state)`
+    # where `train_state` is the state _after_ i'th epoch. So we're actually
+    # starting from the next epoch.
+    start_epoch = last_epoch + 1
 
   for epoch in tqdm(range(start_epoch, config.num_epochs),
                     initial=start_epoch,

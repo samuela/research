@@ -21,7 +21,7 @@ def permutify(params1, params2):
   p2f = flatten_params(params2)
 
   p2f_new = {**p2f}
-  num_layers = max(int(kmatch("**/Dense_*/**", k).group(2)) for k in p1f.keys())
+  num_layers = max(int(kmatch("params/Dense_*/**", k).group(1)) for k in p1f.keys())
   # range is [0, num_layers), so we're safe here since we don't want to be
   # reordering the output of the last layer.
   for layer in range(num_layers):
