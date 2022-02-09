@@ -14,6 +14,7 @@ let
           url = "https://github.com/NixOS/nixpkgs/pull/158218.patch";
           sha256 = "0fcd92ya5yahakmvkv17rfcfbz79p16arpyn5w9r988yvkh2n5xx";
         })
+        # TODO: PR is merged, removed when possible
         # python3Packages.jaxlib-bin: 0.1.71 -> 0.1.75
         (unstablePkgs.fetchpatch {
           url = "https://github.com/NixOS/nixpkgs/pull/158186.patch";
