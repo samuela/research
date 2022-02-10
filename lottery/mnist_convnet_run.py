@@ -1,4 +1,4 @@
-"""Train an MLP on MNIST on one random seed. Serialize the model for
+"""Train a convnet on MNIST on one random seed. Serialize the model for
 interpolation downstream."""
 import argparse
 
@@ -26,22 +26,30 @@ class TestModel(nn.Module):
 
   @nn.compact
   def __call__(self, x):
-    x = jnp.reshape(x, (-1, 28 * 28))
-    x = nn.Dense(1024)(x)
+    x = nn.Conv(features=8, kernel_size=(3, 3))(x)
+    x = activation(x)
+    x = jnp.mean(x, axis=-1)
+    x = jnp.reshape(x, (x.shape[0], -1))
+    x = nn.Dense(16)(x)
     x = activation(x)
     x = nn.Dense(10)(x)
     x = nn.log_softmax(x)
     return x
 
-class MLPModel(nn.Module):
+class ConvNetModel(nn.Module):
 
   @nn.compact
   def __call__(self, x):
-    x = jnp.reshape(x, (-1, 28 * 28))
-    x = nn.Dense(1024)(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
-    x = nn.Dense(1024)(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
+    x = activation(x)
+    # Take the mean along the channel dimension. Otherwise the following dense
+    # layer is massive.
+    x = jnp.mean(x, axis=-1)
+    x = jnp.reshape(x, (x.shape[0], -1))
     x = nn.Dense(1024)(x)
     x = activation(x)
     x = nn.Dense(10)(x)
@@ -119,7 +127,7 @@ if __name__ == "__main__":
 
   wandb.init(project="playing-the-lottery",
              entity="skainswo",
-             tags=["mnist", "mlp"],
+             tags=["mnist", "convnet"],
              resume="must" if args.resume is not None else None,
              id=args.resume,
              mode="disabled" if args.test else "online")
@@ -135,7 +143,7 @@ if __name__ == "__main__":
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
-  model = TestModel() if config.test else MLPModel()
+  model = TestModel() if config.test else ConvNetModel()
   stuff = make_stuff(model)
 
   train_ds, test_ds = get_datasets(test_mode=config.test)
