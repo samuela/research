@@ -28,9 +28,14 @@ class TestModel(nn.Module):
   def __call__(self, x):
     x = nn.Conv(features=8, kernel_size=(3, 3))(x)
     x = activation(x)
+    x = nn.Conv(features=16, kernel_size=(3, 3))(x)
+    x = activation(x)
+    x = nn.Conv(features=32, kernel_size=(3, 3))(x)
+    x = activation(x)
+
     x = jnp.mean(x, axis=-1)
     x = jnp.reshape(x, (x.shape[0], -1))
-    x = nn.Dense(16)(x)
+    x = nn.Dense(32)(x)
     x = activation(x)
     x = nn.Dense(10)(x)
     x = nn.log_softmax(x)
