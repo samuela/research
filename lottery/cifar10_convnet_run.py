@@ -2,7 +2,6 @@
 interpolation downstream.
 
 Notes:
-* https://github.com/kuangliu/pytorch-cifar
 * This convnet is something of my own creation
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
@@ -12,8 +11,6 @@ import argparse
 import jax.nn
 import jax.numpy as jnp
 import optax
-import tensorflow as tf
-import tensorflow_datasets as tfds
 from flax import linen as nn
 from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.train_state import TrainState
@@ -24,9 +21,6 @@ import wandb
 from utils import RngPooper, ec2_get_instance_type, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
-
-# See https://github.com/google/jax/issues/9454.
-tf.config.set_visible_devices([], "GPU")
 
 activation = nn.relu
 
@@ -170,12 +164,17 @@ def make_stuff(model, train_ds, batch_size: int):
 
     return train_state, (jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_train_examples)
 
-  @jit
-  def dataset_loss_and_accuracy(params, dataset):
+  def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     images, labels = dataset
     num_examples = images.shape[0]
-    loss, num_correct = batch_eval(params, images, labels)
-    return loss, num_correct / num_examples
+    batch = make_batcher(num_examples, batch_size)
+    # Can't use vmap or run in a single batch since that overloads GPU memory.
+    losses, num_corrects = zip(
+        *[batch_eval(params, x, y) for x, y in zip(batch(images), batch(labels))])
+    losses = jnp.array(losses)
+    num_corrects = jnp.array(num_corrects)
+    assert num_examples % batch_size == 0
+    return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
 
   ret.batch_eval = batch_eval
   ret.train_epoch = train_epoch
@@ -184,24 +183,40 @@ def make_stuff(model, train_ds, batch_size: int):
 
 def get_datasets(test: bool):
   """Return the training and test datasets, as jnp.array's."""
-  train_ds = tfds.load("cifar10", split="train", as_supervised=True)
-  test_ds = tfds.load("cifar10", split="test", as_supervised=True)
-
   if test:
-    train_ds = train_ds.take(100)
-    test_ds = test_ds.take(100)
+    train_images = random.choice(random.PRNGKey(0), jnp.arange(256, dtype=jnp.uint8),
+                                 (100, 32, 32, 3))
+    test_images = random.choice(random.PRNGKey(1), jnp.arange(256, dtype=jnp.uint8),
+                                (100, 32, 32, 3))
+    train_labels = random.choice(random.PRNGKey(2), jnp.arange(10, dtype=jnp.uint8), (100, ))
+    test_labels = random.choice(random.PRNGKey(3), jnp.arange(10, dtype=jnp.uint8), (100, ))
+    return (train_images, train_labels), (test_images, test_labels)
+  else:
+    import tensorflow as tf
 
-  train_ds = tfds.as_numpy(train_ds)
-  test_ds = tfds.as_numpy(test_ds)
+    # See https://github.com/google/jax/issues/9454.
+    tf.config.set_visible_devices([], "GPU")
+    import tensorflow_datasets as tfds
 
-  train_images = jnp.stack([x for x, _ in train_ds])
-  train_labels = jnp.stack([y for _, y in train_ds])
-  test_images = jnp.stack([x for x, _ in test_ds])
-  test_labels = jnp.stack([y for _, y in test_ds])
+    train_ds = tfds.load("cifar10", split="train", as_supervised=True)
+    test_ds = tfds.load("cifar10", split="test", as_supervised=True)
 
-  return (train_images, train_labels), (test_images, test_labels)
+    if test:
+      train_ds = train_ds.take(100)
+      test_ds = test_ds.take(100)
+
+    train_ds = tfds.as_numpy(train_ds)
+    test_ds = tfds.as_numpy(test_ds)
+
+    train_images = jnp.stack([x for x, _ in train_ds])
+    train_labels = jnp.stack([y for _, y in train_ds])
+    test_images = jnp.stack([x for x, _ in test_ds])
+    test_labels = jnp.stack([y for _, y in test_ds])
+
+    return (train_images, train_labels), (test_images, test_labels)
 
 def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
+  # See https://github.com/kuangliu/pytorch-cifar.
   steps_per_epoch = jnp.ceil(num_train_examples / batch_size)
   lr_schedule = optax.cosine_decay_schedule(learning_rate, decay_steps=num_epochs * steps_per_epoch)
   tx = optax.sgd(lr_schedule, momentum=0.9)
@@ -267,7 +282,8 @@ if __name__ == "__main__":
     with timeblock(f"Train epoch"):
       train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
     with timeblock("Test eval"):
-      test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(train_state.params, test_ds)
+      test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(
+          train_state.params, test_ds, batch_size=10 if config.test else 1000)
 
     if not config.test:
       with timeblock("Save checkpoint"):
