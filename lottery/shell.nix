@@ -3,52 +3,10 @@ let
   # pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/83ab260bbe7e4c27bb1f467ada0265ba13bbeeb0.tar.gz") { };
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
-  # See https://nixos.wiki/wiki/FAQ/Pinning_Nixpkgs.
-  pkgs =
-    let
-      unstablePkgsSrc = fetchTarball "https://github.com/NixOS/nixpkgs/archive/f97413a248ef6a6ac03ac789d0234d67f0aba0f0.tar.gz";
-      unstablePkgs = import unstablePkgsSrc { };
-      patches = [
-        # cudnn_cudatoolkit_11: 8.1.1 -> 8.3.0
-        (unstablePkgs.fetchpatch {
-          url = "https://github.com/NixOS/nixpkgs/pull/158218.patch";
-          sha256 = "0fcd92ya5yahakmvkv17rfcfbz79p16arpyn5w9r988yvkh2n5xx";
-        })
-        # TODO: PR is merged, removed when possible
-        # python3Packages.jaxlib-bin: 0.1.71 -> 0.1.75
-        (unstablePkgs.fetchpatch {
-          url = "https://github.com/NixOS/nixpkgs/pull/158186.patch";
-          sha256 = "191xh2z89r28a3mx0m5fk4jfhhnzi53vi7b44gknbkhip673xrbg";
-        })
-        # TODO: create a PR for this one, once #158186 is merged.
-        # python3Packages.jaxlib-bin: cudnn805 -> cudnn82
-        (unstablePkgs.fetchpatch {
-          url = "https://github.com/samuela/nixpkgs/commit/214f1a49dd533b37d2a94400dd20844156353245.patch";
-          sha256 = "07zp03l6v9hkw2zncalm88hkp0kxl05xbyrdf29mfvchma2ncd8f";
-        })
-        # TODO: PR is merged, so this one should no longer be necessary once we
-        # bump the version of nixpkgs.
-        # python3Packages.wandb: 0.12.9 -> 0.12.10
-        (unstablePkgs.fetchpatch {
-          url = "https://github.com/NixOS/nixpkgs/pull/157788.patch";
-          sha256 = "0h1qsv47ywg3j0nhdhcrr1f70hi3fsdf51z5c7z48124k9463wvy";
-        })
-      ];
-      patchedPkgsSrc =
-        if (builtins.length patches == 0) then
-          unstablePkgsSrc else
-          unstablePkgs.runCommand "patched-nixpkgs"
-            { inherit unstablePkgsSrc; inherit patches; }
-            ''
-              cp -r $unstablePkgsSrc $out
-              chmod -R +w $out
-              for p in $patches; do
-                echo "Applying patch $p";
-                patch -d $out -p1 < "$p";
-              done
-            '';
-    in
-    import patchedPkgsSrc { };
+  # Differences on top of nixpkgs mainline:
+  # - https://github.com/NixOS/nixpkgs/pull/158218 merged in
+  # - https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0 updates jaxlib-bin to use the cuDNN 8.3 instead of 8.1 to get around https://github.com/google/jax/discussions/9455
+  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/cedb9abbb1969073f3e6d76a68da8835ec70ddb0.tar.gz") { };
 in
 pkgs.mkShell {
   buildInputs = with pkgs; [
