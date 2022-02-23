@@ -5,16 +5,18 @@ Notes:
 * This convnet is something of my own creation
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
+* A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
 """
 import argparse
 
+import augmax
 import jax.nn
 import jax.numpy as jnp
 import optax
 from flax import linen as nn
 from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.train_state import TrainState
-from jax import jit, lax, random, value_and_grad
+from jax import jit, lax, random, value_and_grad, vmap
 from tqdm import tqdm
 
 import wandb
@@ -136,11 +138,19 @@ def make_stuff(model, train_ds, batch_size: int):
   # `lax.scan` requires that all the batches have identical shape so we have to
   # skip the final batch if it is incomplete.
   batcher = make_batcher_in_paradise(num_train_examples, batch_size)
-  ret = lambda: None
+
+  # Note: Some confusion regarding exactly what RandomCrop does: https://github.com/khdlr/augmax/issues/6
+  train_transform = augmax.Chain(
+      augmax.RandomCrop(32, 32),
+      augmax.HorizontalFlip(),
+      augmax.Rotate(),
+  )
+  # Applied to all input images, test and train.
+  normalize_transform = augmax.Chain(augmax.ByteToFloat(), augmax.Normalize())
 
   @jit
   def batch_eval(params, images, labels):
-    images_f32 = jnp.asarray(images, dtype=jnp.float32) / 255.0
+    images_f32 = vmap(normalize_transform)(None, images)
     y_onehot = jax.nn.one_hot(labels, 10)
     logits = model.apply({"params": params}, images_f32)
     l = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
@@ -149,15 +159,19 @@ def make_stuff(model, train_ds, batch_size: int):
 
   @jit
   def train_epoch(rng, train_state):
-    perm = random.permutation(rng, num_train_examples)
+    rng1, rng2 = random.split(rng)
+    perm = random.permutation(rng1, num_train_examples)
+    # We need rngs for data augmentation of each example.
+    augmax_rngs = random.split(rng2, num_train_examples)
 
     def step(train_state, p):
       # See https://github.com/google/jax/issues/4564 as to why the array conversion is necessary.
       p = jnp.array(p)
-      images, labels = ds_images[p, :, :, :], ds_labels[p]
-      # TODO apply data augmentation
-      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images,
-                                                                     labels)
+      images = ds_images[p, :, :, :]
+      labels = ds_labels[p]
+      images_transformed = vmap(train_transform)(augmax_rngs[p], images)
+      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params,
+                                                                     images_transformed, labels)
       return train_state.apply_gradients(grads=g), (l, num_correct)
 
     train_state, (losses, num_corrects) = lax.scan(step, train_state, batcher(perm))
@@ -175,6 +189,7 @@ def make_stuff(model, train_ds, batch_size: int):
     assert num_examples % batch_size == 0
     return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
 
+  ret = lambda: None
   ret.batch_eval = batch_eval
   ret.train_epoch = train_epoch
   ret.dataset_loss_and_accuracy = dataset_loss_and_accuracy
@@ -183,12 +198,14 @@ def make_stuff(model, train_ds, batch_size: int):
 def get_datasets(test: bool):
   """Return the training and test datasets, as jnp.array's."""
   if test:
+    num_train = 100
+    num_test = 1000
     train_images = random.choice(random.PRNGKey(0), jnp.arange(256, dtype=jnp.uint8),
-                                 (100, 32, 32, 3))
+                                 (num_train, 32, 32, 3))
     test_images = random.choice(random.PRNGKey(1), jnp.arange(256, dtype=jnp.uint8),
-                                (100, 32, 32, 3))
-    train_labels = random.choice(random.PRNGKey(2), jnp.arange(10, dtype=jnp.uint8), (100, ))
-    test_labels = random.choice(random.PRNGKey(3), jnp.arange(10, dtype=jnp.uint8), (100, ))
+                                (num_test, 32, 32, 3))
+    train_labels = random.choice(random.PRNGKey(2), jnp.arange(10, dtype=jnp.uint8), (num_train, ))
+    test_labels = random.choice(random.PRNGKey(3), jnp.arange(10, dtype=jnp.uint8), (num_test, ))
     return (train_images, train_labels), (test_images, test_labels)
   else:
     import tensorflow as tf
