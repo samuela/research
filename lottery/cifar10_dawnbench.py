@@ -59,12 +59,6 @@ def make_batcher(num_examples: int, batch_size: int):
 
   return lambda arr: jnp.split(arr, splits)
 
-def make_batcher_in_paradise(num_examples: int, batch_size: int):
-  """Like `make_batcher`, but skips the final batch if it is incomplete."""
-  assert num_examples >= batch_size
-  num_batches = num_examples // batch_size
-  return lambda arr: jnp.split(arr[:num_batches * batch_size], num_batches)
-
 ### Model definition
 dtype = jnp.float16
 
@@ -81,11 +75,11 @@ class ResNetModel(nn.Module):
     x = nn.relu(x)
     x = nn.max_pool(x, (2, 2))
     residual = x
-    x = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
-    x = nn.relu(x)
-    x = x + residual
+    y = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
+    y = nn.relu(y)
+    y = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(y)
+    y = nn.relu(y)
+    x = y + residual
 
     # layer2
     x = nn.Conv(features=256, kernel_size=(3, 3), dtype=dtype)(x)
@@ -97,11 +91,11 @@ class ResNetModel(nn.Module):
     x = nn.relu(x)
     x = nn.max_pool(x, (2, 2))
     residual = x
-    x = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
-    x = nn.relu(x)
-    x = x + residual
+    y = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
+    y = nn.relu(y)
+    y = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(y)
+    y = nn.relu(y)
+    x = y + residual
 
     x = nn.max_pool(x, (4, 4))
     x = jnp.reshape(x, (x.shape[0], -1))
@@ -112,10 +106,11 @@ class ResNetModel(nn.Module):
 ### Train loop, etc
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds
-  num_train_examples = ds_labels.shape[0]
   # `lax.scan` requires that all the batches have identical shape so we have to
   # skip the final batch if it is incomplete.
-  batcher = make_batcher_in_paradise(num_train_examples, batch_size)
+  num_train_examples = ds_labels.shape[0]
+  assert num_train_examples >= batch_size
+  num_batches = num_train_examples // batch_size
 
   # Note: Some confusion regarding exactly what RandomCrop does: https://github.com/khdlr/augmax/issues/6
   train_transform = augmax.Chain(
@@ -138,13 +133,13 @@ def make_stuff(model, train_ds, batch_size: int):
   @jit
   def train_epoch(rng, train_state):
     rng1, rng2 = random.split(rng)
-    perm = random.permutation(rng1, num_train_examples)
+    batch_ix = random.permutation(rng1, num_train_examples)[:num_batches * batch_size].reshape(
+        (num_batches, batch_size))
     # We need rngs for data augmentation of each example.
-    augmax_rngs = random.split(rng2, num_train_examples)
+    augmax_rngs = random.split(rng2, num_batches * batch_size)
 
-    def step(train_state, p):
-      # See https://github.com/google/jax/issues/4564 as to why the array conversion is necessary.
-      p = jnp.array(p)
+    def step(train_state, i):
+      p = batch_ix[i, :]
       images = ds_images[p, :, :, :]
       labels = ds_labels[p]
       images_transformed = vmap(train_transform)(augmax_rngs[p], images)
@@ -152,8 +147,10 @@ def make_stuff(model, train_ds, batch_size: int):
                                                                      images_transformed, labels)
       return train_state.apply_gradients(grads=g), (l, num_correct)
 
-    train_state, (losses, num_corrects) = lax.scan(step, train_state, batcher(perm))
-    return train_state, (jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_train_examples)
+    # `lax.scan` is tricky to use correctly. See https://github.com/google/jax/discussions/9669#discussioncomment-2234793.
+    train_state, (losses, num_corrects) = lax.scan(step, train_state, jnp.arange(num_batches))
+    return train_state, (jnp.mean(batch_size * losses),
+                         jnp.sum(num_corrects) / (num_batches * batch_size))
 
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     images, labels = dataset
