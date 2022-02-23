@@ -6,19 +6,20 @@ let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
   # Differences on top of nixpkgs mainline:
-  # - https://github.com/NixOS/nixpkgs/pull/158218 merged in
   # - https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0 updates jaxlib-bin to use the cuDNN 8.3 instead of 8.1 to get around https://github.com/google/jax/discussions/9455
   # TODO overlay to override cudatoolkit with cudatoolkit 11.5, etc.
-  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/cedb9abbb1969073f3e6d76a68da8835ec70ddb0.tar.gz") {
+  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/4ef4292aef7a236fdc84d097ac9086bd45ec8ba3.tar.gz") {
     config.allowUnfree = true;
-    config.cudaSupport = true;
-    config.cudnnSupport = true;
+    # These actually cause problems for some reason. bug report?
+    # config.cudaSupport = true;
+    # config.cudnnSupport = true;
   };
 in
 pkgs.mkShell {
   buildInputs = with pkgs; [
     ffmpeg
     python3
+    python3Packages.augmax
     python3Packages.flax
     python3Packages.ipython
     python3Packages.jax
