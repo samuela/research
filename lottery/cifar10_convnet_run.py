@@ -5,6 +5,10 @@ Notes:
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
 * A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
+
+Things to try:
+* weight decay
+* resnet18
 """
 import argparse
 
@@ -79,22 +83,27 @@ class VGG16(nn.Module):
     # Backbone
     for _ in range(2):
       x = nn.Conv(features=64, kernel_size=(3, 3))(x)
+      x = nn.GroupNorm()(x)
       x = nn.relu(x)
     x = nn.max_pool(x, (2, 2), strides=(2, 2))
     for _ in range(2):
       x = nn.Conv(features=128, kernel_size=(3, 3))(x)
+      x = nn.GroupNorm()(x)
       x = nn.relu(x)
     x = nn.max_pool(x, (2, 2), strides=(2, 2))
     for _ in range(3):
       x = nn.Conv(features=256, kernel_size=(3, 3))(x)
+      x = nn.GroupNorm()(x)
       x = nn.relu(x)
     x = nn.max_pool(x, (2, 2), strides=(2, 2))
     for _ in range(3):
       x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+      x = nn.GroupNorm()(x)
       x = nn.relu(x)
     x = nn.max_pool(x, (2, 2), strides=(2, 2))
     for _ in range(3):
       x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+      x = nn.GroupNorm()(x)
       x = nn.relu(x)
     x = nn.max_pool(x, (2, 2), strides=(2, 2))
 
@@ -104,8 +113,9 @@ class VGG16(nn.Module):
     #     does average pooling with a kernel size of (7, 7)
     # * https://github.com/kuangliu/pytorch-cifar/blob/49b7aa97b0c12fe0d4054e670403a16b6b834ddd/models/vgg.py#L37
     #     does average pooling with a kernel size of (1, 1) which doesn't seem
-    #     to accomplish anything. But this paper also doesn't really do the
-    #     dense layers the same as in the paper either...
+    #     to accomplish anything. See https://github.com/kuangliu/pytorch-cifar/issues/110.
+    #     But this paper also doesn't really do the dense layers the same as in
+    #     the paper either...
     # * The paper itself doesn't mention any kind of pooling...
     #
     # I'll stick to replicating the paper as closely as possible for now.
@@ -151,40 +161,17 @@ def test_make_batcher():
     assert len(fn(jnp.array([1, 2]))) == 1
     assert len(fn(jnp.array([1, 2]))[0]) == 2
 
-def make_batcher_in_paradise(num_examples: int, batch_size: int):
-  """Like `make_batcher`, but skips the final batch if it is incomplete."""
-  assert num_examples >= batch_size
-  num_batches = num_examples // batch_size
-  return lambda arr: jnp.split(arr[:num_batches * batch_size], num_batches)
-
-def test_make_batcher_in_paradise():
-  # there's an odd-shaped batch at the end
-  for fn in [make_batcher_in_paradise(5, 2), jit(make_batcher_in_paradise(5, 2))]:
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))[0]) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))[1]) == 2
-
-  # no odd-shaped batch at the end
-  for fn in [make_batcher_in_paradise(4, 2), jit(make_batcher_in_paradise(4, 2))]:
-    assert len(fn(jnp.array([1, 2, 3, 4]))) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4]))[0]) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4]))[1]) == 2
-
-  # batch_size == num_examples
-  for fn in [make_batcher_in_paradise(2, 2), jit(make_batcher_in_paradise(2, 2))]:
-    assert len(fn(jnp.array([1, 2]))) == 1
-    assert len(fn(jnp.array([1, 2]))[0]) == 2
-
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds
-  num_train_examples = ds_labels.shape[0]
   # `lax.scan` requires that all the batches have identical shape so we have to
   # skip the final batch if it is incomplete.
-  batcher = make_batcher_in_paradise(num_train_examples, batch_size)
+  num_train_examples = ds_labels.shape[0]
+  assert num_train_examples >= batch_size
+  num_batches = num_train_examples // batch_size
 
-  # Note: Some confusion regarding exactly what RandomCrop does: https://github.com/khdlr/augmax/issues/6
   train_transform = augmax.Chain(
-      augmax.RandomCrop(32, 32),
+      # augmax does not seem to support random crops with padding. See https://github.com/khdlr/augmax/issues/6.
+      # augmax.RandomCrop(32, 32),
       augmax.HorizontalFlip(),
       augmax.Rotate(),
   )
@@ -203,13 +190,13 @@ def make_stuff(model, train_ds, batch_size: int):
   @jit
   def train_epoch(rng, train_state):
     rng1, rng2 = random.split(rng)
-    perm = random.permutation(rng1, num_train_examples)
+    batch_ix = random.permutation(rng1, num_train_examples)[:num_batches * batch_size].reshape(
+        (num_batches, batch_size))
     # We need rngs for data augmentation of each example.
-    augmax_rngs = random.split(rng2, num_train_examples)
+    augmax_rngs = random.split(rng2, num_batches * batch_size)
 
-    def step(train_state, p):
-      # See https://github.com/google/jax/issues/4564 as to why the array conversion is necessary.
-      p = jnp.array(p)
+    def step(train_state, i):
+      p = batch_ix[i, :]
       images = ds_images[p, :, :, :]
       labels = ds_labels[p]
       images_transformed = vmap(train_transform)(augmax_rngs[p], images)
@@ -217,8 +204,13 @@ def make_stuff(model, train_ds, batch_size: int):
                                                                      images_transformed, labels)
       return train_state.apply_gradients(grads=g), (l, num_correct)
 
-    train_state, (losses, num_corrects) = lax.scan(step, train_state, batcher(perm))
-    return train_state, (jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_train_examples)
+    # `lax.scan` is tricky to use correctly. See https://github.com/google/jax/discussions/9669#discussioncomment-2234793.
+    train_state, (losses, num_corrects) = lax.scan(step, train_state, jnp.arange(num_batches))
+    # Note that the train accuracy calculation here is based on the number of
+    # examples we've actually covered, not the number of train examples, since
+    # we skip the last (ragged) batch.
+    return train_state, (jnp.mean(batch_size * losses),
+                         jnp.sum(num_corrects) / (num_batches * batch_size))
 
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     images, labels = dataset
@@ -272,16 +264,16 @@ def get_datasets(test: bool):
 
 def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
   # See https://github.com/kuangliu/pytorch-cifar.
-  steps_per_epoch = jnp.ceil(num_train_examples / batch_size)
+  steps_per_epoch = num_train_examples // batch_size
   lr_schedule = optax.cosine_decay_schedule(learning_rate, decay_steps=num_epochs * steps_per_epoch)
   tx = optax.sgd(lr_schedule, momentum=0.9)
+  # TODO: add_decayed_weights
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
 if __name__ == "__main__":
   with timeblock("tests"):
     test_make_batcher()
-    test_make_batcher_in_paradise()
 
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
@@ -304,9 +296,9 @@ if __name__ == "__main__":
   config.ec2_instance_type = ec2_get_instance_type()
   config.test = args.test
   config.seed = args.seed
-  config.learning_rate = 0.001
+  config.learning_rate = 1e-3
   config.num_epochs = 3 if config.test else 200
-  config.batch_size = 7 if config.test else 512
+  config.batch_size = 7 if config.test else 128
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
@@ -340,11 +332,14 @@ if __name__ == "__main__":
       test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(
           train_state.params, test_ds, batch_size=10 if config.test else 1000)
 
-    if not config.test:
-      with timeblock("Save checkpoint"):
-        # See https://docs.wandb.ai/guides/track/advanced/save-restore
-        save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
+    # if not config.test:
+    #   with timeblock("Save checkpoint"):
+    #     # See https://docs.wandb.ai/guides/track/advanced/save-restore
+    #     save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
 
+    print(
+        f"Epoch {epoch}: train loss {train_loss:.3f}, train accuracy {train_accuracy:.3f}, test loss {test_loss:.3f}, test accuracy {test_accuracy:.3f}"
+    )
     wandb.log({
         "epoch": epoch,
         "train_loss": train_loss,
