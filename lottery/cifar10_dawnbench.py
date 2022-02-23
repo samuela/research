@@ -204,7 +204,7 @@ def get_datasets(test: bool):
 
 def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
   # See https://github.com/kuangliu/pytorch-cifar.
-  steps_per_epoch = jnp.ceil(num_train_examples / batch_size)
+  steps_per_epoch = num_train_examples // batch_size
   lr_schedule = optax.cosine_decay_schedule(learning_rate, decay_steps=num_epochs * steps_per_epoch)
   tx = optax.sgd(lr_schedule, momentum=0.9)
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
@@ -235,14 +235,24 @@ if __name__ == "__main__":
                                  batch_size=config.batch_size,
                                  num_train_examples=train_ds[0].shape[0])
 
+  print("Burn-in...")
+  for epoch in range(3):
+    train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
+    test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(train_state.params,
+                                                               test_ds,
+                                                               batch_size=1000)
+
+  print("Training...")
   for epoch in range(config.num_epochs):
     with timeblock(f"Train epoch"):
-      train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
+      with jax.profiler.trace(log_dir="./logs"):
+        train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
+        train_loss.block_until_ready()
+        train_accuracy.block_until_ready()
     with timeblock("Test eval"):
       test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(train_state.params,
                                                                  test_ds,
                                                                  batch_size=1000)
-
     print(
         f"Epoch {epoch}: train loss {train_loss:.3f}, train accuracy {train_accuracy:.3f}, test loss {test_loss:.3f}, test accuracy {test_accuracy:.3f}"
     )
