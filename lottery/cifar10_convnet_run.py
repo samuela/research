@@ -126,41 +126,6 @@ class VGG16(nn.Module):
     x = nn.log_softmax(x)
     return x
 
-def make_batcher(num_examples: int, batch_size: int):
-  # We need to special case the situation where batch_size divides num_examples,
-  # since in that situation `jnp.split` will return an empty array as the final
-  # batch.
-  if num_examples % batch_size != 0:
-    splits = list(jnp.arange(1, num_examples // batch_size + 1) * batch_size)
-  else:
-    splits = list(jnp.arange(1, num_examples // batch_size) * batch_size)
-
-  return lambda arr: jnp.split(arr, splits)
-
-def test_make_batcher():
-  # there's an odd-shaped batch at the end
-  for fn in [make_batcher(5, 2), jit(make_batcher(5, 2))]:
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))) == 3
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))[0]) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))[1]) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4, 5]))[2]) == 1
-
-  # no odd-shaped batch at the end
-  for fn in [make_batcher(4, 2), jit(make_batcher(4, 2))]:
-    assert len(fn(jnp.array([1, 2, 3, 4]))) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4]))[0]) == 2
-    assert len(fn(jnp.array([1, 2, 3, 4]))[1]) == 2
-
-  # batch_size == num_examples
-  for fn in [make_batcher(2, 2), jit(make_batcher(2, 2))]:
-    assert len(fn(jnp.array([1, 2]))) == 1
-    assert len(fn(jnp.array([1, 2]))[0]) == 2
-
-  # batch_size > num_examples
-  for fn in [make_batcher(2, 3), jit(make_batcher(2, 3))]:
-    assert len(fn(jnp.array([1, 2]))) == 1
-    assert len(fn(jnp.array([1, 2]))[0]) == 2
-
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds
   # `lax.scan` requires that all the batches have identical shape so we have to
@@ -215,13 +180,16 @@ def make_stuff(model, train_ds, batch_size: int):
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     images, labels = dataset
     num_examples = images.shape[0]
-    batch = make_batcher(num_examples, batch_size)
+    assert num_examples % batch_size == 0
+    num_batches = num_examples // batch_size
+    batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
     # Can't use vmap or run in a single batch since that overloads GPU memory.
-    losses, num_corrects = zip(
-        *[batch_eval(params, x, y) for x, y in zip(batch(images), batch(labels))])
+    losses, num_corrects = zip(*[
+        batch_eval(params, images[batch_ix[i, :], :, :, :], labels[batch_ix[i, :]])
+        for i in range(num_batches)
+    ])
     losses = jnp.array(losses)
     num_corrects = jnp.array(num_corrects)
-    assert num_examples % batch_size == 0
     return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
 
   ret = lambda: None
@@ -272,9 +240,6 @@ def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_trai
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
 if __name__ == "__main__":
-  with timeblock("tests"):
-    test_make_batcher()
-
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
