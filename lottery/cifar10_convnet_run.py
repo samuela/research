@@ -51,13 +51,13 @@ class ConvNetModel(nn.Module):
 
   @nn.compact
   def __call__(self, x):
-    x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
-    x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
-    x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
-    x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
     x = activation(x)
     # Take the mean along the channel dimension. Otherwise the following dense
     # layer is massive.
@@ -131,10 +131,11 @@ def test_make_batcher_in_paradise():
     assert len(fn(jnp.array([1, 2]))[0]) == 2
 
 def make_stuff(model, train_ds, batch_size: int):
-  num_train_examples = train_ds[0].shape[0]
+  ds_images, ds_labels = train_ds
+  num_train_examples = ds_labels.shape[0]
   # `lax.scan` requires that all the batches have identical shape so we have to
   # skip the final batch if it is incomplete.
-  batch = make_batcher_in_paradise(num_train_examples, batch_size)
+  batcher = make_batcher_in_paradise(num_train_examples, batch_size)
   ret = lambda: None
 
   @jit
@@ -148,20 +149,18 @@ def make_stuff(model, train_ds, batch_size: int):
 
   @jit
   def train_epoch(rng, train_state):
-    images, labels = train_ds
     perm = random.permutation(rng, num_train_examples)
-    images = images[perm, :, :, :]
-    labels = labels[perm]
 
-    def step(train_state, batch):
-      images, y = batch
+    def step(train_state, p):
+      # See https://github.com/google/jax/issues/4564 as to why the array conversion is necessary.
+      p = jnp.array(p)
+      images, labels = ds_images[p, :, :, :], ds_labels[p]
       # TODO apply data augmentation
-      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images, y)
+      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images,
+                                                                     labels)
       return train_state.apply_gradients(grads=g), (l, num_correct)
 
-    train_state, (losses, num_corrects) = lax.scan(step, train_state,
-                                                   (batch(images), batch(labels)))
-
+    train_state, (losses, num_corrects) = lax.scan(step, train_state, batcher(perm))
     return train_state, (jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_train_examples)
 
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
@@ -201,10 +200,6 @@ def get_datasets(test: bool):
     train_ds = tfds.load("cifar10", split="train", as_supervised=True)
     test_ds = tfds.load("cifar10", split="test", as_supervised=True)
 
-    if test:
-      train_ds = train_ds.take(100)
-      test_ds = test_ds.take(100)
-
     train_ds = tfds.as_numpy(train_ds)
     test_ds = tfds.as_numpy(test_ds)
 
@@ -239,19 +234,19 @@ if __name__ == "__main__":
 
   wandb.init(project="playing-the-lottery",
              entity="skainswo",
-             tags=["mnist", "convnet"],
+             tags=["cifar10", "convnet"],
              resume="must" if args.resume is not None else None,
              id=args.resume,
-             mode="disabled" if args.test else "online")
+             mode="disabled" if args.test or False else "online")
 
   # Note: hopefully it's ok that we repeat this even when resuming a run?
   config = wandb.config
   config.ec2_instance_type = ec2_get_instance_type()
   config.test = args.test
   config.seed = args.seed
-  config.learning_rate = 0.01
+  config.learning_rate = 0.001
   config.num_epochs = 3 if config.test else 200
-  config.batch_size = 7 if config.test else 256
+  config.batch_size = 7 if config.test else 512
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
