@@ -2,7 +2,6 @@
 interpolation downstream.
 
 Notes:
-* This convnet is something of my own creation
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
 * A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
@@ -24,51 +23,95 @@ from utils import RngPooper, ec2_get_instance_type, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
 
-activation = nn.relu
-
 class TestModel(nn.Module):
 
   @nn.compact
   def __call__(self, x):
     x = nn.Conv(features=8, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=16, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=32, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=32, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
 
     x = jnp.mean(x, axis=-1)
     x = jnp.reshape(x, (x.shape[0], -1))
     x = nn.Dense(32)(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Dense(32)(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Dense(10)(x)
     x = nn.log_softmax(x)
     return x
 
 class ConvNetModel(nn.Module):
+  """This convnet is something of my own creation. Doesn't seem to work all that
+  well..."""
 
   @nn.compact
   def __call__(self, x):
     x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = activation(x)
+    x = nn.relu(x)
     # Take the mean along the channel dimension. Otherwise the following dense
     # layer is massive.
     x = jnp.mean(x, axis=-1)
     x = jnp.reshape(x, (x.shape[0], -1))
     x = nn.Dense(4096)(x)
-    x = activation(x)
+    x = nn.relu(x)
     x = nn.Dense(4096)(x)
-    x = activation(x)
+    x = nn.relu(x)
+    x = nn.Dense(10)(x)
+    x = nn.log_softmax(x)
+    return x
+
+class VGG16(nn.Module):
+
+  @nn.compact
+  def __call__(self, x):
+    # Backbone
+    for _ in range(2):
+      x = nn.Conv(features=64, kernel_size=(3, 3))(x)
+      x = nn.relu(x)
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+    for _ in range(2):
+      x = nn.Conv(features=128, kernel_size=(3, 3))(x)
+      x = nn.relu(x)
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+    for _ in range(3):
+      x = nn.Conv(features=256, kernel_size=(3, 3))(x)
+      x = nn.relu(x)
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+    for _ in range(3):
+      x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+      x = nn.relu(x)
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+    for _ in range(3):
+      x = nn.Conv(features=512, kernel_size=(3, 3))(x)
+      x = nn.relu(x)
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+
+    # Classifier
+    # Note: everyone seems to do a different thing here.
+    # * https://github.com/davisyoshida/vgg16-haiku/blob/4ef0bd001bf9daa4cfb2fa83ea3956ec01add3a8/vgg/vgg.py#L56
+    #     does average pooling with a kernel size of (7, 7)
+    # * https://github.com/kuangliu/pytorch-cifar/blob/49b7aa97b0c12fe0d4054e670403a16b6b834ddd/models/vgg.py#L37
+    #     does average pooling with a kernel size of (1, 1) which doesn't seem
+    #     to accomplish anything. But this paper also doesn't really do the
+    #     dense layers the same as in the paper either...
+    # * The paper itself doesn't mention any kind of pooling...
+    #
+    # I'll stick to replicating the paper as closely as possible for now.
+    x = jnp.reshape(x, (x.shape[0], -1))
+    x = nn.Dense(4096)(x)
+    x = nn.Dense(4096)(x)
     x = nn.Dense(10)(x)
     x = nn.log_softmax(x)
     return x
@@ -251,7 +294,7 @@ if __name__ == "__main__":
 
   wandb.init(project="playing-the-lottery",
              entity="skainswo",
-             tags=["cifar10", "convnet"],
+             tags=["cifar10", "vgg16"],
              resume="must" if args.resume is not None else None,
              id=args.resume,
              mode="disabled" if args.test or False else "online")
@@ -267,7 +310,7 @@ if __name__ == "__main__":
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
-  model = TestModel() if config.test else ConvNetModel()
+  model = TestModel() if config.test else VGG16()
   train_ds, test_ds = get_datasets(config.test)
   stuff = make_stuff(model, train_ds, config.batch_size)
   train_state = init_train_state(rp.poop(),
