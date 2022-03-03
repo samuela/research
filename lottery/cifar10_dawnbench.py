@@ -112,9 +112,9 @@ def make_stuff(model, train_ds, batch_size: int):
   assert num_train_examples >= batch_size
   num_batches = num_train_examples // batch_size
 
-  # Note: Some confusion regarding exactly what RandomCrop does: https://github.com/khdlr/augmax/issues/6
   train_transform = augmax.Chain(
-      augmax.RandomCrop(32, 32),
+      # augmax does not seem to support random crops with padding. See https://github.com/khdlr/augmax/issues/6.
+      # augmax.RandomCrop(32, 32),
       augmax.HorizontalFlip(),
       augmax.Rotate(),
   )
@@ -155,13 +155,16 @@ def make_stuff(model, train_ds, batch_size: int):
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     images, labels = dataset
     num_examples = images.shape[0]
-    batch = make_batcher(num_examples, batch_size)
+    assert num_examples % batch_size == 0
+    num_batches = num_examples // batch_size
+    batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
     # Can't use vmap or run in a single batch since that overloads GPU memory.
-    losses, num_corrects = zip(
-        *[batch_eval(params, x, y) for x, y in zip(batch(images), batch(labels))])
+    losses, num_corrects = zip(*[
+        batch_eval(params, images[batch_ix[i, :], :, :, :], labels[batch_ix[i, :]])
+        for i in range(num_batches)
+    ])
     losses = jnp.array(losses)
     num_corrects = jnp.array(num_corrects)
-    assert num_examples % batch_size == 0
     return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
 
   ret = lambda: None
