@@ -48,17 +48,6 @@ class RngPooper:
     self.rng, rng_key = random.split(self.rng)
     return rng_key
 
-def make_batcher(num_examples: int, batch_size: int):
-  # We need to special case the situation where batch_size divides num_examples,
-  # since in that situation `jnp.split` will return an empty array as the final
-  # batch.
-  if num_examples % batch_size != 0:
-    splits = list(jnp.arange(1, num_examples // batch_size + 1) * batch_size)
-  else:
-    splits = list(jnp.arange(1, num_examples // batch_size) * batch_size)
-
-  return lambda arr: jnp.split(arr, splits)
-
 ### Model definition
 dtype = jnp.float16
 
