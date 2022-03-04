@@ -6,13 +6,26 @@ let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
   # Differences on top of nixpkgs mainline:
-  # - https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0 updates jaxlib-bin to use the cuDNN 8.3 instead of 8.1 to get around https://github.com/google/jax/discussions/9455
-  # TODO overlay to override cudatoolkit with cudatoolkit 11.5, etc.
-  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/4ef4292aef7a236fdc84d097ac9086bd45ec8ba3.tar.gz") {
+  # - merged in https://github.com/NixOS/nixpkgs/pull/161887/ (this is now merged upstream)
+  # - https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0 updates jaxlib-bin to use the
+  #   cuDNN 8.3 instead of 8.1 to get around https://github.com/google/jax/discussions/9455. There's now a PR for this
+  #   https://github.com/NixOS/nixpkgs/pull/162703.
+  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/bbc05be6a38b90b1c61deaeea919d7c98b728f49.tar.gz") {
     config.allowUnfree = true;
     # These actually cause problems for some reason. bug report?
     # config.cudaSupport = true;
     # config.cudnnSupport = true;
+
+    # Note that this overlay currently doesn't really accomplish anything since we're using my custom fork with
+    # jaxlib-bin CUDA dependencies set already.
+    overlays = [
+      (final: prev: {
+        cudatoolkit = prev.cudatoolkit_11_5;
+        cudnn = prev.cudnn_8_3_cudatoolkit_11_5;
+        # blas = prev.blas.override { blasProvider = final.mkl; };
+        # lapack = prev.lapack.override { lapackProvider = final.mkl; };
+      })
+    ];
   };
 in
 pkgs.mkShell {
