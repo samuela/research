@@ -7,7 +7,9 @@ Notes:
 * A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
 
 Things to try:
-* weight decay
+* make this vgg16 specific
+* try no label smoothing, 500 iterations
+* try adding noise to parameters
 * resnet18
 """
 import argparse
@@ -232,10 +234,15 @@ def get_datasets(test: bool):
 
 def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
   # See https://github.com/kuangliu/pytorch-cifar.
+  warmup_epochs = 5
   steps_per_epoch = num_train_examples // batch_size
-  lr_schedule = optax.cosine_decay_schedule(learning_rate, decay_steps=num_epochs * steps_per_epoch)
-  tx = optax.sgd(lr_schedule, momentum=0.9)
-  # TODO: add_decayed_weights
+  lr_schedule = optax.warmup_cosine_decay_schedule(
+      init_value=1e-6,
+      peak_value=learning_rate,
+      warmup_steps=warmup_epochs * steps_per_epoch,
+      decay_steps=(num_epochs - warmup_epochs) * steps_per_epoch,
+  )
+  tx = optax.chain(optax.add_decayed_weights(5e-4), optax.sgd(lr_schedule, momentum=0.9))
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
@@ -254,15 +261,15 @@ if __name__ == "__main__":
              tags=["cifar10", "vgg16"],
              resume="must" if args.resume is not None else None,
              id=args.resume,
-             mode="disabled" if args.test or False else "online")
+             mode="disabled" if args.test else "online")
 
   # Note: hopefully it's ok that we repeat this even when resuming a run?
   config = wandb.config
   config.ec2_instance_type = ec2_get_instance_type()
   config.test = args.test
   config.seed = args.seed
-  config.learning_rate = 1e-3
-  config.num_epochs = 3 if config.test else 200
+  config.learning_rate = 0.1
+  config.num_epochs = 100
   config.batch_size = 7 if config.test else 128
 
   rp = RngPooper(random.PRNGKey(config.seed))
@@ -297,10 +304,10 @@ if __name__ == "__main__":
       test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(
           train_state.params, test_ds, batch_size=10 if config.test else 1000)
 
-    # if not config.test:
-    #   with timeblock("Save checkpoint"):
-    #     # See https://docs.wandb.ai/guides/track/advanced/save-restore
-    #     save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
+    if not config.test and (epoch % 10 == 1 or epoch == config.num_epochs - 1):
+      with timeblock("Save checkpoint"):
+        # See https://docs.wandb.ai/guides/track/advanced/save-restore
+        save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
 
     print(
         f"Epoch {epoch}: train loss {train_loss:.3f}, train accuracy {train_accuracy:.3f}, test loss {test_loss:.3f}, test accuracy {test_accuracy:.3f}"
