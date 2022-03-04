@@ -7,8 +7,6 @@ Notes:
 * A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
 
 Things to try:
-* make this vgg16 specific
-* try no label smoothing, 500 iterations
 * try adding noise to parameters
 * resnet18
 """
@@ -29,104 +27,53 @@ from utils import RngPooper, ec2_get_instance_type, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
 
-class TestModel(nn.Module):
+def make_vgg(backbone_layers, classifier_width: int, norm):
 
-  @nn.compact
-  def __call__(self, x):
-    x = nn.Conv(features=8, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=16, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=32, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=32, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
+  class VGG(nn.Module):
 
-    x = jnp.mean(x, axis=-1)
-    x = jnp.reshape(x, (x.shape[0], -1))
-    x = nn.Dense(32)(x)
-    x = nn.relu(x)
-    x = nn.Dense(32)(x)
-    x = nn.relu(x)
-    x = nn.Dense(10)(x)
-    x = nn.log_softmax(x)
-    return x
+    @nn.compact
+    def __call__(self, x):
+      for l in backbone_layers:
+        if isinstance(l, int):
+          x = nn.Conv(features=l, kernel_size=(3, 3))(x)
+          x = norm()(x)
+          x = nn.relu(x)
+        elif l == "m":
+          x = nn.max_pool(x, (2, 2), strides=(2, 2))
+        else:
+          raise
 
-class ConvNetModel(nn.Module):
-  """This convnet is something of my own creation. Doesn't seem to work all that
-  well..."""
-
-  @nn.compact
-  def __call__(self, x):
-    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-    x = nn.relu(x)
-    # Take the mean along the channel dimension. Otherwise the following dense
-    # layer is massive.
-    x = jnp.mean(x, axis=-1)
-    x = jnp.reshape(x, (x.shape[0], -1))
-    x = nn.Dense(4096)(x)
-    x = nn.relu(x)
-    x = nn.Dense(4096)(x)
-    x = nn.relu(x)
-    x = nn.Dense(10)(x)
-    x = nn.log_softmax(x)
-    return x
-
-class VGG16(nn.Module):
-
-  @nn.compact
-  def __call__(self, x):
-    # Backbone
-    for _ in range(2):
-      x = nn.Conv(features=64, kernel_size=(3, 3))(x)
-      x = nn.GroupNorm()(x)
+      # Classifier
+      # Note: everyone seems to do a different thing here.
+      # * https://github.com/davisyoshida/vgg16-haiku/blob/4ef0bd001bf9daa4cfb2fa83ea3956ec01add3a8/vgg/vgg.py#L56
+      #     does average pooling with a kernel size of (7, 7)
+      # * https://github.com/kuangliu/pytorch-cifar/blob/49b7aa97b0c12fe0d4054e670403a16b6b834ddd/models/vgg.py#L37
+      #     does average pooling with a kernel size of (1, 1) which doesn't seem
+      #     to accomplish anything. See https://github.com/kuangliu/pytorch-cifar/issues/110.
+      #     But this paper also doesn't really do the dense layers the same as in
+      #     the paper either...
+      # * The paper itself doesn't mention any kind of pooling...
+      #
+      # I'll stick to replicating the paper as closely as possible for now.
+      x = jnp.reshape(x, (x.shape[0], -1))
+      x = nn.Dense(classifier_width)(x)
       x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2), strides=(2, 2))
-    for _ in range(2):
-      x = nn.Conv(features=128, kernel_size=(3, 3))(x)
-      x = nn.GroupNorm()(x)
+      x = nn.Dense(classifier_width)(x)
       x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2), strides=(2, 2))
-    for _ in range(3):
-      x = nn.Conv(features=256, kernel_size=(3, 3))(x)
-      x = nn.GroupNorm()(x)
-      x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2), strides=(2, 2))
-    for _ in range(3):
-      x = nn.Conv(features=512, kernel_size=(3, 3))(x)
-      x = nn.GroupNorm()(x)
-      x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2), strides=(2, 2))
-    for _ in range(3):
-      x = nn.Conv(features=512, kernel_size=(3, 3))(x)
-      x = nn.GroupNorm()(x)
-      x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2), strides=(2, 2))
+      x = nn.Dense(10)(x)
+      x = nn.log_softmax(x)
+      return x
 
-    # Classifier
-    # Note: everyone seems to do a different thing here.
-    # * https://github.com/davisyoshida/vgg16-haiku/blob/4ef0bd001bf9daa4cfb2fa83ea3956ec01add3a8/vgg/vgg.py#L56
-    #     does average pooling with a kernel size of (7, 7)
-    # * https://github.com/kuangliu/pytorch-cifar/blob/49b7aa97b0c12fe0d4054e670403a16b6b834ddd/models/vgg.py#L37
-    #     does average pooling with a kernel size of (1, 1) which doesn't seem
-    #     to accomplish anything. See https://github.com/kuangliu/pytorch-cifar/issues/110.
-    #     But this paper also doesn't really do the dense layers the same as in
-    #     the paper either...
-    # * The paper itself doesn't mention any kind of pooling...
-    #
-    # I'll stick to replicating the paper as closely as possible for now.
-    x = jnp.reshape(x, (x.shape[0], -1))
-    x = nn.Dense(4096)(x)
-    x = nn.Dense(4096)(x)
-    x = nn.Dense(10)(x)
-    x = nn.log_softmax(x)
-    return x
+  return VGG
+
+TestVGG = make_vgg([8, 8, "m", 8, 8, "m", 8, 8, 8, "m", 8, 8, 8, "m", 8, 8, 8, "m"],
+                   classifier_width=8,
+                   norm=lambda: lambda x: x)
+
+VGG16 = make_vgg(
+    [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
+    classifier_width=4096,
+    norm=nn.GroupNorm)
 
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds
@@ -274,7 +221,7 @@ if __name__ == "__main__":
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
-  model = TestModel() if config.test else VGG16()
+  model = TestVGG() if config.test else VGG16()
   train_ds, test_ds = get_datasets(config.test)
   stuff = make_stuff(model, train_ds, config.batch_size)
   train_state = init_train_state(rp.poop(),
