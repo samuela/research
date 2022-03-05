@@ -75,6 +75,13 @@ VGG16 = make_vgg(
     classifier_width=4096,
     norm=nn.GroupNorm)
 
+VGG19 = make_vgg([
+    64, 64, "m", 128, 128, "m", 256, 256, 256, 256, "m", 512, 512, 512, 512, "m", 512, 512, 512,
+    512, "m"
+],
+                 classifier_width=4096,
+                 norm=nn.GroupNorm)
+
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds
   # `lax.scan` requires that all the batches have identical shape so we have to
@@ -85,7 +92,7 @@ def make_stuff(model, train_ds, batch_size: int):
 
   train_transform = augmax.Chain(
       # augmax does not seem to support random crops with padding. See https://github.com/khdlr/augmax/issues/6.
-      # augmax.RandomCrop(32, 32),
+      augmax.RandomSizedCrop(32, 32, zoom_range=(0.8, 1.2)),
       augmax.HorizontalFlip(),
       augmax.Rotate(),
   )
@@ -190,6 +197,7 @@ def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_trai
       decay_steps=(num_epochs - warmup_epochs) * steps_per_epoch,
   )
   tx = optax.chain(optax.add_decayed_weights(5e-4), optax.sgd(lr_schedule, momentum=0.9))
+  # tx = optax.adamw(learning_rate=lr_schedule, weight_decay=5e-4)
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
