@@ -3,7 +3,6 @@
 Some notes:
 * Entirety of the CIFAR-10 dataset is loaded into GPU memory, for speeeedz.
 * Training epochs are fully jit'd with `lax.scan`.
-* Data augmentation is fully jit'd thanks to augmax.
 * Like the pytorch version, we use float16 weights.
 
 On a p3.2xlarge instance, this version completes about 23.9s/epoch. The PyTorch
@@ -15,8 +14,8 @@ What am I missing?
 Differences with the original:
 * We don't use any batchnorm for now. If anything that should make the JAX version faster.
 * We use a slightly different optimizer.
+* Data augmentation has been removed, as @levskaya suggested that might be slowing things down.
 """
-import argparse
 import time
 from contextlib import contextmanager
 
@@ -101,12 +100,6 @@ def make_stuff(model, train_ds, batch_size: int):
   assert num_train_examples >= batch_size
   num_batches = num_train_examples // batch_size
 
-  train_transform = augmax.Chain(
-      # augmax does not seem to support random crops with padding. See https://github.com/khdlr/augmax/issues/6.
-      # augmax.RandomCrop(32, 32),
-      augmax.HorizontalFlip(),
-      augmax.Rotate(),
-  )
   # Applied to all input images, test and train.
   normalize_transform = augmax.Chain(augmax.ByteToFloat(), augmax.Normalize())
 
@@ -121,19 +114,16 @@ def make_stuff(model, train_ds, batch_size: int):
 
   @jit
   def train_epoch(rng, train_state):
-    rng1, rng2 = random.split(rng)
-    batch_ix = random.permutation(rng1, num_train_examples)[:num_batches * batch_size].reshape(
+    batch_ix = random.permutation(rng, num_train_examples)[:num_batches * batch_size].reshape(
         (num_batches, batch_size))
-    # We need rngs for data augmentation of each example.
-    augmax_rngs = random.split(rng2, num_batches * batch_size)
 
     def step(train_state, i):
       p = batch_ix[i, :]
       images = ds_images[p, :, :, :]
+      # images = jnp.zeros((batch_size, 32, 32, 3), dtype=jnp.uint8)
       labels = ds_labels[p]
-      images_transformed = vmap(train_transform)(augmax_rngs[p], images)
-      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params,
-                                                                     images_transformed, labels)
+      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images,
+                                                                     labels)
       return train_state.apply_gradients(grads=g), (l, num_correct)
 
     # `lax.scan` is tricky to use correctly. See https://github.com/google/jax/discussions/9669#discussioncomment-2234793.
@@ -162,80 +152,52 @@ def make_stuff(model, train_ds, batch_size: int):
   ret.dataset_loss_and_accuracy = dataset_loss_and_accuracy
   return ret
 
-def get_datasets(test: bool):
+def get_datasets():
   """Return the training and test datasets, as jnp.array's."""
-  if test:
-    num_train = 100
-    num_test = 1000
-    train_images = random.choice(random.PRNGKey(0), jnp.arange(256, dtype=jnp.uint8),
-                                 (num_train, 32, 32, 3))
-    test_images = random.choice(random.PRNGKey(1), jnp.arange(256, dtype=jnp.uint8),
-                                (num_test, 32, 32, 3))
-    train_labels = random.choice(random.PRNGKey(2), jnp.arange(10, dtype=jnp.uint8), (num_train, ))
-    test_labels = random.choice(random.PRNGKey(3), jnp.arange(10, dtype=jnp.uint8), (num_test, ))
-    return (train_images, train_labels), (test_images, test_labels)
-  else:
-    import tensorflow as tf
+  import tensorflow as tf
 
-    # See https://github.com/google/jax/issues/9454.
-    tf.config.set_visible_devices([], "GPU")
-    import tensorflow_datasets as tfds
+  # See https://github.com/google/jax/issues/9454.
+  tf.config.set_visible_devices([], "GPU")
+  import tensorflow_datasets as tfds
 
-    train_ds = tfds.load("cifar10", split="train", as_supervised=True)
-    test_ds = tfds.load("cifar10", split="test", as_supervised=True)
+  train_ds = tfds.load("cifar10", split="train", as_supervised=True)
+  test_ds = tfds.load("cifar10", split="test", as_supervised=True)
 
-    train_ds = tfds.as_numpy(train_ds)
-    test_ds = tfds.as_numpy(test_ds)
+  train_ds = tfds.as_numpy(train_ds)
+  test_ds = tfds.as_numpy(test_ds)
 
-    train_images = jnp.stack([x for x, _ in train_ds])
-    train_labels = jnp.stack([y for _, y in train_ds])
-    test_images = jnp.stack([x for x, _ in test_ds])
-    test_labels = jnp.stack([y for _, y in test_ds])
+  train_images = jnp.stack([x for x, _ in train_ds])
+  train_labels = jnp.stack([y for _, y in train_ds])
+  test_images = jnp.stack([x for x, _ in test_ds])
+  test_labels = jnp.stack([y for _, y in test_ds])
 
-    return (train_images, train_labels), (test_images, test_labels)
+  return (train_images, train_labels), (test_images, test_labels)
 
-def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
-  # See https://github.com/kuangliu/pytorch-cifar.
-  steps_per_epoch = num_train_examples // batch_size
-  lr_schedule = optax.cosine_decay_schedule(learning_rate, decay_steps=num_epochs * steps_per_epoch)
-  tx = optax.sgd(lr_schedule, momentum=0.9)
+def init_train_state(rng, learning_rate, model):
+  tx = optax.sgd(learning_rate, momentum=0.9)
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser()
-  parser.add_argument("--seed", type=int, default=0, help="Random seed")
-  args = parser.parse_args()
+  batch_size = 512
 
-  # Note: hopefully it's ok that we repeat this even when resuming a run?
-  config = lambda: None
-  config.test = False
-  config.seed = args.seed
-  config.learning_rate = 0.001
-  config.num_epochs = 10
-  config.batch_size = 10 if config.test else 512
-
-  rp = RngPooper(random.PRNGKey(config.seed))
+  rp = RngPooper(random.PRNGKey(123))
 
   model = ResNetModel()
-  train_ds, test_ds = get_datasets(test=config.test)
-  stuff = make_stuff(model, train_ds, config.batch_size)
-  train_state = init_train_state(rp.poop(),
-                                 learning_rate=config.learning_rate,
-                                 model=model,
-                                 num_epochs=config.num_epochs,
-                                 batch_size=config.batch_size,
-                                 num_train_examples=train_ds[0].shape[0])
+  train_ds, test_ds = get_datasets()
+  stuff = make_stuff(model, train_ds, batch_size)
+  train_state = init_train_state(rp.poop(), learning_rate=0.001, model=model)
 
   print("Burn-in...")
-  for epoch in range(3):
-    train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
-    test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(train_state.params,
-                                                               test_ds,
-                                                               batch_size=1000)
+  for epoch in range(5):
+    with timeblock(f"Burn-in epoch"):
+      train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
+      test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(train_state.params,
+                                                                 test_ds,
+                                                                 batch_size=1000)
 
   print("Training...")
-  for epoch in range(config.num_epochs):
+  for epoch in range(10):
     with timeblock(f"Train epoch"):
       with jax.profiler.trace(log_dir="./logs"):
         train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
