@@ -1,23 +1,16 @@
 # Run with nixGL, eg `nixGLNvidia-510.47.03 python cifar10_convnet_run.py --test`
 
 let
-  # Last updated: 1/27/2022. Check for new commits at status.nixos.org.
-  # pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/83ab260bbe7e4c27bb1f467ada0265ba13bbeeb0.tar.gz") { };
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
-  # Differences on top of nixpkgs mainline:
-  # - merged in https://github.com/NixOS/nixpkgs/pull/161887/ (this is now merged upstream)
-  # - https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0 updates jaxlib-bin to use the
-  #   cuDNN 8.3 instead of 8.1 to get around https://github.com/google/jax/discussions/9455. There's now a PR for this
-  #   https://github.com/NixOS/nixpkgs/pull/162703.
-  pkgs = import (fetchTarball "https://github.com/samuela/nixpkgs/archive/bbc05be6a38b90b1c61deaeea919d7c98b728f49.tar.gz") {
+  # Last updated: 2022-03-07. Check for new commits at status.nixos.org.
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/1fc7212a2c3992eedc6eedf498955c321ad81cc2.tar.gz") {
     config.allowUnfree = true;
     # These actually cause problems for some reason. bug report?
     # config.cudaSupport = true;
     # config.cudnnSupport = true;
 
-    # Note that this overlay currently doesn't really accomplish anything since we're using my custom fork with
-    # jaxlib-bin CUDA dependencies set already.
+    # Note that this overlay currently doesn't really accomplish much since we override jaxlib-bin CUDA dependencies.
     overlays = [
       (final: prev: {
         cudatoolkit = prev.cudatoolkit_11_5;
@@ -40,6 +33,8 @@ pkgs.mkShell {
     # as to why we don't use the source builds of jaxlib/tensorflow.
     (python3Packages.jaxlib-bin.override {
       cudaSupport = true;
+      cudatoolkit_11 = cudatoolkit_11_5;
+      cudnn = cudnn_8_3_cudatoolkit_11_5;
     })
     python3Packages.matplotlib
     python3Packages.plotly
