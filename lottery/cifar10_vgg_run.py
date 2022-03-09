@@ -55,6 +55,8 @@ def make_vgg(backbone_layers, classifier_width: int, norm):
       # * The paper itself doesn't mention any kind of pooling...
       #
       # I'll stick to replicating the paper as closely as possible for now.
+      (_b, w, h, _c) = x.shape
+      assert w == h == 1
       x = jnp.reshape(x, (x.shape[0], -1))
       x = nn.Dense(classifier_width)(x)
       x = nn.relu(x)
@@ -66,9 +68,11 @@ def make_vgg(backbone_layers, classifier_width: int, norm):
 
   return VGG
 
-TestVGG = make_vgg([8, 8, "m", 8, 8, "m", 8, 8, 8, "m", 8, 8, 8, "m", 8, 8, 8, "m"],
-                   classifier_width=8,
-                   norm=lambda: lambda x: x)
+TestVGG = make_vgg(
+    [32, 32, "m", 32, 32, "m", 32, 32, 32, "m", 32, 32, 32, "m", 32, 32, 32, "m"],
+    classifier_width=8,
+    #  norm=lambda: lambda x: x,
+    norm=nn.GroupNorm)
 
 VGG16 = make_vgg(
     [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
@@ -154,9 +158,9 @@ def make_stuff(model, train_ds, batch_size: int):
   ret.dataset_loss_and_accuracy = dataset_loss_and_accuracy
   return ret
 
-def get_datasets(test: bool):
+def get_datasets(test_mode: bool):
   """Return the training and test datasets, as jnp.array's."""
-  if test:
+  if test_mode:
     num_train = 100
     num_test = 1000
     train_images = random.choice(random.PRNGKey(0), jnp.arange(256, dtype=jnp.uint8),
@@ -186,7 +190,7 @@ def get_datasets(test: bool):
 
     return (train_images, train_labels), (test_images, test_labels)
 
-def init_train_state(rng, learning_rate, model, num_epochs, batch_size, num_train_examples):
+def init_train_state(rng, model, learning_rate, num_epochs, batch_size, num_train_examples):
   # See https://github.com/kuangliu/pytorch-cifar.
   warmup_epochs = 5
   steps_per_epoch = num_train_examples // batch_size
@@ -233,8 +237,8 @@ if __name__ == "__main__":
   train_ds, test_ds = get_datasets(config.test)
   stuff = make_stuff(model, train_ds, config.batch_size)
   train_state = init_train_state(rp.poop(),
-                                 learning_rate=config.learning_rate,
                                  model=model,
+                                 learning_rate=config.learning_rate,
                                  num_epochs=config.num_epochs,
                                  batch_size=config.batch_size,
                                  num_train_examples=train_ds[0].shape[0])
