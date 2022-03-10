@@ -69,22 +69,22 @@ def make_vgg(backbone_layers, classifier_width: int, norm):
   return VGG
 
 TestVGG = make_vgg(
-    [32, 32, "m", 32, 32, "m", 32, 32, 32, "m", 32, 32, 32, "m", 32, 32, 32, "m"],
+    [64, 64, "m", 64, 64, "m", 64, 64, 64, "m", 64, 64, 64, "m", 64, 64, 64, "m"],
     classifier_width=8,
     #  norm=lambda: lambda x: x,
-    norm=nn.GroupNorm)
+    norm=nn.LayerNorm)
 
 VGG16 = make_vgg(
     [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
     classifier_width=4096,
-    norm=nn.GroupNorm)
+    norm=nn.LayerNorm)
 
 VGG19 = make_vgg([
     64, 64, "m", 128, 128, "m", 256, 256, 256, 256, "m", 512, 512, 512, 512, "m", 512, 512, 512,
     512, "m"
 ],
                  classifier_width=4096,
-                 norm=nn.GroupNorm)
+                 norm=nn.LayerNorm)
 
 def make_stuff(model, train_ds, batch_size: int):
   ds_images, ds_labels = train_ds

@@ -10,8 +10,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-from cifar10_vgg_run import (VGG16, TestVGG, get_datasets, init_train_state,
-                             make_stuff)
+from cifar10_vgg_run import (VGG16, TestVGG, get_datasets, init_train_state, make_stuff)
 from utils import RngPooper, flatten_params, timeblock, unflatten_params
 
 # See https://github.com/google/jax/issues/9454.
@@ -48,8 +47,8 @@ def permutify(paramsA, paramsB):
     return {
         **pbf, f"params/Conv_{l1}/kernel": pbf[f"params/Conv_{l1}/kernel"][:, :, :, ci],
         f"params/Conv_{l1}/bias": pbf[f"params/Conv_{l1}/bias"][ci],
-        f"params/GroupNorm_{l1}/scale": pbf[f"params/GroupNorm_{l1}/scale"][ci],
-        f"params/GroupNorm_{l1}/bias": pbf[f"params/GroupNorm_{l1}/bias"][ci],
+        f"params/LayerNorm_{l1}/scale": pbf[f"params/LayerNorm_{l1}/scale"][ci],
+        f"params/LayerNorm_{l1}/bias": pbf[f"params/LayerNorm_{l1}/bias"][ci],
         f"params/Conv_{l2}/kernel": pbf[f"params/Conv_{l2}/kernel"][:, :, ci, :]
     }
 
@@ -82,8 +81,8 @@ def permutify(paramsA, paramsB):
     return {
         **pbf, f"params/Conv_{l1}/kernel": pbf[f"params/Conv_{l1}/kernel"][:, :, :, ci],
         f"params/Conv_{l1}/bias": pbf[f"params/Conv_{l1}/bias"][ci],
-        f"params/GroupNorm_{l1}/scale": pbf[f"params/GroupNorm_{l1}/scale"][ci],
-        f"params/GroupNorm_{l1}/bias": pbf[f"params/GroupNorm_{l1}/bias"][ci],
+        f"params/LayerNorm_{l1}/scale": pbf[f"params/LayerNorm_{l1}/scale"][ci],
+        f"params/LayerNorm_{l1}/bias": pbf[f"params/LayerNorm_{l1}/bias"][ci],
         f"params/Dense_{l2}/kernel": pbf[f"params/Dense_{l2}/kernel"][ci, :]
     }
 
@@ -234,8 +233,8 @@ if __name__ == "__main__":
                                             num_train_examples=50000)), contents)
       return ret
 
-  model_a = load_checkpoint("skainswo/playing-the-lottery/2gr1uau4", epoch)
-  model_b = load_checkpoint("skainswo/playing-the-lottery/pnc6kfh1", epoch)
+  model_a = load_checkpoint("skainswo/playing-the-lottery/3cr4ugns", epoch)
+  model_b = load_checkpoint("skainswo/playing-the-lottery/1frs4pwb", epoch)
 
   lambdas = jnp.linspace(0, 1, num=10)
   train_loss_interp_clever = []
@@ -280,10 +279,12 @@ if __name__ == "__main__":
   print("Plotting...")
   fig = plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
                          train_loss_interp_clever, test_loss_interp_clever)
-  plt.savefig(f"cifar1_vgg16_interp_loss_epoch{epoch}.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}.pdf")
   plt.close(fig)
 
   fig = plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
                         train_acc_interp_clever, test_acc_interp_clever)
-  plt.savefig(f"cifar1_vgg16_interp_accuracy_epoch{epoch}.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}.pdf")
   plt.close(fig)
