@@ -79,6 +79,11 @@ VGG16 = make_vgg(
     classifier_width=4096,
     norm=nn.LayerNorm)
 
+VGG16Wide = make_vgg(
+    [512, 512, "m", 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
+    classifier_width=4096,
+    norm=nn.LayerNorm)
+
 VGG19 = make_vgg([
     64, 64, "m", 128, 128, "m", 256, 256, 256, 256, "m", 512, 512, 512, 512, "m", 512, 512, 512,
     512, "m"
@@ -233,7 +238,7 @@ if __name__ == "__main__":
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
-  model = TestVGG() if config.test else VGG16()
+  model = TestVGG() if config.test else VGG16Wide()
   train_ds, test_ds = get_datasets(config.test)
   stuff = make_stuff(model, train_ds, config.batch_size)
   train_state = init_train_state(rp.poop(),

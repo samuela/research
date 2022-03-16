@@ -10,7 +10,7 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-from cifar10_vgg_run import (VGG16, TestVGG, get_datasets, init_train_state, make_stuff)
+from cifar10_vgg_run import (VGG16, TestVGG, VGG16Wide, get_datasets, init_train_state, make_stuff)
 from utils import RngPooper, flatten_params, timeblock, unflatten_params
 
 # See https://github.com/google/jax/issues/9454.
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     test_permutify()
 
   epoch = 99
-  model = VGG16()
+  model = VGG16Wide()
 
   def load_checkpoint(run, epoch):
     # See https://github.com/wandb/client/issues/3247.
@@ -233,8 +233,8 @@ if __name__ == "__main__":
                                             num_train_examples=50000)), contents)
       return ret
 
-  model_a = load_checkpoint("skainswo/playing-the-lottery/3cr4ugns", epoch)
-  model_b = load_checkpoint("skainswo/playing-the-lottery/1frs4pwb", epoch)
+  model_a = load_checkpoint("skainswo/playing-the-lottery/3467b9pk", epoch)
+  model_b = load_checkpoint("skainswo/playing-the-lottery/s622wdyh", epoch)
 
   lambdas = jnp.linspace(0, 1, num=10)
   train_loss_interp_clever = []
