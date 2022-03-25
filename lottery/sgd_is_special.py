@@ -55,6 +55,13 @@ paramsB2 = swap_first_layer(paramsB1)
 paramsB3 = swap_second_layer(paramsB1)
 paramsB4 = swap_first_layer(swap_second_layer(paramsB1))
 
+# Assert that [swapfirst, swapsecond] is the same as [swapsecond, swapfirst].
+assert jnp.all(
+    jnp.array(
+        list(
+            tree_map(jnp.allclose, swap_first_layer(swap_second_layer(paramsB1)),
+                     swap_second_layer(swap_first_layer(paramsB1))).values())))
+
 num_examples = 1024
 testX = random.uniform(rng, (num_examples, 2), dtype=dtype, minval=-1, maxval=1)
 testY = (testX[:, 0] >= 0) & (testX[:, 1] >= 0)
