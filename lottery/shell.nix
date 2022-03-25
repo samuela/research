@@ -4,7 +4,7 @@ let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
   # Last updated: 2022-03-07. Check for new commits at status.nixos.org.
-  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/1fc7212a2c3992eedc6eedf498955c321ad81cc2.tar.gz") {
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/4d60081494259c0785f7e228518fee74e0792c1b.tar.gz") {
     config.allowUnfree = true;
     # These actually cause problems for some reason. bug report?
     # config.cudaSupport = true;
@@ -46,15 +46,4 @@ pkgs.mkShell {
     python3Packages.wandb
     yapf
   ];
-
-  # See
-  #  * https://discourse.nixos.org/t/using-cuda-enabled-packages-on-non-nixos-systems/17788
-  #  * https://discourse.nixos.org/t/cuda-from-nixkgs-in-non-nixos-case/7100
-  #  * https://github.com/guibou/nixGL/issues/50
-  #
-  # Note that we just do our best to stay up to date with whatever the latest cudatoolkit version is, and hope that it's
-  # compatible with what's used in jaxlib-bin. See https://github.com/samuela/nixpkgs/commit/cedb9abbb1969073f3e6d76a68da8835ec70ddb0#commitcomment-67106407.
-  shellHook = ''
-    export LD_LIBRARY_PATH=${pkgs.cudatoolkit_11_5}/lib
-  '';
 }
