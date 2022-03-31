@@ -68,7 +68,7 @@ class ResNetModel(nn.Module):
     print("after Conv_1    ", x.shape)
     # batchnorm
     x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2))
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
     print("after max_pool_0", x.shape)
     residual = x
     y = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
@@ -86,7 +86,7 @@ class ResNetModel(nn.Module):
     print("after Conv_4    ", x.shape)
     # batchnorm
     x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2))
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
     print("after max_pool_1", x.shape)
 
     # layer3
@@ -94,7 +94,7 @@ class ResNetModel(nn.Module):
     print("after Conv_5    ", x.shape)
     # batchnorm
     x = nn.relu(x)
-    x = nn.max_pool(x, (2, 2))
+    x = nn.max_pool(x, (2, 2), strides=(2, 2))
     print("after max_pool_2", x.shape)
     residual = x
     y = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
@@ -107,7 +107,7 @@ class ResNetModel(nn.Module):
     y = nn.relu(y)
     x = y + residual
 
-    x = nn.max_pool(x, (4, 4))
+    x = nn.max_pool(x, (4, 4), strides=(4, 4))
     print("after max_pool_3", x.shape)
     x = jnp.reshape(x, (x.shape[0], -1))
     x = nn.Dense(10, dtype=dtype, use_bias=False)(x)
