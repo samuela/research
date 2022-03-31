@@ -50,44 +50,67 @@ class RngPooper:
 ### Model definition
 dtype = jnp.float16
 
+# See https://github.com/samuela/cifar10-fast/blob/master/dawn_utils.py.
 class ResNetModel(nn.Module):
 
   @nn.compact
   def __call__(self, x):
     # prep
+    print("init            ", x.shape)
     x = nn.Conv(features=64, kernel_size=(3, 3), dtype=dtype)(x)
+    # batchnorm
+    print("after Conv_0    ", x.shape)
     x = nn.relu(x)
+    # no pool in the "prep" layer
 
     # layer1
     x = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
+    print("after Conv_1    ", x.shape)
+    # batchnorm
     x = nn.relu(x)
     x = nn.max_pool(x, (2, 2))
+    print("after max_pool_0", x.shape)
     residual = x
     y = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(x)
+    print("after Conv_2    ", y.shape)
+    # batchnorm
     y = nn.relu(y)
     y = nn.Conv(features=128, kernel_size=(3, 3), dtype=dtype)(y)
+    print("after Conv_3    ", y.shape)
+    # batchnorm
     y = nn.relu(y)
     x = y + residual
 
     # layer2
     x = nn.Conv(features=256, kernel_size=(3, 3), dtype=dtype)(x)
+    print("after Conv_4    ", x.shape)
+    # batchnorm
     x = nn.relu(x)
     x = nn.max_pool(x, (2, 2))
+    print("after max_pool_1", x.shape)
 
     # layer3
     x = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
+    print("after Conv_5    ", x.shape)
+    # batchnorm
     x = nn.relu(x)
     x = nn.max_pool(x, (2, 2))
+    print("after max_pool_2", x.shape)
     residual = x
     y = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(x)
+    print("after Conv_6    ", y.shape)
+    # batchnorm
     y = nn.relu(y)
     y = nn.Conv(features=512, kernel_size=(3, 3), dtype=dtype)(y)
+    print("after Conv_7    ", y.shape)
+    # batchnorm
     y = nn.relu(y)
     x = y + residual
 
     x = nn.max_pool(x, (4, 4))
+    print("after max_pool_3", x.shape)
     x = jnp.reshape(x, (x.shape[0], -1))
-    x = nn.Dense(10, dtype=dtype)(x)
+    x = nn.Dense(10, dtype=dtype, use_bias=False)(x)
     x = nn.log_softmax(x)
     return x
 
