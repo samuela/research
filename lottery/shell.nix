@@ -26,6 +26,7 @@ pkgs.mkShell {
     ffmpeg
     python3
     python3Packages.augmax
+    python3Packages.einops
     python3Packages.flax
     python3Packages.ipython
     python3Packages.jax
