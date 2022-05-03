@@ -249,6 +249,7 @@ if __name__ == "__main__":
 
   train_ds, test_ds = get_datasets(test_mode=False)
   stuff = make_stuff(model, train_ds, batch_size=128)
+  b2 = permutify({"params": model_a.params}, {"params": model_b.params})
   for lam in tqdm(lambdas):
     naive_p = freeze(tree_map(lambda a, b: lam * a + (1 - lam) * b, model_a.params, model_b.params))
     naive_train_loss, naive_train_acc = stuff.dataset_loss_and_accuracy(naive_p, train_ds, 1000)
@@ -258,7 +259,6 @@ if __name__ == "__main__":
     train_acc_interp_naive.append(naive_train_acc)
     test_acc_interp_naive.append(naive_test_acc)
 
-    b2 = permutify({"params": model_a.params}, {"params": model_b.params})
     clever_p = freeze(tree_map(lambda a, b: lam * a + (1 - lam) * b, model_a.params, b2["params"]))
     clever_train_loss, clever_train_acc = stuff.dataset_loss_and_accuracy(clever_p, train_ds, 1000)
     clever_test_loss, clever_test_acc = stuff.dataset_loss_and_accuracy(clever_p, test_ds, 1000)
@@ -279,12 +279,12 @@ if __name__ == "__main__":
   print("Plotting...")
   fig = plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
                          train_loss_interp_clever, test_loss_interp_clever)
-  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}.png", dpi=300)
-  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}.pdf")
+  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}_filter_matching.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_loss_epoch{epoch}_filter_matching.pdf")
   plt.close(fig)
 
   fig = plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
                         train_acc_interp_clever, test_acc_interp_clever)
-  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}.png", dpi=300)
-  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}.pdf")
+  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}_filter_matching.png", dpi=300)
+  plt.savefig(f"cifar10_vgg16_interp_accuracy_epoch{epoch}_filter_matching.pdf")
   plt.close(fig)
