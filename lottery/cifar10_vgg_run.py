@@ -1,6 +1,9 @@
 """Train a convnet on CIFAR-10 on one random seed. Serialize the model for
 interpolation downstream.
 
+TODO:
+* migrate to the wandb Artifacts API. https://docs.wandb.ai/guides/artifacts/artifacts-core-concepts
+
 Notes:
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
@@ -158,11 +161,13 @@ def make_stuff(model, train_ds, batch_size: int):
     return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
 
   ret = lambda: None
+  ret.normalize_transform = normalize_transform
   ret.batch_eval = batch_eval
   ret.train_epoch = train_epoch
   ret.dataset_loss_and_accuracy = dataset_loss_and_accuracy
   return ret
 
+# TODO: rename this to smoke_test or something
 def get_datasets(test_mode: bool):
   """Return the training and test datasets, as jnp.array's."""
   if test_mode:
@@ -225,7 +230,8 @@ if __name__ == "__main__":
              tags=["cifar10", "vgg16"],
              resume="must" if args.resume is not None else None,
              id=args.resume,
-             mode="disabled" if args.test else "online")
+             mode="disabled" if args.test else "online",
+             job_type="train")
 
   # Note: hopefully it's ok that we repeat this even when resuming a run?
   config = wandb.config
