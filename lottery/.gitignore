@@ -2,3 +2,6 @@ wandb/
 *.mp4
 *.pdf
 *.png
+
+# Nix build results
+result*
