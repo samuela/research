@@ -2,6 +2,8 @@
 interpolation downstream."""
 import argparse
 
+import augmax
+import jax
 import jax.numpy as jnp
 import optax
 import tensorflow as tf
@@ -9,7 +11,7 @@ import tensorflow_datasets as tfds
 from flax import linen as nn
 from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.train_state import TrainState
-from jax import jit, random, value_and_grad
+from jax import jit, random, value_and_grad, vmap
 from tqdm import tqdm
 
 import wandb
@@ -38,53 +40,67 @@ class MLPModel(nn.Module):
   @nn.compact
   def __call__(self, x):
     x = jnp.reshape(x, (-1, 28 * 28))
-    x = nn.Dense(1024)(x)
+    x = nn.Dense(512)(x)
     x = activation(x)
-    x = nn.Dense(1024)(x)
+    x = nn.Dense(512)(x)
     x = activation(x)
-    x = nn.Dense(1024)(x)
+    x = nn.Dense(512)(x)
     x = activation(x)
     x = nn.Dense(10)(x)
     x = nn.log_softmax(x)
     return x
 
 def make_stuff(model):
-  ret = lambda: None
+  normalize_transform = augmax.ByteToFloat()
 
   @jit
-  def batch_loss(params, images, y_onehot):
-    logits = model.apply({"params": params}, images)
-    return jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
+  def batch_eval(params, images_u8, labels):
+    images_f32 = vmap(normalize_transform)(None, images_u8)
+    logits = model.apply({"params": params}, images_f32)
+    y_onehot = jax.nn.one_hot(labels, 10)
+    loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
+    num_correct = jnp.sum(jnp.argmax(logits, axis=-1) == jnp.argmax(y_onehot, axis=-1))
+    return loss, num_correct
 
   @jit
-  def batch_num_correct(params, images, y_onehot):
-    logits = model.apply({"params": params}, images)
-    return jnp.sum(jnp.argmax(logits, axis=-1) == jnp.argmax(y_onehot, axis=-1))
-
-  @jit
-  def step(train_state, images, y_onehot):
-    l, g = value_and_grad(batch_loss)(train_state.params, images, y_onehot)
+  def step(train_state, images_f32, labels):
+    (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images_f32,
+                                                                   labels)
     return train_state.apply_gradients(grads=g), l
 
-  def dataset_loss(params, ds):
-    # Note that we multiply by the batch size here, in order to get the sum of the
-    # losses, then average over the whole dataset.
-    return jnp.mean(jnp.array([x.shape[0] * batch_loss(params, x, y) for x, y in ds]))
+  def dataset_loss_and_num_correct_jnp(params, dataset, batch_size: int):
+    images_u8, labels = dataset
+    num_examples = images_u8.shape[0]
+    assert num_examples % batch_size == 0
+    num_batches = num_examples // batch_size
+    batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
+    # Can't use vmap or run in a single batch since that overloads GPU memory.
+    losses, num_corrects = zip(*[
+        batch_eval(params, images_u8[batch_ix[i, :], :, :, :], labels[batch_ix[i, :]])
+        for i in range(num_batches)
+    ])
+    losses = jnp.array(losses)
+    num_corrects = jnp.array(num_corrects)
+    return jnp.sum(batch_size * losses) / num_examples, jnp.sum(num_corrects) / num_examples
 
-  def dataset_total_correct(params, ds):
-    return jnp.sum(jnp.array([batch_num_correct(params, x, y) for x, y in ds]))
+  def dataset_loss_and_num_correct_tfds(params, dataset):
+    dataset_total_size = sum([x.shape[0] for x, _ in dataset])
+    return (jnp.sum(jnp.array([x.shape[0] * batch_eval(params, x, y)[0]
+                               for x, y in dataset])) / dataset_total_size,
+            jnp.sum(jnp.array([batch_eval(params, x, y)[1]
+                               for x, y in dataset])) / dataset_total_size)
 
-  ret.batch_loss = batch_loss
-  ret.batch_num_correct = batch_num_correct
+  ret = lambda: None
+  ret.batch_eval = batch_eval
   ret.step = step
-  ret.dataset_loss = dataset_loss
-  ret.dataset_total_correct = dataset_total_correct
+  ret.dataset_loss_and_num_correct_jnp = dataset_loss_and_num_correct_jnp
+  ret.dataset_loss_and_num_correct_tfds = dataset_loss_and_num_correct_tfds
   return ret
 
-def get_datasets(test_mode):
+def get_datasets_tfds(smoke_test_mode):
   """Return the training and test datasets, unbatched.
 
-  test_mode: Whether or not we're running in "smoke test" mode.
+  smoke_test_mode: Whether or not we're running in "smoke test" mode.
   """
   train_ds = tfds.load("mnist", split="train", as_supervised=True)
   test_ds = tfds.load("mnist", split="test", as_supervised=True)
@@ -92,15 +108,24 @@ def get_datasets(test_mode):
   #     2022-01-25 07:32:58.144059: W tensorflow/core/kernels/data/cache_dataset_ops.cc:768] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
   # is not because we're actually doing this in the wrong order, but rather that
   # the dataset is loaded in and called .cache() on before we receive it.
-  if test_mode:
+  if smoke_test_mode:
     train_ds = train_ds.take(13)
     test_ds = test_ds.take(17)
 
-  # Normalize 0-255 pixel values to 0.0-1.0
-  normalize = lambda image, label: (tf.cast(image, tf.float32) / 255.0, tf.one_hot(label, depth=10))
-  train_ds = train_ds.map(normalize).cache()
-  test_ds = test_ds.map(normalize).cache()
   return train_ds, test_ds
+
+def get_datasets_jnp(smoke_test_mode):
+  train_ds, test_ds = get_datasets_tfds(smoke_test_mode)
+
+  train_ds = tfds.as_numpy(train_ds)
+  test_ds = tfds.as_numpy(test_ds)
+
+  train_images = jnp.stack([x for x, _ in train_ds])
+  train_labels = jnp.stack([y for _, y in train_ds])
+  test_images = jnp.stack([x for x, _ in test_ds])
+  test_labels = jnp.stack([y for _, y in test_ds])
+
+  return (train_images, train_labels), (test_images, test_labels)
 
 def init_train_state(rng, learning_rate, model):
   tx = optax.adam(learning_rate)
@@ -111,17 +136,11 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
-  parser.add_argument("--resume", type=str, help="wandb run to resume from (eg. 1kqqa9js)")
-  parser.add_argument("--resume-epoch",
-                      type=int,
-                      help="The epoch to resume from. Required if --resume is set.")
   args = parser.parse_args()
 
   wandb.init(project="playing-the-lottery",
              entity="skainswo",
              tags=["mnist", "mlp"],
-             resume="must" if args.resume is not None else None,
-             id=args.resume,
              mode="disabled" if args.test else "online")
 
   # Note: hopefully it's ok that we repeat this even when resuming a run?
@@ -131,62 +150,55 @@ if __name__ == "__main__":
   config.seed = args.seed
   config.learning_rate = 0.001
   config.num_epochs = 10 if config.test else 50
-  config.batch_size = 7 if config.test else 512
+  config.batch_size = 7 if config.test else 500
 
   rp = RngPooper(random.PRNGKey(config.seed))
 
   model = TestModel() if config.test else MLPModel()
   stuff = make_stuff(model)
 
-  train_ds, test_ds = get_datasets(test_mode=config.test)
-  num_train_examples = train_ds.cardinality().numpy()
-  num_test_examples = test_ds.cardinality().numpy()
+  train_ds_tfds, test_ds_tfds = get_datasets_tfds(smoke_test_mode=config.test)
+  train_ds_jnp, test_ds_jnp = get_datasets_jnp(smoke_test_mode=config.test)
+  num_train_examples = train_ds_jnp[0].shape[0]
+  num_test_examples = test_ds_jnp[0].shape[0]
+
+  assert num_train_examples % config.batch_size == 0
 
   train_state = init_train_state(rp.poop(), config.learning_rate, model)
-  start_epoch = 0
 
-  if args.resume is not None:
-    # Bring the the desired resume epoch into the wandb run directory so that it
-    # can then be picked up by `restore_checkpoint` below.
-    wandb.restore(f"checkpoint_{args.resume_epoch}")
-    last_epoch, train_state = restore_checkpoint(wandb.run.dir, (0, train_state))
-    # We need to increment last_epoch, because we store `(i, train_state)`
-    # where `train_state` is the state _after_ i'th epoch. So we're actually
-    # starting from the next epoch.
-    start_epoch = last_epoch + 1
-
-  for epoch in tqdm(range(start_epoch, config.num_epochs),
-                    initial=start_epoch,
-                    total=config.num_epochs):
+  for epoch in tqdm(range(config.num_epochs)):
     with timeblock(f"Epoch"):
-      # Set the seed as a hash of the epoch and the overall random seed, so that
-      # we ensure different seeds see different data orders, since tfds's random
-      # seed is independent of our `RngPooper`.
-      for images, labels in tfds.as_numpy(
-          train_ds.shuffle(num_train_examples,
-                           seed=hash(f"{config.seed}-{epoch}")).batch(config.batch_size)):
-        train_state, batch_loss = stuff.step(train_state, images, labels)
-
-    train_ds_batched = tfds.as_numpy(train_ds.batch(config.batch_size))
-    test_ds_batched = tfds.as_numpy(test_ds.batch(config.batch_size))
+      batch_ix = random.permutation(rp.poop(), num_train_examples).reshape((-1, config.batch_size))
+      for i in range(batch_ix.shape[0]):
+        p = batch_ix[i, :]
+        images_u8 = train_ds_jnp[0][p, :, :, :]
+        labels = train_ds_jnp[1][p]
+        train_state, batch_loss = stuff.step(train_state, images_u8, labels)
 
     # Evaluate train/test loss/accuracy
-    with timeblock("Model eval"):
-      train_loss = stuff.dataset_loss(train_state.params, train_ds_batched)
-      test_loss = stuff.dataset_loss(train_state.params, test_ds_batched)
-      train_accuracy = stuff.dataset_total_correct(train_state.params,
-                                                   train_ds_batched) / num_train_examples
-      test_accuracy = stuff.dataset_total_correct(train_state.params,
-                                                  test_ds_batched) / num_test_examples
+    with timeblock("Model eval (jnp)"):
+      train_loss_jnp, train_accuracy_jnp = stuff.dataset_loss_and_num_correct_jnp(
+          train_state.params, train_ds_jnp, 1000)
+      test_loss_jnp, test_accuracy_jnp = stuff.dataset_loss_and_num_correct_jnp(
+          train_state.params, test_ds_jnp, 1000)
 
-    if not config.test:
-      # See https://docs.wandb.ai/guides/track/advanced/save-restore
-      save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
+    with timeblock("Model eval (tfds)"):
+      train_ds_tfds_batched = tfds.as_numpy(train_ds_tfds.batch(1000))
+      test_ds_tfds_batched = tfds.as_numpy(test_ds_tfds.batch(1000))
+
+      train_loss_tfds, train_accuracy_tfds = stuff.dataset_loss_and_num_correct_tfds(
+          train_state.params, train_ds_tfds_batched)
+      test_loss_tfds, test_accuracy_tfds = stuff.dataset_loss_and_num_correct_tfds(
+          train_state.params, test_ds_tfds_batched)
 
     wandb.log({
         "epoch": epoch,
-        "train_loss": train_loss,
-        "test_loss": test_loss,
-        "train_accuracy": train_accuracy,
-        "test_accuracy": test_accuracy,
+        "train_loss_jnp": train_loss_jnp,
+        "test_loss_jnp": test_loss_jnp,
+        "train_accuracy_jnp": train_accuracy_jnp,
+        "test_accuracy_jnp": test_accuracy_jnp,
+        "train_loss_tfds": train_loss_tfds,
+        "test_loss_tfds": test_loss_tfds,
+        "train_accuracy_tfds": train_accuracy_tfds,
+        "test_accuracy_tfds": test_accuracy_tfds,
     })
