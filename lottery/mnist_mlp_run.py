@@ -5,11 +5,11 @@ import argparse
 import augmax
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from flax import linen as nn
-from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.train_state import TrainState
 from jax import jit, random, value_and_grad, vmap
 from tqdm import tqdm
@@ -66,73 +66,65 @@ def make_stuff(model):
   def step(train_state, images_f32, labels):
     (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images_f32,
                                                                    labels)
-    return train_state.apply_gradients(grads=g), l
+    return train_state.apply_gradients(grads=g), {"batch_loss": l, "num_correct": num_correct}
 
-  def dataset_loss_and_num_correct_jnp(params, dataset, batch_size: int):
-    images_u8, labels = dataset
-    num_examples = images_u8.shape[0]
+  def dataset_loss_and_accuracy(params, dataset, batch_size: int):
+    num_examples = dataset["images_u8"].shape[0]
     assert num_examples % batch_size == 0
     num_batches = num_examples // batch_size
     batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
     # Can't use vmap or run in a single batch since that overloads GPU memory.
     losses, num_corrects = zip(*[
-        batch_eval(params, images_u8[batch_ix[i, :], :, :, :], labels[batch_ix[i, :]])
-        for i in range(num_batches)
+        batch_eval(
+            params,
+            dataset["images_u8"][batch_ix[i, :], :, :, :],
+            dataset["labels"][batch_ix[i, :]],
+        ) for i in range(num_batches)
     ])
     losses = jnp.array(losses)
     num_corrects = jnp.array(num_corrects)
     return jnp.sum(batch_size * losses) / num_examples, jnp.sum(num_corrects) / num_examples
 
-  def dataset_loss_and_num_correct_tfds(params, dataset):
-    dataset_total_size = sum([x.shape[0] for x, _ in dataset])
-    return (jnp.sum(jnp.array([x.shape[0] * batch_eval(params, x, y)[0]
-                               for x, y in dataset])) / dataset_total_size,
-            jnp.sum(jnp.array([batch_eval(params, x, y)[1]
-                               for x, y in dataset])) / dataset_total_size)
+  return {
+      "batch_eval": batch_eval,
+      "step": step,
+      "dataset_loss_and_accuracy": dataset_loss_and_accuracy
+  }
 
-  ret = lambda: None
-  ret.batch_eval = batch_eval
-  ret.step = step
-  ret.dataset_loss_and_num_correct_jnp = dataset_loss_and_num_correct_jnp
-  ret.dataset_loss_and_num_correct_tfds = dataset_loss_and_num_correct_tfds
-  return ret
-
-def get_datasets_tfds(smoke_test_mode):
+def get_datasets(smoke_test_mode):
   """Return the training and test datasets, unbatched.
 
   smoke_test_mode: Whether or not we're running in "smoke test" mode.
   """
-  train_ds = tfds.load("mnist", split="train", as_supervised=True)
-  test_ds = tfds.load("mnist", split="test", as_supervised=True)
+  train_ds_tfds = tfds.load("mnist", split="train", as_supervised=True)
+  test_ds_tfds = tfds.load("mnist", split="test", as_supervised=True)
   # Note: The take/cache warning:
   #     2022-01-25 07:32:58.144059: W tensorflow/core/kernels/data/cache_dataset_ops.cc:768] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
   # is not because we're actually doing this in the wrong order, but rather that
   # the dataset is loaded in and called .cache() on before we receive it.
   if smoke_test_mode:
-    train_ds = train_ds.take(13)
-    test_ds = test_ds.take(17)
+    train_ds_tfds = train_ds_tfds.take(13)
+    test_ds_tfds = test_ds_tfds.take(17)
 
+  train_ds_tfds = tfds.as_numpy(train_ds_tfds)
+  test_ds_tfds = tfds.as_numpy(test_ds_tfds)
+
+  train_ds = {
+      "images_u8": jnp.stack([x for x, _ in train_ds_tfds]),
+      "labels": jnp.stack([y for _, y in train_ds_tfds])
+  }
+  test_ds = {
+      "images_u8": jnp.stack([x for x, _ in test_ds_tfds]),
+      "labels": jnp.stack([y for _, y in test_ds_tfds])
+  }
   return train_ds, test_ds
-
-def get_datasets_jnp(smoke_test_mode):
-  train_ds, test_ds = get_datasets_tfds(smoke_test_mode)
-
-  train_ds = tfds.as_numpy(train_ds)
-  test_ds = tfds.as_numpy(test_ds)
-
-  train_images = jnp.stack([x for x, _ in train_ds])
-  train_labels = jnp.stack([y for _, y in train_ds])
-  test_images = jnp.stack([x for x, _ in test_ds])
-  test_labels = jnp.stack([y for _, y in test_ds])
-
-  return (train_images, train_labels), (test_images, test_labels)
 
 def init_train_state(rng, learning_rate, model):
   tx = optax.adam(learning_rate)
   vars = model.init(rng, jnp.zeros((1, 28, 28, 1)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
 
-if __name__ == "__main__":
+def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
@@ -157,48 +149,43 @@ if __name__ == "__main__":
   model = TestModel() if config.test else MLPModel()
   stuff = make_stuff(model)
 
-  train_ds_tfds, test_ds_tfds = get_datasets_tfds(smoke_test_mode=config.test)
-  train_ds_jnp, test_ds_jnp = get_datasets_jnp(smoke_test_mode=config.test)
-  num_train_examples = train_ds_jnp[0].shape[0]
-  num_test_examples = test_ds_jnp[0].shape[0]
+  with timeblock("get_datasets"):
+    train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+    print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
+    print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
+
+  num_train_examples = train_ds["images_u8"].shape[0]
 
   assert num_train_examples % config.batch_size == 0
 
   train_state = init_train_state(rp.poop(), config.learning_rate, model)
 
   for epoch in tqdm(range(config.num_epochs)):
+    infos = []
     with timeblock(f"Epoch"):
       batch_ix = random.permutation(rp.poop(), num_train_examples).reshape((-1, config.batch_size))
       for i in range(batch_ix.shape[0]):
         p = batch_ix[i, :]
-        images_u8 = train_ds_jnp[0][p, :, :, :]
-        labels = train_ds_jnp[1][p]
-        train_state, batch_loss = stuff.step(train_state, images_u8, labels)
+        images_u8 = train_ds["images_u8"][p, :, :, :]
+        labels = train_ds["labels"][p]
+        train_state, info = stuff["step"](train_state, images_u8, labels)
+        infos.append(info)
+
+    train_loss = sum(config.batch_size * x["batch_loss"] for x in infos) / num_train_examples
+    train_accuracy = sum(x["num_correct"] for x in infos) / num_train_examples
 
     # Evaluate train/test loss/accuracy
-    with timeblock("Model eval (jnp)"):
-      train_loss_jnp, train_accuracy_jnp = stuff.dataset_loss_and_num_correct_jnp(
-          train_state.params, train_ds_jnp, 1000)
-      test_loss_jnp, test_accuracy_jnp = stuff.dataset_loss_and_num_correct_jnp(
-          train_state.params, test_ds_jnp, 1000)
-
-    with timeblock("Model eval (tfds)"):
-      train_ds_tfds_batched = tfds.as_numpy(train_ds_tfds.batch(1000))
-      test_ds_tfds_batched = tfds.as_numpy(test_ds_tfds.batch(1000))
-
-      train_loss_tfds, train_accuracy_tfds = stuff.dataset_loss_and_num_correct_tfds(
-          train_state.params, train_ds_tfds_batched)
-      test_loss_tfds, test_accuracy_tfds = stuff.dataset_loss_and_num_correct_tfds(
-          train_state.params, test_ds_tfds_batched)
+    with timeblock("Model eval"):
+      test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
+                                                                    1000)
 
     wandb.log({
         "epoch": epoch,
-        "train_loss_jnp": train_loss_jnp,
-        "test_loss_jnp": test_loss_jnp,
-        "train_accuracy_jnp": train_accuracy_jnp,
-        "test_accuracy_jnp": test_accuracy_jnp,
-        "train_loss_tfds": train_loss_tfds,
-        "test_loss_tfds": test_loss_tfds,
-        "train_accuracy_tfds": train_accuracy_tfds,
-        "test_accuracy_tfds": test_accuracy_tfds,
+        "train_loss": train_loss,
+        "test_loss": test_loss,
+        "train_accuracy": train_accuracy,
+        "test_accuracy": test_accuracy,
     })
+
+if __name__ == "__main__":
+  main()
