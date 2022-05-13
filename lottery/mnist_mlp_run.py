@@ -3,6 +3,7 @@ interpolation downstream."""
 import argparse
 
 import augmax
+import flax
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -15,7 +16,7 @@ from jax import jit, random, value_and_grad, vmap
 from tqdm import tqdm
 
 import wandb
-from utils import RngPooper, ec2_get_instance_type, timeblock
+from utils import ec2_get_instance_type, rngmix, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
 
@@ -130,62 +131,70 @@ def main():
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
   args = parser.parse_args()
 
-  wandb.init(project="playing-the-lottery",
-             entity="skainswo",
-             tags=["mnist", "mlp"],
-             mode="disabled" if args.test else "online")
+  with wandb.init(
+      project="playing-the-lottery",
+      entity="skainswo",
+      tags=["mnist", "mlp"],
+      mode="disabled" if args.test else "online",
+      job_type="train",
+  ) as wandb_run:
+    artifact = wandb.Artifact("mnist-mlp-weights", type="model-weights")
 
-  # Note: hopefully it's ok that we repeat this even when resuming a run?
-  config = wandb.config
-  config.ec2_instance_type = ec2_get_instance_type()
-  config.test = args.test
-  config.seed = args.seed
-  config.learning_rate = 0.001
-  config.num_epochs = 10 if config.test else 50
-  config.batch_size = 7 if config.test else 500
+    config = wandb.config
+    config.ec2_instance_type = ec2_get_instance_type()
+    config.test = args.test
+    config.seed = args.seed
+    config.learning_rate = 0.001
+    config.num_epochs = 10 if config.test else 50
+    config.batch_size = 7 if config.test else 500
 
-  rp = RngPooper(random.PRNGKey(config.seed))
+    rng = random.PRNGKey(config.seed)
 
-  model = TestModel() if config.test else MLPModel()
-  stuff = make_stuff(model)
+    model = TestModel() if config.test else MLPModel()
+    stuff = make_stuff(model)
 
-  with timeblock("get_datasets"):
-    train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
-    print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
-    print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
+    with timeblock("get_datasets"):
+      train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+      print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
+      print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
 
-  num_train_examples = train_ds["images_u8"].shape[0]
+    num_train_examples = train_ds["images_u8"].shape[0]
+    assert num_train_examples % config.batch_size == 0
 
-  assert num_train_examples % config.batch_size == 0
+    train_state = init_train_state(rngmix(rng, "init"), config.learning_rate, model)
 
-  train_state = init_train_state(rp.poop(), config.learning_rate, model)
+    for epoch in tqdm(range(config.num_epochs)):
+      infos = []
+      with timeblock(f"Epoch"):
+        batch_ix = random.permutation(rngmix(rng, f"epoch-{epoch}"), num_train_examples).reshape(
+            (-1, config.batch_size))
+        for i in range(batch_ix.shape[0]):
+          p = batch_ix[i, :]
+          images_u8 = train_ds["images_u8"][p, :, :, :]
+          labels = train_ds["labels"][p]
+          train_state, info = stuff["step"](train_state, images_u8, labels)
+          infos.append(info)
 
-  for epoch in tqdm(range(config.num_epochs)):
-    infos = []
-    with timeblock(f"Epoch"):
-      batch_ix = random.permutation(rp.poop(), num_train_examples).reshape((-1, config.batch_size))
-      for i in range(batch_ix.shape[0]):
-        p = batch_ix[i, :]
-        images_u8 = train_ds["images_u8"][p, :, :, :]
-        labels = train_ds["labels"][p]
-        train_state, info = stuff["step"](train_state, images_u8, labels)
-        infos.append(info)
+      train_loss = sum(config.batch_size * x["batch_loss"] for x in infos) / num_train_examples
+      train_accuracy = sum(x["num_correct"] for x in infos) / num_train_examples
 
-    train_loss = sum(config.batch_size * x["batch_loss"] for x in infos) / num_train_examples
-    train_accuracy = sum(x["num_correct"] for x in infos) / num_train_examples
+      # Evaluate train/test loss/accuracy
+      with timeblock("Model eval"):
+        test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
+                                                                      1000)
 
-    # Evaluate train/test loss/accuracy
-    with timeblock("Model eval"):
-      test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
-                                                                    1000)
+      wandb.log({
+          "epoch": epoch,
+          "train_loss": train_loss,
+          "test_loss": test_loss,
+          "train_accuracy": train_accuracy,
+          "test_accuracy": test_accuracy,
+      })
 
-    wandb.log({
-        "epoch": epoch,
-        "train_loss": train_loss,
-        "test_loss": test_loss,
-        "train_accuracy": train_accuracy,
-        "test_accuracy": test_accuracy,
-    })
+      with artifact.new_file(f"checkpoint{epoch}", mode="wb") as f:
+        f.write(flax.serialization.to_bytes(train_state))
+
+    wandb_run.log_artifact(artifact)
 
 if __name__ == "__main__":
   main()

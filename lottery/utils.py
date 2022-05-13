@@ -7,6 +7,8 @@ from flax import traverse_util
 from flax.core import freeze, unfreeze
 from jax import random
 
+rngmix = lambda rng, x: random.fold_in(rng, hash(x))
+
 @contextmanager
 def timeblock(name):
   start = time.time()
