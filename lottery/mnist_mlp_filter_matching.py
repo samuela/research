@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -25,7 +26,7 @@ def cosine_similarity(X, Y):
   # return: (m, n)
   return (X @ Y.T) / jnp.linalg.norm(X, axis=-1).reshape((-1, 1)) / jnp.linalg.norm(Y, axis=-1)
 
-def permutify(params1, params2):
+def match_filters(params1, params2):
   """Permute the parameters of params2 to match params1 as closely as possible.
   Returns the permuted version of params2. Only works on sequences of Dense
   layers for now."""
@@ -59,7 +60,7 @@ def test_cosine_similarity():
     Y = random.normal(rp.poop(), (7, 5))
     assert jnp.allclose(1 - cosine_similarity(X, Y), cdist(X, Y, metric="cosine"))
 
-def test_permutify():
+def test_match_filters():
   rp = RngPooper(random.PRNGKey(0))
 
   class Model(nn.Module):
@@ -79,7 +80,7 @@ def test_permutify():
   p2 = model.init(rp.poop(), jnp.zeros((1, 28 * 28)))
   # print(tree_map(jnp.shape, flatten_params(p1)))
 
-  new_p2 = permutify(p1, p2)
+  new_p2 = match_filters(p1, p2)
 
   # Test that the model is the same after permutation.
   random_input = random.normal(rp.poop(), (128, 28 * 28))
@@ -166,78 +167,121 @@ def plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naiv
   fig.tight_layout()
   return fig
 
+def main():
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--model-a", type=str, required=True)
+  parser.add_argument("--model-b", type=str, required=True)
+  parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
+  parser.add_argument("--seed", type=int, default=0, help="Random seed")
+  args = parser.parse_args()
+
+  with wandb.init(
+      project="playing-the-lottery",
+      entity="skainswo",
+      tags=["mnist", "mlp", "filter-matching"],
+      # See https://github.com/wandb/client/issues/3672.
+      mode="online",
+      job_type="analysis",
+  ) as wandb_run:
+    config = wandb.config
+
+    config.model_a = args.model_a
+    config.model_b = args.model_b
+    config.test = args.test
+    config.epoch = 49
+
+    model = MLPModel()
+
+    def load_model(filepath):
+      with open(filepath, "rb") as fh:
+        return from_bytes(init_train_state(random.PRNGKey(0), -1, model), fh.read())
+
+    artifact_a = Path(wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_a}").download())
+    artifact_b = Path(wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_b}").download())
+    model_a = load_model(artifact_a / f"checkpoint{config.epoch}")
+    model_b = load_model(artifact_b / f"checkpoint{config.epoch}")
+
+    lambdas = jnp.linspace(0, 1, num=10)
+
+    stuff = make_stuff(model)
+    train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+
+    train_loss_interp_naive = []
+    test_loss_interp_naive = []
+    train_acc_interp_naive = []
+    test_acc_interp_naive = []
+    for lam in tqdm(lambdas):
+      naive_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b.params)
+      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 1000)
+      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 1000)
+      train_loss_interp_naive.append(train_loss)
+      test_loss_interp_naive.append(test_loss)
+      train_acc_interp_naive.append(train_acc)
+      test_acc_interp_naive.append(test_acc)
+
+    model_b_clever = match_filters({"params": model_a.params}, {"params": model_b.params})
+
+    train_loss_interp_clever = []
+    test_loss_interp_clever = []
+    train_acc_interp_clever = []
+    test_acc_interp_clever = []
+    for lam in tqdm(lambdas):
+      clever_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params,
+                          model_b_clever["params"])
+      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 1000)
+      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 1000)
+      train_loss_interp_clever.append(train_loss)
+      test_loss_interp_clever.append(test_loss)
+      train_acc_interp_clever.append(train_acc)
+      test_acc_interp_clever.append(test_acc)
+
+    assert len(lambdas) == len(train_loss_interp_naive)
+    assert len(lambdas) == len(test_loss_interp_naive)
+    assert len(lambdas) == len(train_acc_interp_naive)
+    assert len(lambdas) == len(test_acc_interp_naive)
+    assert len(lambdas) == len(train_loss_interp_clever)
+    assert len(lambdas) == len(test_loss_interp_clever)
+    assert len(lambdas) == len(train_acc_interp_clever)
+    assert len(lambdas) == len(test_acc_interp_clever)
+
+    print("Plotting...")
+    fig = plot_interp_loss(config.epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
+                           train_loss_interp_clever, test_loss_interp_clever)
+    plt.savefig(f"mnist_mlp_interp_loss_epoch{config.epoch}.png", dpi=300)
+    wandb.log({"interp_loss_fig": wandb.Image(fig)}, commit=False)
+    plt.close(fig)
+
+    fig = plot_interp_acc(config.epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
+                          train_acc_interp_clever, test_acc_interp_clever)
+    plt.savefig(f"mnist_mlp_interp_accuracy_epoch{config.epoch}.png", dpi=300)
+    wandb.log({"interp_acc_fig": wandb.Image(fig)}, commit=False)
+    plt.close(fig)
+
+    wandb.log({
+        "train_loss_interp_naive": train_loss_interp_naive,
+        "test_loss_interp_naive": test_loss_interp_naive,
+        "train_acc_interp_naive": train_acc_interp_naive,
+        "test_acc_interp_naive": test_acc_interp_naive,
+        "train_loss_interp_clever": train_loss_interp_clever,
+        "test_loss_interp_clever": test_loss_interp_clever,
+        "train_acc_interp_clever": train_acc_interp_clever,
+        "test_acc_interp_clever": test_acc_interp_clever,
+    })
+
+    print({
+        "train_loss_interp_naive": train_loss_interp_naive,
+        "test_loss_interp_naive": test_loss_interp_naive,
+        "train_acc_interp_naive": train_acc_interp_naive,
+        "test_acc_interp_naive": test_acc_interp_naive,
+        "train_loss_interp_clever": train_loss_interp_clever,
+        "test_loss_interp_clever": test_loss_interp_clever,
+        "train_acc_interp_clever": train_acc_interp_clever,
+        "test_acc_interp_clever": test_acc_interp_clever,
+    })
+
 if __name__ == "__main__":
   with timeblock("Tests"):
     test_cosine_similarity()
-    test_permutify()
+    test_match_filters()
 
-  epoch = 49
-  model = MLPModel()
-
-  def load_checkpoint(run, epoch):
-    f = wandb.restore(f"checkpoint_{epoch}", run)
-    with open(f.name, "rb") as f:
-      _, ret = from_bytes((0, init_train_state(random.PRNGKey(0), -1, model)), f.read())
-    Path(f.name).unlink()
-    return ret
-
-  model_a = load_checkpoint("skainswo/playing-the-lottery/2iwebdo3", epoch)
-  model_b = load_checkpoint("skainswo/playing-the-lottery/2vu72civ", epoch)
-
-  lambdas = jnp.linspace(0, 1, num=10)
-  train_loss_interp_clever = []
-  test_loss_interp_clever = []
-  train_acc_interp_clever = []
-  test_acc_interp_clever = []
-
-  train_loss_interp_naive = []
-  test_loss_interp_naive = []
-  train_acc_interp_naive = []
-  test_acc_interp_naive = []
-
-  stuff = make_stuff(model)
-  train_ds, test_ds = get_datasets(test_mode=False)
-  num_train_examples = train_ds.cardinality().numpy()
-  num_test_examples = test_ds.cardinality().numpy()
-  # Might as well use the larget batch size that we can fit into memory here.
-  train_ds_batched = tfds.as_numpy(train_ds.batch(2048))
-  test_ds_batched = tfds.as_numpy(test_ds.batch(2048))
-  for lam in tqdm(lambdas):
-    # TODO make this look like the permuted version below
-    naive_p = tree_map(lambda a, b: lam * a + (1 - lam) * b, model_a.params, model_b.params)
-    train_loss_interp_naive.append(stuff.dataset_loss(naive_p, train_ds_batched))
-    test_loss_interp_naive.append(stuff.dataset_loss(naive_p, test_ds_batched))
-    train_acc_interp_naive.append(
-        stuff.dataset_total_correct(naive_p, train_ds_batched) / num_train_examples)
-    test_acc_interp_naive.append(
-        stuff.dataset_total_correct(naive_p, test_ds_batched) / num_test_examples)
-
-    b2 = permutify({"params": model_a.params}, {"params": model_b.params})
-    clever_p = tree_map(lambda a, b: lam * a + (1 - lam) * b, freeze({"params": model_a.params}),
-                        b2)
-    train_loss_interp_clever.append(stuff.dataset_loss(clever_p["params"], train_ds_batched))
-    test_loss_interp_clever.append(stuff.dataset_loss(clever_p["params"], test_ds_batched))
-    train_acc_interp_clever.append(
-        stuff.dataset_total_correct(clever_p["params"], train_ds_batched) / num_train_examples)
-    test_acc_interp_clever.append(
-        stuff.dataset_total_correct(clever_p["params"], test_ds_batched) / num_test_examples)
-
-  assert len(lambdas) == len(train_loss_interp_naive)
-  assert len(lambdas) == len(test_loss_interp_naive)
-  assert len(lambdas) == len(train_acc_interp_naive)
-  assert len(lambdas) == len(test_acc_interp_naive)
-  assert len(lambdas) == len(train_loss_interp_clever)
-  assert len(lambdas) == len(test_loss_interp_clever)
-  assert len(lambdas) == len(train_acc_interp_clever)
-  assert len(lambdas) == len(test_acc_interp_clever)
-
-  print("Plotting...")
-  fig = plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
-                         train_loss_interp_clever, test_loss_interp_clever)
-  plt.savefig(f"mnist_mlp_interp_loss_epoch{epoch}.png", dpi=300)
-  plt.close(fig)
-
-  fig = plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
-                        train_acc_interp_clever, test_acc_interp_clever)
-  plt.savefig(f"mnist_mlp_interp_accuracy_epoch{epoch}.png", dpi=300)
-  plt.close(fig)
+  main()
