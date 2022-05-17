@@ -3,22 +3,12 @@
 let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
-  # Last updated: 2022-03-07. Check for new commits at status.nixos.org.
-  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/4d60081494259c0785f7e228518fee74e0792c1b.tar.gz") {
+  # Last updated: 2022-05-16. Check for new commits at status.nixos.org.
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/556ce9a40abde33738e6c9eac65f965a8be3b623.tar.gz") {
     config.allowUnfree = true;
     # These actually cause problems for some reason. bug report?
     # config.cudaSupport = true;
     # config.cudnnSupport = true;
-
-    # Note that this overlay currently doesn't really accomplish much since we override jaxlib-bin CUDA dependencies.
-    overlays = [
-      (final: prev: {
-        cudatoolkit = prev.cudatoolkit_11_5;
-        cudnn = prev.cudnn_8_3_cudatoolkit_11_5;
-        # blas = prev.blas.override { blasProvider = final.mkl; };
-        # lapack = prev.lapack.override { lapackProvider = final.mkl; };
-      })
-    ];
   };
 in
 pkgs.mkShell {
@@ -34,14 +24,17 @@ pkgs.mkShell {
     # as to why we don't use the source builds of jaxlib/tensorflow.
     (python3Packages.jaxlib-bin.override {
       cudaSupport = true;
-      cudatoolkit_11 = cudatoolkit_11_5;
-      cudnn = cudnn_8_3_cudatoolkit_11_5;
     })
     python3Packages.matplotlib
+    # python3Packages.pandas
     python3Packages.plotly
+    # python3Packages.scikit-learn
     (python3Packages.tensorflow-bin.override {
       cudaSupport = false;
     })
+    # Thankfully tensorflow-datasets does not have tensorflow as a propagatedBuildInput. If that were the case for any
+    # of these dependencies, we'd be in trouble since Python does not like multiple versions of the same package in
+    # PYTHONPATH.
     python3Packages.tensorflow-datasets
     python3Packages.tqdm
     python3Packages.wandb
