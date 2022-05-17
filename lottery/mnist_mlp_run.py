@@ -87,6 +87,7 @@ def make_stuff(model):
     return jnp.sum(batch_size * losses) / num_examples, jnp.sum(num_corrects) / num_examples
 
   return {
+      "normalize_transform": normalize_transform,
       "batch_eval": batch_eval,
       "step": step,
       "dataset_loss_and_accuracy": dataset_loss_and_accuracy
