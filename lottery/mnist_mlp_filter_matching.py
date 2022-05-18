@@ -25,31 +25,45 @@ def cosine_similarity(X, Y):
   # return: (m, n)
   return (X @ Y.T) / jnp.linalg.norm(X, axis=-1).reshape((-1, 1)) / jnp.linalg.norm(Y, axis=-1)
 
-def match_filters(params1, params2):
-  """Permute the parameters of params2 to match params1 as closely as possible.
-  Returns the permuted version of params2. Only works on sequences of Dense
-  layers for now."""
-  p1f = flatten_params(params1)
-  p2f = flatten_params(params2)
+def match_filters(paramsA, paramsB):
+  """Permute the parameters of paramsB to match paramsA as closely as possible.
+  Returns the permutation to apply to the weights of paramsB in order to align
+  as best as possible with paramsA along with the permuted paramsB."""
+  paf = flatten_params(paramsA)
+  pbf = flatten_params(paramsB)
 
-  p2f_new = {**p2f}
-  num_layers = max(int(kmatch("Dense_*/**", k).group(1)) for k in p1f.keys())
+  perm = {}
+  pbf_new = {**pbf}
+
+  num_layers = max(int(kmatch("Dense_*/**", k).group(1)) for k in paf.keys())
   # range is [0, num_layers), so we're safe here since we don't want to be
   # reordering the output of the last layer.
   for layer in range(num_layers):
     # Maximize since we're dealing with similarities, not distances.
-    ri, ci = linear_sum_assignment(cosine_similarity(p1f[f"Dense_{layer}/kernel"].T,
-                                                     p2f_new[f"Dense_{layer}/kernel"].T),
+    # Note that it's critically important to use `pbf_new` here, not `pbf`!
+    ri, ci = linear_sum_assignment(cosine_similarity(paf[f"Dense_{layer}/kernel"].T,
+                                                     pbf_new[f"Dense_{layer}/kernel"].T),
                                    maximize=True)
     assert (ri == jnp.arange(len(ri))).all()
 
-    p2f_new = {
-        **p2f_new, f"Dense_{layer}/kernel": p2f_new[f"Dense_{layer}/kernel"][:, ci],
-        f"Dense_{layer}/bias": p2f_new[f"Dense_{layer}/bias"][ci],
-        f"Dense_{layer+1}/kernel": p2f_new[f"Dense_{layer+1}/kernel"][ci, :]
-    }
+    perm[f"Dense_{layer} Dense_{layer+1}"] = ci
 
-  return unflatten_params(p2f_new)
+    pbf_new[f"Dense_{layer}/kernel"] = pbf_new[f"Dense_{layer}/kernel"][:, ci]
+    pbf_new[f"Dense_{layer}/bias"] = pbf_new[f"Dense_{layer}/bias"][ci]
+    pbf_new[f"Dense_{layer+1}/kernel"] = pbf_new[f"Dense_{layer+1}/kernel"][ci, :]
+
+  return perm, unflatten_params(pbf_new)
+
+# def apply_permutation(perm, params):
+#   pf = flatten_params(params)
+#   num_layers = max(int(kmatch("Dense_*/**", k).group(1)) for k in pf.keys())
+#   pf_new = {**pf}
+#   for layer in range(num_layers):
+#     p = perm[f"Dense_{layer} Dense_{layer+1}"]
+#     pf_new[f"Dense_{layer}/kernel"] = pf_new[f"Dense_{layer}/kernel"][:, p]
+#     pf_new[f"Dense_{layer}/bias"] = pf_new[f"Dense_{layer}/bias"][p]
+#     pf_new[f"Dense_{layer+1}/kernel"] = pf_new[f"Dense_{layer+1}/kernel"][p, :]
+#   return unflatten_params(pf_new)
 
 def test_cosine_similarity():
   rp = RngPooper(random.PRNGKey(0))
@@ -79,7 +93,7 @@ def test_match_filters():
   p2 = model.init(rp.poop(), jnp.zeros((1, 28 * 28)))
   # print(tree_map(jnp.shape, flatten_params(p1)))
 
-  new_p2 = match_filters(p1["params"], p2["params"])
+  _, new_p2 = match_filters(p1["params"], p2["params"])
 
   # Test that the model is the same after permutation.
   random_input = random.normal(rp.poop(), (128, 28 * 28))
@@ -219,7 +233,7 @@ def main():
       train_acc_interp_naive.append(train_acc)
       test_acc_interp_naive.append(test_acc)
 
-    model_b_clever = match_filters(model_a.params, model_b.params)
+    _, model_b_clever = match_filters(model_a.params, model_b.params)
 
     train_loss_interp_clever = []
     test_loss_interp_clever = []

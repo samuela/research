@@ -45,6 +45,9 @@ def permute_params_apply(permute_params, hardened_permute_params, model_params):
     zero = permute_params[name] - stop_gradient(permute_params[name])
     return stop_gradient(hardened_permute_params[name]) + zero
 
+  invmul = lambda A, B: A.T @ B
+  # invmul = jnp.linalg.solve
+
   P = {
       "Dense_0 Dense_1": _P("Dense_0 Dense_1"),
       "Dense_1 Dense_2": _P("Dense_1 Dense_2"),
@@ -55,16 +58,16 @@ def permute_params_apply(permute_params, hardened_permute_params, model_params):
 
   # Dense_0 has a fixed input.
   m["Dense_0/kernel"] = m["Dense_0/kernel"] @ P["Dense_0 Dense_1"]
-  m["Dense_0/bias"] = m["Dense_0/bias"].T @ P["Dense_0 Dense_1"]
+  m["Dense_0/bias"] = m["Dense_0/bias"] @ P["Dense_0 Dense_1"]
 
-  m["Dense_1/kernel"] = P["Dense_0 Dense_1"].T @ m["Dense_1/kernel"] @ P["Dense_1 Dense_2"]
+  m["Dense_1/kernel"] = invmul(P["Dense_0 Dense_1"], m["Dense_1/kernel"] @ P["Dense_1 Dense_2"])
   m["Dense_1/bias"] = m["Dense_1/bias"].T @ P["Dense_1 Dense_2"]
 
-  m["Dense_2/kernel"] = P["Dense_1 Dense_2"].T @ m["Dense_2/kernel"] @ P["Dense_2 Dense_3"]
+  m["Dense_2/kernel"] = invmul(P["Dense_1 Dense_2"], m["Dense_2/kernel"] @ P["Dense_2 Dense_3"])
   m["Dense_2/bias"] = m["Dense_2/bias"].T @ P["Dense_2 Dense_3"]
 
   # The output of Dense_3 has a fixed order so we don't need to the bias.
-  m["Dense_3/kernel"] = P["Dense_2 Dense_3"].T @ m["Dense_3/kernel"]
+  m["Dense_3/kernel"] = invmul(P["Dense_2 Dense_3"], m["Dense_3/kernel"])
 
   return unflatten_params(m)
 
@@ -90,9 +93,9 @@ def main():
     config.model_b = args.model_b
     config.test = args.test
     config.seed = args.seed
-    config.num_epochs = 10000
-    config.batch_size = 500
-    config.learning_rate = 1e-3
+    config.num_epochs = 50
+    config.batch_size = 1000
+    config.learning_rate = 1e-2
     # This is the epoch that we pull the model A/B params from.
     config.load_epoch = 49
 
@@ -164,11 +167,9 @@ def main():
 
     @jit
     def step(train_state, hardened_permute_params, images_u8, labels):
-      # We don't use any random transforms in the MNIST example.
-      images_transformed_u8 = vmap(stuff["normalize_transform"])(None, images_u8)
       (l, metrics), g = value_and_grad(batch_eval,
                                        has_aux=True)(train_state.params, hardened_permute_params,
-                                                     images_transformed_u8, labels)
+                                                     images_u8, labels)
       train_state = train_state.apply_gradients(grads=g)
 
       # Project onto Birkhoff polytope.
@@ -183,6 +184,22 @@ def main():
     train_state = TrainState.create(apply_fn=None,
                                     params=permute_params_init(rngmix(rng, "init")),
                                     tx=tx)
+    # from mnist_mlp_filter_matching import match_filters
+    # perm, _ = match_filters(model_a.params, model_b.params)
+    # pp = {
+    #     "Dense_0 Dense_1": jnp.eye(512)[:, perm["Dense_0 Dense_1"]],
+    #     "Dense_1 Dense_2": jnp.eye(512)[:, perm["Dense_1 Dense_2"]],
+    #     "Dense_2 Dense_3": jnp.eye(512)[:, perm["Dense_2 Dense_3"]],
+    # }
+    # train_state = TrainState.create(apply_fn=None, params=pp, tx=tx)
+
+    # model_b_permuted_params = permute_params_apply(train_state.params, harden(train_state.params),
+    #                                                model_b.params)
+    # interp_params = tree_map(lambda a, b: 0.5 * (a + b), model_a.params, model_b_permuted_params)
+    # train_loss_interp, train_accuracy_interp = stuff["dataset_loss_and_accuracy"](interp_params,
+    #                                                                               train_ds, 1000)
+    # print(f"Interpolated train loss: {train_loss_interp}")
+    # print(f"Interpolated train accuracy: {train_accuracy_interp}")
 
     for epoch in tqdm(range(config.num_epochs)):
       train_data_perm = random.permutation(rngmix(rng, f"epoch-{epoch}"),
