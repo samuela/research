@@ -4,9 +4,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import tensorflow_datasets as tfds
 from flax import linen as nn
-from flax.core import freeze
 from flax.serialization import from_bytes
 from jax import random, tree_map
 from scipy.optimize import linear_sum_assignment
@@ -15,7 +13,8 @@ from tqdm import tqdm
 
 import wandb
 from mnist_mlp_run import MLPModel, get_datasets, init_train_state, make_stuff
-from utils import (RngPooper, flatten_params, kmatch, timeblock, unflatten_params)
+from utils import (RngPooper, ec2_get_instance_type, flatten_params, kmatch, timeblock,
+                   unflatten_params)
 
 # See https://github.com/google/jax/issues/9454.
 tf.config.set_visible_devices([], "GPU")
@@ -34,20 +33,20 @@ def match_filters(params1, params2):
   p2f = flatten_params(params2)
 
   p2f_new = {**p2f}
-  num_layers = max(int(kmatch("params/Dense_*/**", k).group(1)) for k in p1f.keys())
+  num_layers = max(int(kmatch("Dense_*/**", k).group(1)) for k in p1f.keys())
   # range is [0, num_layers), so we're safe here since we don't want to be
   # reordering the output of the last layer.
   for layer in range(num_layers):
     # Maximize since we're dealing with similarities, not distances.
-    ri, ci = linear_sum_assignment(cosine_similarity(p1f[f"params/Dense_{layer}/kernel"].T,
-                                                     p2f_new[f"params/Dense_{layer}/kernel"].T),
+    ri, ci = linear_sum_assignment(cosine_similarity(p1f[f"Dense_{layer}/kernel"].T,
+                                                     p2f_new[f"Dense_{layer}/kernel"].T),
                                    maximize=True)
     assert (ri == jnp.arange(len(ri))).all()
 
     p2f_new = {
-        **p2f_new, f"params/Dense_{layer}/kernel": p2f_new[f"params/Dense_{layer}/kernel"][:, ci],
-        f"params/Dense_{layer}/bias": p2f_new[f"params/Dense_{layer}/bias"][ci],
-        f"params/Dense_{layer+1}/kernel": p2f_new[f"params/Dense_{layer+1}/kernel"][ci, :]
+        **p2f_new, f"Dense_{layer}/kernel": p2f_new[f"Dense_{layer}/kernel"][:, ci],
+        f"Dense_{layer}/bias": p2f_new[f"Dense_{layer}/bias"][ci],
+        f"Dense_{layer+1}/kernel": p2f_new[f"Dense_{layer+1}/kernel"][ci, :]
     }
 
   return unflatten_params(p2f_new)
@@ -80,12 +79,13 @@ def test_match_filters():
   p2 = model.init(rp.poop(), jnp.zeros((1, 28 * 28)))
   # print(tree_map(jnp.shape, flatten_params(p1)))
 
-  new_p2 = match_filters(p1, p2)
+  new_p2 = match_filters(p1["params"], p2["params"])
 
   # Test that the model is the same after permutation.
   random_input = random.normal(rp.poop(), (128, 28 * 28))
   # print(jnp.max(jnp.abs(model.apply(p2, random_input) - model.apply(new_p2, random_input))))
-  assert ((jnp.abs(model.apply(p2, random_input) - model.apply(new_p2, random_input))) < 1e-5).all()
+  assert ((jnp.abs(model.apply(p2, random_input) - model.apply({"params": new_p2}, random_input))) <
+          1e-5).all()
 
 def plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
                      train_loss_interp_clever, test_loss_interp_clever):
@@ -184,7 +184,7 @@ def main():
       job_type="analysis",
   ) as wandb_run:
     config = wandb.config
-
+    config.ec2_instance_type = ec2_get_instance_type()
     config.model_a = args.model_a
     config.model_b = args.model_b
     config.test = args.test
@@ -219,15 +219,14 @@ def main():
       train_acc_interp_naive.append(train_acc)
       test_acc_interp_naive.append(test_acc)
 
-    model_b_clever = match_filters({"params": model_a.params}, {"params": model_b.params})
+    model_b_clever = match_filters(model_a.params, model_b.params)
 
     train_loss_interp_clever = []
     test_loss_interp_clever = []
     train_acc_interp_clever = []
     test_acc_interp_clever = []
     for lam in tqdm(lambdas):
-      clever_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params,
-                          model_b_clever["params"])
+      clever_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b_clever)
       train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 1000)
       test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 1000)
       train_loss_interp_clever.append(train_loss)
