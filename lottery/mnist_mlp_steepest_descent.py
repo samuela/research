@@ -1,5 +1,6 @@
 import argparse
 import operator
+import pickle
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -12,8 +13,8 @@ from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 import wandb
-from mnist_mlp_run import MLPModel, get_datasets, init_train_state, make_stuff
-from utils import (ec2_get_instance_type, flatten_params, timeblock, unflatten_params)
+from mnist_mlp_run import MLPModel, init_train_state, load_datasets, make_stuff
+from utils import (ec2_get_instance_type, flatten_params, rngmix, timeblock, unflatten_params)
 
 # See https://github.com/google/jax/issues/9454.
 tf.config.set_visible_devices([], "GPU")
@@ -103,16 +104,15 @@ def apply_permutation(P, params):
   return unflatten_params({
       "Dense_0/kernel": pf["Dense_0/kernel"][:, P["Dense_0"]],
       "Dense_0/bias": pf["Dense_0/bias"][P["Dense_0"]],
-      "Dense_1/kernel": pf["Dense_1/kernel"][P["Dense_0"], P["Dense_1"]],
+      "Dense_1/kernel": pf["Dense_1/kernel"][P["Dense_0"], :][:, P["Dense_1"]],
       "Dense_1/bias": pf["Dense_1/bias"][P["Dense_1"]],
-      "Dense_2/kernel": pf["Dense_2/kernel"][P["Dense_1"], P["Dense_2"]],
+      "Dense_2/kernel": pf["Dense_2/kernel"][P["Dense_1"], :][:, P["Dense_2"]],
       "Dense_2/bias": pf["Dense_2/bias"][P["Dense_2"]],
       "Dense_3/kernel": pf["Dense_3/kernel"][P["Dense_2"], :],
       "Dense_3/bias": pf["Dense_3/bias"],
   })
 
-# def main():
-if __name__ == "__main__":
+def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("--model-a", type=str, required=True)
   parser.add_argument("--model-b", type=str, required=True)
@@ -133,10 +133,8 @@ if __name__ == "__main__":
     config.model_a = args.model_a
     config.model_b = args.model_b
     config.test = args.test
-    # config.seed = args.seed
-    # config.num_epochs = 50
-    config.batch_size = 1000
-    # config.learning_rate = 1e-2
+    config.seed = args.seed
+    config.batch_size = 10_000
     # This is the epoch that we pull the model A/B params from.
     config.load_epoch = 49
 
@@ -152,37 +150,19 @@ if __name__ == "__main__":
       model_a = load_model(artifact_a / f"checkpoint{config.load_epoch}")
       model_b = load_model(artifact_b / f"checkpoint{config.load_epoch}")
 
+      # For some reason flax rehydrates model paramenters as numpy arrays
+      # instead of jax.numpy arrays.
       model_a = model_a.replace(params=tree_map(jnp.asarray, model_a.params))
       model_b = model_b.replace(params=tree_map(jnp.asarray, model_b.params))
 
     with timeblock("make_stuff"):
       stuff = make_stuff(model)
     with timeblock("load datasets"):
-      train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+      train_ds, test_ds = load_datasets(smoke_test_mode=config.test)
     num_train_examples = train_ds["images_u8"].shape[0]
     num_test_examples = test_ds["images_u8"].shape[0]
-    # assert num_train_examples % config.batch_size == 0
-    # assert num_test_examples % config.batch_size == 0
-
-    # train_loss_a, train_accuracy_a = stuff["dataset_loss_and_accuracy"](model_a.params, train_ds,
-    #                                                                     1000)
-    # train_loss_b, train_accuracy_b = stuff["dataset_loss_and_accuracy"](model_b.params, train_ds,
-    #                                                                     1000)
-    # test_loss_a, test_accuracy_a = stuff["dataset_loss_and_accuracy"](model_a.params, test_ds, 1000)
-    # test_loss_b, test_accuracy_b = stuff["dataset_loss_and_accuracy"](model_b.params, test_ds, 1000)
-
-    # print({
-    #     "train_loss_a": train_loss_a,
-    #     "train_accuracy_a": train_accuracy_a,
-    #     "train_loss_b": train_loss_b,
-    #     "train_accuracy_b": train_accuracy_b,
-    #     "test_loss_a": test_loss_a,
-    #     "test_accuracy_a": test_accuracy_a,
-    #     "test_loss_b": test_loss_b,
-    #     "test_accuracy_b": test_accuracy_b,
-    # })
-
-    # baseline_train_loss = 0.5 * (train_loss_a + train_loss_b)
+    assert num_train_examples % config.batch_size == 0
+    assert num_test_examples % config.batch_size == 0
 
     ### Calculate the gradient of the loss wrt to model_a.params.
     num_batches = num_train_examples // config.batch_size
@@ -197,6 +177,9 @@ if __name__ == "__main__":
         labels = train_ds["labels"][p]
         g = grady(model_a.params, images_u8, labels)
         grad_L_a = tree_map(operator.add, grad_L_a, g)
+
+    # Don't forget to normalize so that we get the mean gradient!
+    grad_L_a = tree_map(lambda x: config.batch_size * x / num_train_examples, grad_L_a)
 
     # <dL/dA, A>
     constant_term = tree_reduce(operator.add, tree_map(jnp.vdot, grad_L_a, model_a.params))
@@ -214,6 +197,7 @@ if __name__ == "__main__":
           jnp.vdot(jnp.eye(len(newP1))[newP1, :], A),
       )
 
+    # TODO: hardcoding the number of layers for now
     num_layers = 4
     Ms = [model_b.params[f"Dense_{i}"]["kernel"] for i in range(num_layers)]
     Ns = [grad_L_a[f"Dense_{i}"]["kernel"] for i in range(num_layers)]
@@ -223,7 +207,7 @@ if __name__ == "__main__":
     Ps = [jnp.arange(Ms[i].shape[1]) for i in range(num_layers - 1)]
     Ps = [jnp.arange(Ms[0].shape[0])] + Ps + [jnp.arange(Ms[-1].shape[1])]
 
-    def calc_loss():
+    def calc_slope():
       return -constant_term + tree_reduce(
           operator.add,
           tree_map(
@@ -233,21 +217,35 @@ if __name__ == "__main__":
               (Ns, ns),
           )).item()
 
-    loss = calc_loss()
+    slope = calc_slope()
 
+    rng = random.PRNGKey(config.seed)
     for iteration in range(100):
       progress = False
-      for l in range(num_layers - 1):
+      for l in random.permutation(rngmix(rng, iteration), num_layers - 1):
         M1, N1, M2, N2, m1, n1 = Ms[l], Ns[l], Ms[l + 1], Ns[l + 1], ms[l], ns[l]
         P0, P1, P2 = Ps[l], Ps[l + 1], Ps[l + 2]
         Ps[l + 1], oldL, newL = lsa(M1, N1, M2, N2, m1, n1, P0, P1, P2)
         progress = progress or newL < oldL - 1e-12
-        loss += newL - oldL
-        print("loss", loss)
+        slope += newL - oldL
+        print("slope", slope)
       if not progress:
         break
 
-    print(calc_loss(), " -- double check our running loss calculation")
+    print(calc_slope(), " -- double check our running loss calculation")
+
+    final_permutation = {"Dense_0": Ps[1], "Dense_1": Ps[2], "Dense_2": Ps[3]}
+
+    # Save final_permutation as an Artifact
+    artifact = wandb.Artifact("model_b_permutation",
+                              type="permutation",
+                              metadata={
+                                  "dataset": "mnist",
+                                  "model": "mlp"
+                              })
+    with artifact.new_file("permutation.pkl", mode="wb") as f:
+      pickle.dump(final_permutation, f)
+    wandb_run.log_artifact(artifact)
 
     ### plotting
     lambdas = jnp.linspace(0, 1, num=25)
@@ -264,11 +262,7 @@ if __name__ == "__main__":
       train_acc_interp_naive.append(train_acc)
       test_acc_interp_naive.append(test_acc)
 
-    model_b_clever = apply_permutation({
-        "Dense_0": Ps[1],
-        "Dense_1": Ps[2],
-        "Dense_2": Ps[3]
-    }, model_b.params)
+    model_b_clever = apply_permutation(final_permutation, model_b.params)
 
     train_loss_interp_clever = []
     test_loss_interp_clever = []
@@ -297,14 +291,16 @@ if __name__ == "__main__":
                            test_loss_interp_naive, train_loss_interp_clever,
                            test_loss_interp_clever)
     plt.savefig(f"mnist_mlp_steepest_descent_interp_loss_epoch{config.load_epoch}.png", dpi=300)
-    # wandb.log({"interp_loss_fig": wandb.Image(fig)}, commit=False)
+    wandb_run.log({"interp_loss_fig": wandb.Image(fig)}, commit=False)
     plt.close(fig)
 
     fig = plot_interp_acc(config.load_epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
                           train_acc_interp_clever, test_acc_interp_clever)
     plt.savefig(f"mnist_mlp_steepest_descent_interp_accuracy_epoch{config.load_epoch}.png", dpi=300)
-    # wandb.log({"interp_acc_fig": wandb.Image(fig)}, commit=False)
+    wandb_run.log({"interp_acc_fig": wandb.Image(fig)}, commit=False)
     plt.close(fig)
 
-# if __name__ == "__main__":
-#   main()
+    wandb_run.log({}, commit=True)
+
+if __name__ == "__main__":
+  main()
