@@ -1,4 +1,5 @@
 import argparse
+import pickle
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -12,7 +13,7 @@ from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
 import wandb
-from mnist_mlp_run import MLPModel, get_datasets, init_train_state, make_stuff
+from mnist_mlp_run import MLPModel, init_train_state, load_datasets, make_stuff
 from utils import (RngPooper, ec2_get_instance_type, flatten_params, kmatch, timeblock,
                    unflatten_params)
 
@@ -46,7 +47,7 @@ def match_filters(paramsA, paramsB):
                                    maximize=True)
     assert (ri == jnp.arange(len(ri))).all()
 
-    perm[f"Dense_{layer} Dense_{layer+1}"] = ci
+    perm[f"Dense_{layer}"] = ci
 
     pbf_new[f"Dense_{layer}/kernel"] = pbf_new[f"Dense_{layer}/kernel"][:, ci]
     pbf_new[f"Dense_{layer}/bias"] = pbf_new[f"Dense_{layer}/bias"][ci]
@@ -215,11 +216,23 @@ def main():
     model_a = load_model(artifact_a / f"checkpoint{config.epoch}")
     model_b = load_model(artifact_b / f"checkpoint{config.epoch}")
 
-    lambdas = jnp.linspace(0, 1, num=10)
-
     stuff = make_stuff(model)
-    train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+    train_ds, test_ds = load_datasets(smoke_test_mode=config.test)
 
+    final_permutation, model_b_clever = match_filters(model_a.params, model_b.params)
+
+    # Save final_permutation as an Artifact
+    artifact = wandb.Artifact("model_b_permutation",
+                              type="permutation",
+                              metadata={
+                                  "dataset": "mnist",
+                                  "model": "mlp"
+                              })
+    with artifact.new_file("permutation.pkl", mode="wb") as f:
+      pickle.dump(final_permutation, f)
+    wandb_run.log_artifact(artifact)
+
+    lambdas = jnp.linspace(0, 1, num=25)
     train_loss_interp_naive = []
     test_loss_interp_naive = []
     train_acc_interp_naive = []
@@ -232,8 +245,6 @@ def main():
       test_loss_interp_naive.append(test_loss)
       train_acc_interp_naive.append(train_acc)
       test_acc_interp_naive.append(test_acc)
-
-    _, model_b_clever = match_filters(model_a.params, model_b.params)
 
     train_loss_interp_clever = []
     test_loss_interp_clever = []
