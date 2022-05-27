@@ -93,32 +93,25 @@ def make_stuff(model):
       "dataset_loss_and_accuracy": dataset_loss_and_accuracy
   }
 
-def get_datasets(smoke_test_mode):
+def load_datasets(smoke_test_mode):
   """Return the training and test datasets, unbatched.
 
   smoke_test_mode: Whether or not we're running in "smoke test" mode.
   """
-  train_ds_tfds = tfds.load("mnist", split="train", as_supervised=True)
-  test_ds_tfds = tfds.load("mnist", split="test", as_supervised=True)
-  # Note: The take/cache warning:
-  #     2022-01-25 07:32:58.144059: W tensorflow/core/kernels/data/cache_dataset_ops.cc:768] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
-  # is not because we're actually doing this in the wrong order, but rather that
-  # the dataset is loaded in and called .cache() on before we receive it.
+  # See https://www.tensorflow.org/datasets/overview#as_batched_tftensor_batch_size-1.
+  train_ds_images_u8, train_ds_labels = tfds.as_numpy(
+      tfds.load("mnist", split="train", batch_size=-1, as_supervised=True))
+  test_ds_images_u8, test_ds_labels = tfds.as_numpy(
+      tfds.load("mnist", split="test", batch_size=-1, as_supervised=True))
+
   if smoke_test_mode:
-    train_ds_tfds = train_ds_tfds.take(13)
-    test_ds_tfds = test_ds_tfds.take(17)
+    train_ds_images_u8 = train_ds_images_u8[:13]
+    train_ds_labels = train_ds_labels[:13]
+    test_ds_images_u8 = test_ds_images_u8[:17]
+    test_ds_labels = test_ds_labels[:17]
 
-  train_ds_tfds = tfds.as_numpy(train_ds_tfds)
-  test_ds_tfds = tfds.as_numpy(test_ds_tfds)
-
-  train_ds = {
-      "images_u8": jnp.stack([x for x, _ in train_ds_tfds]),
-      "labels": jnp.stack([y for _, y in train_ds_tfds])
-  }
-  test_ds = {
-      "images_u8": jnp.stack([x for x, _ in test_ds_tfds]),
-      "labels": jnp.stack([y for _, y in test_ds_tfds])
-  }
+  train_ds = {"images_u8": train_ds_images_u8, "labels": train_ds_labels}
+  test_ds = {"images_u8": test_ds_images_u8, "labels": test_ds_labels}
   return train_ds, test_ds
 
 def init_train_state(rng, learning_rate, model):
@@ -155,7 +148,7 @@ def main():
     stuff = make_stuff(model)
 
     with timeblock("get_datasets"):
-      train_ds, test_ds = get_datasets(smoke_test_mode=config.test)
+      train_ds, test_ds = load_datasets(smoke_test_mode=config.test)
       print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
       print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
 
