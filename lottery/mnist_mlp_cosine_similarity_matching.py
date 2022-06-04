@@ -186,14 +186,13 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("--model-a", type=str, required=True)
   parser.add_argument("--model-b", type=str, required=True)
-  parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
   args = parser.parse_args()
 
   with wandb.init(
       project="playing-the-lottery",
       entity="skainswo",
-      tags=["mnist", "mlp", "filter-matching"],
+      tags=["mnist", "mlp", "cosine-similarity-matching"],
       # See https://github.com/wandb/client/issues/3672.
       mode="online",
       job_type="analysis",
@@ -202,7 +201,7 @@ def main():
     config.ec2_instance_type = ec2_get_instance_type()
     config.model_a = args.model_a
     config.model_b = args.model_b
-    config.test = args.test
+    config.seed = args.seed
     config.epoch = 49
 
     model = MLPModel()
@@ -217,7 +216,7 @@ def main():
     model_b = load_model(artifact_b / f"checkpoint{config.epoch}")
 
     stuff = make_stuff(model)
-    train_ds, test_ds = load_datasets(smoke_test_mode=config.test)
+    train_ds, test_ds = load_datasets()
 
     final_permutation, model_b_clever = match_filters(model_a.params, model_b.params)
 
@@ -239,8 +238,8 @@ def main():
     test_acc_interp_naive = []
     for lam in tqdm(lambdas):
       naive_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b.params)
-      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 1000)
-      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 1000)
+      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 10_000)
+      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 10_000)
       train_loss_interp_naive.append(train_loss)
       test_loss_interp_naive.append(test_loss)
       train_acc_interp_naive.append(train_acc)
@@ -252,8 +251,8 @@ def main():
     test_acc_interp_clever = []
     for lam in tqdm(lambdas):
       clever_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b_clever)
-      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 1000)
-      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 1000)
+      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 10_000)
+      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 10_000)
       train_loss_interp_clever.append(train_loss)
       test_loss_interp_clever.append(test_loss)
       train_acc_interp_clever.append(train_acc)
