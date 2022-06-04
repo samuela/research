@@ -1,9 +1,6 @@
 """Train a convnet on CIFAR-10 on one random seed. Serialize the model for
 interpolation downstream.
 
-TODO:
-* migrate to the wandb Artifacts API. https://docs.wandb.ai/guides/artifacts/artifacts-core-concepts
-
 Notes:
 * flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
 * Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
@@ -16,19 +13,25 @@ Things to try:
 import argparse
 
 import augmax
+import flax
 import jax.nn
 import jax.numpy as jnp
+import numpy as np
 import optax
+import tensorflow as tf
+import tensorflow_datasets as tfds
 from flax import linen as nn
-from flax.training.checkpoints import restore_checkpoint, save_checkpoint
 from flax.training.train_state import TrainState
-from jax import jit, lax, random, value_and_grad, vmap
+from jax import jit, random, value_and_grad, vmap
 from tqdm import tqdm
 
 import wandb
-from utils import RngPooper, ec2_get_instance_type, timeblock
+from utils import ec2_get_instance_type, rngmix, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
+
+# See https://github.com/google/jax/issues/9454.
+tf.config.set_visible_devices([], "GPU")
 
 def make_vgg(backbone_layers, classifier_width: int, norm):
 
@@ -94,14 +97,7 @@ VGG19 = make_vgg([
                  classifier_width=4096,
                  norm=nn.LayerNorm)
 
-def make_stuff(model, train_ds, batch_size: int):
-  ds_images, ds_labels = train_ds
-  # `lax.scan` requires that all the batches have identical shape so we have to
-  # skip the final batch if it is incomplete.
-  num_train_examples = ds_labels.shape[0]
-  assert num_train_examples >= batch_size
-  num_batches = num_train_examples // batch_size
-
+def make_stuff(model):
   train_transform = augmax.Chain(
       # augmax does not seem to support random crops with padding. See https://github.com/khdlr/augmax/issues/6.
       augmax.RandomSizedCrop(32, 32, zoom_range=(0.8, 1.2)),
@@ -112,103 +108,68 @@ def make_stuff(model, train_ds, batch_size: int):
   normalize_transform = augmax.Chain(augmax.ByteToFloat(), augmax.Normalize())
 
   @jit
-  def batch_eval(params, images, labels):
-    images_f32 = vmap(normalize_transform)(None, images)
+  def batch_eval(params, images_u8, labels):
+    images_f32 = vmap(normalize_transform)(None, images_u8)
     y_onehot = jax.nn.one_hot(labels, 10)
     logits = model.apply({"params": params}, images_f32)
     l = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
     num_correct = jnp.sum(jnp.argmax(logits, axis=-1) == labels)
-    return l, num_correct
+    return l, {"num_correct": num_correct}
 
   @jit
-  def train_epoch(rng, train_state):
-    rng1, rng2 = random.split(rng)
-    batch_ix = random.permutation(rng1, num_train_examples)[:num_batches * batch_size].reshape(
-        (num_batches, batch_size))
-    # We need rngs for data augmentation of each example.
-    augmax_rngs = random.split(rng2, num_batches * batch_size)
-
-    def step(train_state, i):
-      p = batch_ix[i, :]
-      images = ds_images[p, :, :, :]
-      labels = ds_labels[p]
-      images_transformed = vmap(train_transform)(augmax_rngs[p], images)
-      (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params,
-                                                                     images_transformed, labels)
-      return train_state.apply_gradients(grads=g), (l, num_correct)
-
-    # `lax.scan` is tricky to use correctly. See https://github.com/google/jax/discussions/9669#discussioncomment-2234793.
-    train_state, (losses, num_corrects) = lax.scan(step, train_state, jnp.arange(num_batches))
-    # Note that the train accuracy calculation here is based on the number of
-    # examples we've actually covered, not the number of train examples, since
-    # we skip the last (ragged) batch.
-    return train_state, (jnp.mean(batch_size * losses),
-                         jnp.sum(num_corrects) / (num_batches * batch_size))
+  def step(rng, train_state, images, labels):
+    images_transformed = vmap(train_transform)(random.split(rng, images.shape[0]), images)
+    (l, info), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images_transformed,
+                                                            labels)
+    return train_state.apply_gradients(grads=g), {"batch_loss": l, **info}
 
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
-    images, labels = dataset
-    num_examples = images.shape[0]
+    num_examples = dataset["images_u8"].shape[0]
     assert num_examples % batch_size == 0
     num_batches = num_examples // batch_size
     batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
     # Can't use vmap or run in a single batch since that overloads GPU memory.
-    losses, num_corrects = zip(*[
-        batch_eval(params, images[batch_ix[i, :], :, :, :], labels[batch_ix[i, :]])
-        for i in range(num_batches)
+    losses, infos = zip(*[
+        batch_eval(
+            params,
+            dataset["images_u8"][batch_ix[i, :], :, :, :],
+            dataset["labels"][batch_ix[i, :]],
+        ) for i in range(num_batches)
     ])
-    losses = jnp.array(losses)
-    num_corrects = jnp.array(num_corrects)
-    return jnp.mean(batch_size * losses), jnp.sum(num_corrects) / num_examples
+    return (
+        jnp.sum(batch_size * jnp.array(losses)) / num_examples,
+        sum(x["num_correct"] for x in infos) / num_examples,
+    )
 
-  ret = lambda: None
-  ret.normalize_transform = normalize_transform
-  ret.batch_eval = batch_eval
-  ret.train_epoch = train_epoch
-  ret.dataset_loss_and_accuracy = dataset_loss_and_accuracy
-  return ret
+  return {
+      "train_transform": train_transform,
+      "normalize_transform": normalize_transform,
+      "batch_eval": batch_eval,
+      "step": step,
+      "dataset_loss_and_accuracy": dataset_loss_and_accuracy,
+  }
 
-# TODO: rename this to smoke_test or something
-def get_datasets(test_mode: bool):
+def load_datasets():
   """Return the training and test datasets, as jnp.array's."""
-  if test_mode:
-    num_train = 100
-    num_test = 1000
-    train_images = random.choice(random.PRNGKey(0), jnp.arange(256, dtype=jnp.uint8),
-                                 (num_train, 32, 32, 3))
-    test_images = random.choice(random.PRNGKey(1), jnp.arange(256, dtype=jnp.uint8),
-                                (num_test, 32, 32, 3))
-    train_labels = random.choice(random.PRNGKey(2), jnp.arange(10, dtype=jnp.uint8), (num_train, ))
-    test_labels = random.choice(random.PRNGKey(3), jnp.arange(10, dtype=jnp.uint8), (num_test, ))
-    return (train_images, train_labels), (test_images, test_labels)
-  else:
-    import tensorflow as tf
-
-    # See https://github.com/google/jax/issues/9454.
-    tf.config.set_visible_devices([], "GPU")
-    import tensorflow_datasets as tfds
-
-    train_ds = tfds.load("cifar10", split="train", as_supervised=True)
-    test_ds = tfds.load("cifar10", split="test", as_supervised=True)
-
-    train_ds = tfds.as_numpy(train_ds)
-    test_ds = tfds.as_numpy(test_ds)
-
-    train_images = jnp.stack([x for x, _ in train_ds])
-    train_labels = jnp.stack([y for _, y in train_ds])
-    test_images = jnp.stack([x for x, _ in test_ds])
-    test_labels = jnp.stack([y for _, y in test_ds])
-
-    return (train_images, train_labels), (test_images, test_labels)
+  train_ds_images_u8, train_ds_labels = tfds.as_numpy(
+      tfds.load("cifar10", split="train", batch_size=-1, as_supervised=True))
+  test_ds_images_u8, test_ds_labels = tfds.as_numpy(
+      tfds.load("cifar10", split="test", batch_size=-1, as_supervised=True))
+  train_ds = {"images_u8": train_ds_images_u8, "labels": train_ds_labels}
+  test_ds = {"images_u8": test_ds_images_u8, "labels": test_ds_labels}
+  return train_ds, test_ds
 
 def init_train_state(rng, model, learning_rate, num_epochs, batch_size, num_train_examples):
   # See https://github.com/kuangliu/pytorch-cifar.
-  warmup_epochs = 5
+  warmup_epochs = 1
   steps_per_epoch = num_train_examples // batch_size
   lr_schedule = optax.warmup_cosine_decay_schedule(
       init_value=1e-6,
       peak_value=learning_rate,
       warmup_steps=warmup_epochs * steps_per_epoch,
-      decay_steps=(num_epochs - warmup_epochs) * steps_per_epoch,
+      # Confusingly, `decay_steps` is actually the total number of steps,
+      # including the warmup.
+      decay_steps=num_epochs * steps_per_epoch,
   )
   tx = optax.chain(optax.add_decayed_weights(5e-4), optax.sgd(lr_schedule, momentum=0.9))
   # tx = optax.adamw(learning_rate=lr_schedule, weight_decay=5e-4)
@@ -219,73 +180,84 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
-  parser.add_argument("--resume", type=str, help="wandb run to resume from (eg. 1kqqa9js)")
-  parser.add_argument("--resume-epoch",
-                      type=int,
-                      help="The epoch to resume from. Required if --resume is set.")
   args = parser.parse_args()
 
-  wandb.init(project="playing-the-lottery",
-             entity="skainswo",
-             tags=["cifar10", "vgg16"],
-             resume="must" if args.resume is not None else None,
-             id=args.resume,
-             mode="disabled" if args.test else "online",
-             job_type="train")
+  with wandb.init(
+      project="playing-the-lottery",
+      entity="skainswo",
+      tags=["cifar10", "vgg16"],
+      mode="disabled" if args.test else "online",
+      job_type="train",
+  ) as wandb_run:
+    artifact = wandb.Artifact("cifar10-vgg-weights", type="model-weights")
 
-  # Note: hopefully it's ok that we repeat this even when resuming a run?
-  config = wandb.config
-  config.ec2_instance_type = ec2_get_instance_type()
-  config.test = args.test
-  config.seed = args.seed
-  config.learning_rate = 0.1
-  config.num_epochs = 100
-  config.batch_size = 7 if config.test else 128
+    config = wandb.config
+    config.ec2_instance_type = ec2_get_instance_type()
+    config.test = args.test
+    config.seed = args.seed
+    config.learning_rate = 0.1
+    config.num_epochs = 10 if args.test else 100
+    config.batch_size = 100
 
-  rp = RngPooper(random.PRNGKey(config.seed))
+    rng = random.PRNGKey(config.seed)
 
-  model = TestVGG() if config.test else VGG16Wide()
-  train_ds, test_ds = get_datasets(config.test)
-  stuff = make_stuff(model, train_ds, config.batch_size)
-  train_state = init_train_state(rp.poop(),
-                                 model=model,
-                                 learning_rate=config.learning_rate,
-                                 num_epochs=config.num_epochs,
-                                 batch_size=config.batch_size,
-                                 num_train_examples=train_ds[0].shape[0])
-  start_epoch = 0
+    model = TestVGG() if config.test else VGG16Wide()
+    with timeblock("load datasets"):
+      train_ds, test_ds = load_datasets()
+      print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
+      print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
 
-  if args.resume is not None:
-    # Bring the the desired resume epoch into the wandb run directory so that it
-    # can then be picked up by `restore_checkpoint` below.
-    wandb.restore(f"checkpoint_{args.resume_epoch}")
-    last_epoch, train_state = restore_checkpoint(wandb.run.dir, (0, train_state))
-    # We need to increment last_epoch, because we store `(i, train_state)`
-    # where `train_state` is the state _after_ i'th epoch. So we're actually
-    # starting from the next epoch.
-    start_epoch = last_epoch + 1
+      num_train_examples = train_ds["images_u8"].shape[0]
+      num_test_examples = test_ds["images_u8"].shape[0]
+      assert num_train_examples % config.batch_size == 0
+      print("num_train_examples", num_train_examples)
+      print("num_test_examples", num_test_examples)
 
-  for epoch in tqdm(range(start_epoch, config.num_epochs),
-                    initial=start_epoch,
-                    total=config.num_epochs):
-    with timeblock(f"Train epoch"):
-      train_state, (train_loss, train_accuracy) = stuff.train_epoch(rp.poop(), train_state)
-    with timeblock("Test eval"):
-      test_loss, test_accuracy = stuff.dataset_loss_and_accuracy(
-          train_state.params, test_ds, batch_size=10 if config.test else 1000)
+    stuff = make_stuff(model)
+    train_state = init_train_state(rngmix(rng, "init"),
+                                   model=model,
+                                   learning_rate=config.learning_rate,
+                                   num_epochs=config.num_epochs,
+                                   batch_size=config.batch_size,
+                                   num_train_examples=train_ds["images_u8"].shape[0])
 
-    if not config.test and (epoch % 10 == 1 or epoch == config.num_epochs - 1):
-      with timeblock("Save checkpoint"):
-        # See https://docs.wandb.ai/guides/track/advanced/save-restore
-        save_checkpoint(wandb.run.dir, (epoch, train_state), epoch, keep_every_n_steps=10)
+    for epoch in tqdm(range(config.num_epochs)):
+      infos = []
+      with timeblock(f"Epoch"):
+        batch_ix = random.permutation(rngmix(rng, f"epoch-{epoch}"), num_train_examples).reshape(
+            (-1, config.batch_size))
+        batch_rngs = random.split(rngmix(rng, f"batch_rngs-{epoch}"), batch_ix.shape[0])
+        for i in range(batch_ix.shape[0]):
+          p = batch_ix[i, :]
+          images_u8 = train_ds["images_u8"][p, :, :, :]
+          labels = train_ds["labels"][p]
+          train_state, info = stuff["step"](batch_rngs[i], train_state, images_u8, labels)
+          infos.append(info)
 
-    print(
-        f"Epoch {epoch}: train loss {train_loss:.3f}, train accuracy {train_accuracy:.3f}, test loss {test_loss:.3f}, test accuracy {test_accuracy:.3f}"
-    )
-    wandb.log({
-        "epoch": epoch,
-        "train_loss": train_loss,
-        "test_loss": test_loss,
-        "train_accuracy": train_accuracy,
-        "test_accuracy": test_accuracy,
-    })
+      train_loss = sum(config.batch_size * x["batch_loss"] for x in infos) / num_train_examples
+      train_accuracy = sum(x["num_correct"] for x in infos) / num_train_examples
+
+      # Evaluate test loss/accuracy
+      with timeblock("Test set eval"):
+        test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
+                                                                      1000)
+
+      # See https://github.com/wandb/client/issues/3690.
+      wandb_run.log({
+          "epoch": epoch,
+          "train_loss": train_loss,
+          "test_loss": test_loss,
+          "train_accuracy": train_accuracy,
+          "test_accuracy": test_accuracy,
+      })
+
+      # With 512 channels at each layer, VGG16(Wide) is 378.2MB per checkpoint.
+      # No point saving the model at all if we're running in test mode.
+      if (not config.test) and (epoch % 10 == 0 or epoch == config.num_epochs - 1):
+        with timeblock("model serialization"):
+          with artifact.new_file(f"checkpoint{epoch}", mode="wb") as f:
+            f.write(flax.serialization.to_bytes(train_state))
+
+    # This will be a no-op when config.test is enabled anyhow, since wandb will
+    # be initialized with mode="disabled".
+    wandb_run.log_artifact(artifact)
