@@ -9,15 +9,14 @@ import tensorflow as tf
 from einops import reduce
 from flax.serialization import from_bytes
 from flax.training.train_state import TrainState
-from jax import jit, random, tree_map, value_and_grad, vmap
+from jax import jit, random, tree_map, value_and_grad
 from jax.lax import stop_gradient
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 import wandb
 from mnist_mlp_run import MLPModel, init_train_state, load_datasets, make_stuff
-from utils import (RngPooper, ec2_get_instance_type, flatten_params, rngmix,
-                   unflatten_params)
+from utils import (RngPooper, ec2_get_instance_type, flatten_params, rngmix, unflatten_params)
 
 # See https://github.com/google/jax/issues/9454.
 tf.config.set_visible_devices([], "GPU")
