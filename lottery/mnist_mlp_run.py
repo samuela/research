@@ -25,17 +25,6 @@ tf.config.set_visible_devices([], "GPU")
 
 activation = nn.relu
 
-class TestModel(nn.Module):
-
-  @nn.compact
-  def __call__(self, x):
-    x = jnp.reshape(x, (-1, 28 * 28))
-    x = nn.Dense(1024)(x)
-    x = activation(x)
-    x = nn.Dense(10)(x)
-    x = nn.log_softmax(x)
-    return x
-
 class MLPModel(nn.Module):
 
   @nn.compact
@@ -61,13 +50,12 @@ def make_stuff(model):
     y_onehot = jax.nn.one_hot(labels, 10)
     loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
     num_correct = jnp.sum(jnp.argmax(logits, axis=-1) == jnp.argmax(y_onehot, axis=-1))
-    return loss, num_correct
+    return loss, {"num_correct": num_correct}
 
   @jit
   def step(train_state, images_f32, labels):
-    (l, num_correct), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images_f32,
-                                                                   labels)
-    return train_state.apply_gradients(grads=g), {"batch_loss": l, "num_correct": num_correct}
+    (l, info), g = value_and_grad(batch_eval, has_aux=True)(train_state.params, images_f32, labels)
+    return train_state.apply_gradients(grads=g), {"batch_loss": l, **info}
 
   def dataset_loss_and_accuracy(params, dataset, batch_size: int):
     num_examples = dataset["images_u8"].shape[0]
@@ -75,16 +63,17 @@ def make_stuff(model):
     num_batches = num_examples // batch_size
     batch_ix = jnp.arange(num_examples).reshape((num_batches, batch_size))
     # Can't use vmap or run in a single batch since that overloads GPU memory.
-    losses, num_corrects = zip(*[
+    losses, infos = zip(*[
         batch_eval(
             params,
             dataset["images_u8"][batch_ix[i, :], :, :, :],
             dataset["labels"][batch_ix[i, :]],
         ) for i in range(num_batches)
     ])
-    losses = jnp.array(losses)
-    num_corrects = jnp.array(num_corrects)
-    return jnp.sum(batch_size * losses) / num_examples, jnp.sum(num_corrects) / num_examples
+    return (
+        jnp.sum(batch_size * jnp.array(losses)) / num_examples,
+        sum(x["num_correct"] for x in infos) / num_examples,
+    )
 
   return {
       "normalize_transform": normalize_transform,
@@ -93,23 +82,13 @@ def make_stuff(model):
       "dataset_loss_and_accuracy": dataset_loss_and_accuracy
   }
 
-def load_datasets(smoke_test_mode):
-  """Return the training and test datasets, unbatched.
-
-  smoke_test_mode: Whether or not we're running in "smoke test" mode.
-  """
+def load_datasets():
+  """Return the training and test datasets, unbatched."""
   # See https://www.tensorflow.org/datasets/overview#as_batched_tftensor_batch_size-1.
   train_ds_images_u8, train_ds_labels = tfds.as_numpy(
       tfds.load("mnist", split="train", batch_size=-1, as_supervised=True))
   test_ds_images_u8, test_ds_labels = tfds.as_numpy(
       tfds.load("mnist", split="test", batch_size=-1, as_supervised=True))
-
-  if smoke_test_mode:
-    train_ds_images_u8 = train_ds_images_u8[:13]
-    train_ds_labels = train_ds_labels[:13]
-    test_ds_images_u8 = test_ds_images_u8[:17]
-    test_ds_labels = test_ds_labels[:17]
-
   train_ds = {"images_u8": train_ds_images_u8, "labels": train_ds_labels}
   test_ds = {"images_u8": test_ds_images_u8, "labels": test_ds_labels}
   return train_ds, test_ds
@@ -139,21 +118,24 @@ def main():
     config.test = args.test
     config.seed = args.seed
     config.learning_rate = 0.001
-    config.num_epochs = 10 if config.test else 50
-    config.batch_size = 7 if config.test else 500
+    config.num_epochs = 50
+    config.batch_size = 500
 
     rng = random.PRNGKey(config.seed)
 
-    model = TestModel() if config.test else MLPModel()
+    model = MLPModel()
     stuff = make_stuff(model)
 
-    with timeblock("get_datasets"):
-      train_ds, test_ds = load_datasets(smoke_test_mode=config.test)
+    with timeblock("load_datasets"):
+      train_ds, test_ds = load_datasets()
       print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
       print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
 
-    num_train_examples = train_ds["images_u8"].shape[0]
-    assert num_train_examples % config.batch_size == 0
+      num_train_examples = train_ds["images_u8"].shape[0]
+      num_test_examples = test_ds["images_u8"].shape[0]
+      assert num_train_examples % config.batch_size == 0
+      print("num_train_examples", num_train_examples)
+      print("num_test_examples", num_test_examples)
 
     train_state = init_train_state(rngmix(rng, "init"), config.learning_rate, model)
 
@@ -173,11 +155,12 @@ def main():
       train_accuracy = sum(x["num_correct"] for x in infos) / num_train_examples
 
       # Evaluate train/test loss/accuracy
-      with timeblock("Model eval"):
+      with timeblock("Test set eval"):
         test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
-                                                                      1000)
+                                                                      10_000)
 
-      wandb.log({
+      # See https://github.com/wandb/client/issues/3690.
+      wandb_run.log({
           "epoch": epoch,
           "train_loss": train_loss,
           "test_loss": test_loss,
@@ -185,9 +168,13 @@ def main():
           "test_accuracy": test_accuracy,
       })
 
-      with artifact.new_file(f"checkpoint{epoch}", mode="wb") as f:
-        f.write(flax.serialization.to_bytes(train_state))
+      # With layer width 512, the MLP is 11.2MB per checkpoint.
+      with timeblock("model serialization"):
+        with artifact.new_file(f"checkpoint{epoch}", mode="wb") as f:
+          f.write(flax.serialization.to_bytes(train_state))
 
+    # This will be a no-op when config.test is enabled anyhow, since wandb will
+    # be initialized with mode="disabled".
     wandb_run.log_artifact(artifact)
 
 if __name__ == "__main__":
