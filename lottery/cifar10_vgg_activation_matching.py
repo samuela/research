@@ -1,6 +1,14 @@
 """Associate units between the two models by comparing the correlations between
-activations in intermediate layers."""
+activations in intermediate layers.
 
+TODO:
+* use wandb.run
+* get model a/b from argparse
+* pull weights from artifacts
+* log the plots
+* save permutation to artifact
+"""
+import argparse
 from glob import glob
 
 import jax.numpy as jnp
@@ -13,7 +21,7 @@ from jax import jit, random, tree_map, vmap
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
-from cifar10_vgg_run import (VGG16Wide, get_datasets, init_train_state, make_stuff)
+from cifar10_vgg_run import (VGG16Wide, init_train_state, load_datasets, make_stuff)
 from online_stats import OnlineCovariance, OnlineMean
 from utils import flatten_params, unflatten_params
 
@@ -100,7 +108,8 @@ def plot_interp_acc(epoch, lambdas, train_acc_interp_naive, test_acc_interp_naiv
 def vgg16_permutify(permutation, params):
   """Permute the parameters of `params` based on `permutation`."""
   params_flat = flatten_params(params)
-  print(tree_map(jnp.shape, params_flat))
+
+  # print(tree_map(jnp.shape, params_flat))
 
   # conv  kernel shape: (width, height, in_channel, out_channel)
   # dense kernel shape: (in, out)
@@ -128,6 +137,7 @@ def vgg16_permutify(permutation, params):
 
   def conv_norm_flatten_dense(pf, l1, l2, perm):
     """Permute the output channels of Conv_{l1} and the input channels of Dense_{l2}."""
+    # Note that the flatten is kind of a no-op since the flatten is (batch, 1, 1, 512) -> (batch, 512)
     return {
         **pf, f"params/Conv_{l1}/kernel": pf[f"params/Conv_{l1}/kernel"][:, :, :, perm],
         f"params/Conv_{l1}/bias": pf[f"params/Conv_{l1}/bias"][perm],
@@ -141,10 +151,10 @@ def vgg16_permutify(permutation, params):
   # Backbone conv layers
   for layer in range(12):
     params_flat_new = conv_norm_conv(params_flat_new, layer, layer + 1,
-                                     permutation[f"LayerNorm_{layer}"])
+                                     permutation[f"Conv_{layer}"])
 
   # Conv_12 flatten Dense_0
-  params_flat_new = conv_norm_flatten_dense(params_flat_new, 12, 0, permutation["LayerNorm_12"])
+  params_flat_new = conv_norm_flatten_dense(params_flat_new, 12, 0, permutation["Conv_12"])
 
   # (Dense_0, Dense_1) and (Dense_1, Dense_2)
   params_flat_new = dense_dense(params_flat_new, 0, 1, permutation["Dense_0"])
@@ -153,6 +163,13 @@ def vgg16_permutify(permutation, params):
   return unflatten_params(params_flat_new)
 
 if __name__ == "__main__":
+  parser = argparse.ArgumentParser()
+  # parser.add_argument("--model-a", type=str, required=True)
+  # parser.add_argument("--model-b", type=str, required=True)
+  parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
+  parser.add_argument("--seed", type=int, default=0, help="Random seed")
+  args = parser.parse_args()
+
   epoch = 99
   model = VGG16Wide()
 
@@ -173,32 +190,36 @@ if __name__ == "__main__":
                                             learning_rate=0.1,
                                             num_epochs=100,
                                             batch_size=128,
-                                            num_train_examples=50000)), contents)
+                                            num_train_examples=50_000)), contents)
       return ret
 
   model_a = load_checkpoint("skainswo/playing-the-lottery/3467b9pk", epoch)
   model_b = load_checkpoint("skainswo/playing-the-lottery/s622wdyh", epoch)
 
-  train_ds, test_ds = get_datasets(test_mode=False)
-  ds_images, ds_labels = train_ds
+  train_ds, test_ds = load_datasets()
+
+  # TODO use config.test once we switch to wandb
+  if args.test:
+    train_ds["images_u8"] = train_ds["images_u8"][:10_000]
+    train_ds["labels"] = train_ds["labels"][:10_000]
 
   # `lax.scan` requires that all the batches have identical shape so we have to
   # skip the final batch if it is incomplete.
-  num_train_examples = ds_labels.shape[0]
-  assert num_train_examples == 50_000
+  num_train_examples = train_ds["images_u8"].shape[0]
+  # assert num_train_examples == 50_000
 
   batch_size = 500
   assert num_train_examples % batch_size == 0
-  stuff = make_stuff(model, train_ds, batch_size=batch_size)
+  stuff = make_stuff(model)
   # Permute the training data in case we want to use a subset.
   train_data_perm = random.permutation(random.PRNGKey(123), num_train_examples).reshape(
       (-1, batch_size))
 
-  all_layers = [f"LayerNorm_{i}" for i in range(13)] + ["Dense_0", "Dense_1"]
+  all_layers = [f"Conv_{i}" for i in range(13)] + ["Dense_0", "Dense_1"]
 
   def get_intermediates(params, images_u8):
     """Calculate intermediate activations for all layers in flax's format."""
-    images_f32 = vmap(stuff.normalize_transform)(None, images_u8)
+    images_f32 = vmap(stuff["normalize_transform"])(None, images_u8)
     _, state = model.apply({"params": params},
                            images_f32,
                            capture_intermediates=lambda mdl, _: isinstance(mdl, nn.LayerNorm) or
@@ -226,7 +247,7 @@ if __name__ == "__main__":
     return {
         "Dense_0": dense(0),
         "Dense_1": dense(1),
-        **{f"LayerNorm_{i}": layernorm(i)
+        **{f"Conv_{i}": layernorm(i)
            for i in range(13)},
     }
 
@@ -240,11 +261,11 @@ if __name__ == "__main__":
       means = {
           "Dense_0": OnlineMean.init(4096),
           "Dense_1": OnlineMean.init(4096),
-          **{f"LayerNorm_{i}": OnlineMean.init(512)
+          **{f"Conv_{i}": OnlineMean.init(512)
              for i in range(13)}
       }
       for i in tqdm(range(num_train_examples // batch_size)):
-        images_u8 = ds_images[train_data_perm[i]]
+        images_u8 = train_ds["images_u8"][train_data_perm[i]]
         act = get_activations(params, images_u8)
         means = {layer: means[layer].update(act[layer]) for layer in all_layers}
       return means
@@ -261,7 +282,7 @@ if __name__ == "__main__":
         for layer in all_layers
     }
     for i in tqdm(range(num_train_examples // batch_size)):
-      images_u8 = ds_images[train_data_perm[i]]
+      images_u8 = train_ds["images_u8"][train_data_perm[i]]
       a_act = get_activations(model_a.params, images_u8)
       b_act = get_activations(model_b.params, images_u8)
       stats = {layer: stats[layer].update(a_act[layer], b_act[layer]) for layer in all_layers}
@@ -338,8 +359,8 @@ if __name__ == "__main__":
   print("Evaluating model interpolations...")
   for lam in tqdm(lambdas):
     naive_p = freeze(tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b.params))
-    naive_train_loss, naive_train_acc = stuff.dataset_loss_and_accuracy(naive_p, train_ds, 1000)
-    naive_test_loss, naive_test_acc = stuff.dataset_loss_and_accuracy(naive_p, test_ds, 1000)
+    naive_train_loss, naive_train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 1000)
+    naive_test_loss, naive_test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 1000)
     train_loss_interp_naive.append(naive_train_loss)
     test_loss_interp_naive.append(naive_test_loss)
     train_acc_interp_naive.append(naive_train_acc)
@@ -348,8 +369,9 @@ if __name__ == "__main__":
     clever_p = freeze(
         tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params,
                  model_b_params_permuted["params"]))
-    clever_train_loss, clever_train_acc = stuff.dataset_loss_and_accuracy(clever_p, train_ds, 1000)
-    clever_test_loss, clever_test_acc = stuff.dataset_loss_and_accuracy(clever_p, test_ds, 1000)
+    clever_train_loss, clever_train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds,
+                                                                             1000)
+    clever_test_loss, clever_test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 1000)
     train_loss_interp_clever.append(clever_train_loss)
     test_loss_interp_clever.append(clever_test_loss)
     train_acc_interp_clever.append(clever_train_acc)
