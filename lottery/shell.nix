@@ -1,5 +1,7 @@
 # Run with nixGL, eg `nixGLNvidia-510.47.03 python cifar10_convnet_run.py --test`
 
+# To prevent JAX from allocating all GPU memory: XLA_PYTHON_CLIENT_PREALLOCATE=false
+
 let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
 
