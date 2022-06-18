@@ -85,6 +85,21 @@ VGG16 = make_vgg(
     classifier_width=4096,
     norm=nn.LayerNorm)
 
+VGG16ThinClassifier = make_vgg(
+    [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
+    classifier_width=512,
+    norm=nn.LayerNorm)
+
+def make_vgg_width_ablation(width_multiplier: int):
+  m = width_multiplier
+  return make_vgg([
+      m * 1, m * 1, "m", m * 2, m * 2, "m", m * 4, m * 4, m * 4, "m", m * 8, m * 8, m * 8, "m",
+      m * 8, m * 8, m * 8, "m"
+  ],
+                  classifier_width=m * 8,
+                  norm=nn.LayerNorm)()
+
+# 378.2MB
 VGG16Wide = make_vgg(
     [512, 512, "m", 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
     classifier_width=4096,
@@ -180,6 +195,7 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
+  parser.add_argument("--width-multiplier", type=int, default=64)
   args = parser.parse_args()
 
   with wandb.init(
@@ -197,11 +213,13 @@ if __name__ == "__main__":
     config.seed = args.seed
     config.learning_rate = 0.1
     config.num_epochs = 10 if args.test else 100
+    config.width_multiplier = args.width_multiplier
     config.batch_size = 100
 
     rng = random.PRNGKey(config.seed)
 
-    model = TestVGG() if config.test else VGG16Wide()
+    # model = TestVGG() if config.test else VGG16ThinClassifier()
+    model = make_vgg_width_ablation(config.width_multiplier)
     with timeblock("load datasets"):
       train_ds, test_ds = load_datasets()
       print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
@@ -251,7 +269,6 @@ if __name__ == "__main__":
           "test_accuracy": test_accuracy,
       })
 
-      # With 512 channels at each layer, VGG16(Wide) is 378.2MB per checkpoint.
       # No point saving the model at all if we're running in test mode.
       if (not config.test) and (epoch % 10 == 0 or epoch == config.num_epochs - 1):
         with timeblock("model serialization"):
