@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from flax import linen as nn
@@ -6,6 +7,9 @@ from jax import random, tree_map
 from matplotlib.colors import ListedColormap
 
 from utils import unflatten_params
+
+matplotlib.rcParams["font.family"] = "serif"
+matplotlib.rcParams["font.size"] = 12
 
 rng = random.PRNGKey(0)
 
@@ -109,14 +113,14 @@ def plot_interp_loss():
   ax.set_xticklabels(["Model $A$", "Model $B$"])
   ax.set_xlim(-0.05, 1.05)
   ax.set_ylabel("Loss")
-  ax.set_title("All possible permutations between two globally optimal models")
+  ax.set_title("All possible permutations between two optimal models")
   ax.legend(framealpha=0.5)
   fig.tight_layout()
   return fig
 
 fig = plot_interp_loss()
 plt.savefig(f"sgd_is_special_loss_interp.png", dpi=300)
-# plt.savefig(f"sgd_is_special_loss_interp.pdf")
+plt.savefig(f"sgd_is_special_loss_interp.eps")
 plt.close(fig)
 
 def plot_interp_loss_zoom(max_lambda):
@@ -176,7 +180,7 @@ def plot_data():
 
 fig = plot_data()
 plt.savefig(f"sgd_is_special_data.png", dpi=300)
-# plt.savefig(f"sgd_is_special_data.pdf")
+plt.savefig(f"sgd_is_special_data.eps")
 plt.close()
 
 extrema = model.apply({"params": unflatten_params(paramsA)},
@@ -230,5 +234,5 @@ def plot_detailed_view():
 
 fig = plot_detailed_view()
 plt.savefig(f"sgd_is_special_detailed_view.png", dpi=300)
-# plt.savefig(f"sgd_is_special_detailed_view.pdf")
+plt.savefig(f"sgd_is_special_detailed_view.eps")
 plt.close(fig)
