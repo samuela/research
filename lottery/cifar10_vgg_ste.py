@@ -1,6 +1,8 @@
 import argparse
 import pickle
+from collections import defaultdict
 from pathlib import Path
+from typing import NamedTuple
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -15,7 +17,8 @@ from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 import wandb
-from cifar10_vgg_run import (VGG16Wide, init_train_state, load_datasets, make_stuff)
+from cifar10_vgg_run import (VGG16Wide, init_train_state, load_datasets, make_stuff,
+                             make_vgg_width_ablation)
 from utils import (RngPooper, ec2_get_instance_type, flatten_params, rngmix, timeblock,
                    unflatten_params)
 
@@ -166,16 +169,18 @@ def sinkhorn_knopp_projection(A, num_iter=10):
     A = A / reduce(A, "i j -> 1 j", "sum")
   return A
 
-def permute_params_init(rng):
+def permute_params_init(rng, params):
   # VGG16: Conv0-Conv12 flatten Dense0-Dense2
   rp = RngPooper(rng)
   return {
       **{
-          f"Conv_{ix}": sinkhorn_knopp_projection(10 + random.uniform(rp.poop(), (512, 512)))
+          f"P_Conv_{ix}": sinkhorn_knopp_projection(10 + random.uniform(
+              rp.poop(), (params[f"Conv_{ix}"]["bias"].size, params[f"Conv_{ix}"]["bias"].size)))
           for ix in range(13)
       },
       **{
-          f"Dense_{ix}": sinkhorn_knopp_projection(10 + random.uniform(rp.poop(), (4096, 4096)))
+          f"P_Dense_{ix}": sinkhorn_knopp_projection(10 + random.uniform(
+              rp.poop(), (params[f"Dense_{ix}"]["bias"].size, params[f"Dense_{ix}"]["bias"].size)))
           for ix in range(2)
       }
   }
@@ -188,9 +193,9 @@ def permute_params_apply(permute_params, hardened_permute_params, model_params):
     return stop_gradient(hardened_permute_params[name]) + zero
 
   P = {
-      **{f"Conv_{ix}": _P(f"Conv_{ix}")
+      **{f"P_Conv_{ix}": _P(f"P_Conv_{ix}")
          for ix in range(13)},
-      **{f"Dense_{ix}": _P(f"Dense_{ix}")
+      **{f"P_Dense_{ix}": _P(f"P_Dense_{ix}")
          for ix in range(2)}
   }
 
@@ -198,33 +203,118 @@ def permute_params_apply(permute_params, hardened_permute_params, model_params):
   r = {}
 
   pad = lambda x: x[jnp.newaxis, jnp.newaxis, ...]
-  r["Conv_0/kernel"] = m["Conv_0/kernel"] @ pad(P["Conv_0"])
-  r["Conv_0/bias"] = m["Conv_0/bias"].T @ P["Conv_0"]
-  r["LayerNorm_0/scale"] = m["LayerNorm_0/scale"].T @ P["Conv_0"]
-  r["LayerNorm_0/bias"] = m["LayerNorm_0/bias"].T @ P["Conv_0"]
+  r["Conv_0/kernel"] = m["Conv_0/kernel"] @ pad(P["P_Conv_0"])
+  r["Conv_0/bias"] = m["Conv_0/bias"].T @ P["P_Conv_0"]
+  r["LayerNorm_0/scale"] = m["LayerNorm_0/scale"].T @ P["P_Conv_0"]
+  r["LayerNorm_0/bias"] = m["LayerNorm_0/bias"].T @ P["P_Conv_0"]
 
   for i in range(1, 12):
-    r[f"Conv_{i}/kernel"] = pad(P[f"Conv_{i-1}"].T) @ m[f"Conv_{i}/kernel"] @ pad(P[f"Conv_{i}"])
-    r[f"Conv_{i}/bias"] = m[f"Conv_{i}/bias"].T @ P[f"Conv_{i}"]
-    r[f"LayerNorm_{i}/scale"] = m[f"LayerNorm_{i}/scale"].T @ P[f"Conv_{i}"]
-    r[f"LayerNorm_{i}/bias"] = m[f"LayerNorm_{i}/bias"].T @ P[f"Conv_{i}"]
+    r[f"Conv_{i}/kernel"] = pad(P[f"P_Conv_{i-1}"].T) @ m[f"Conv_{i}/kernel"] @ pad(
+        P[f"P_Conv_{i}"])
+    r[f"Conv_{i}/bias"] = m[f"Conv_{i}/bias"].T @ P[f"P_Conv_{i}"]
+    r[f"LayerNorm_{i}/scale"] = m[f"LayerNorm_{i}/scale"].T @ P[f"P_Conv_{i}"]
+    r[f"LayerNorm_{i}/bias"] = m[f"LayerNorm_{i}/bias"].T @ P[f"P_Conv_{i}"]
 
-  r["Conv_12/kernel"] = pad(P["Conv_11"].T) @ m["Conv_12/kernel"] @ pad(P["Conv_12"])
-  r["Conv_12/bias"] = m["Conv_12/bias"].T @ P["Conv_12"]
-  r["LayerNorm_12/scale"] = m["LayerNorm_12/scale"].T @ P["Conv_12"]
-  r["LayerNorm_12/bias"] = m["LayerNorm_12/bias"].T @ P["Conv_12"]
+  r["Conv_12/kernel"] = pad(P["P_Conv_11"].T) @ m["Conv_12/kernel"] @ pad(P["P_Conv_12"])
+  r["Conv_12/bias"] = m["Conv_12/bias"].T @ P["P_Conv_12"]
+  r["LayerNorm_12/scale"] = m["LayerNorm_12/scale"].T @ P["P_Conv_12"]
+  r["LayerNorm_12/bias"] = m["LayerNorm_12/bias"].T @ P["P_Conv_12"]
 
-  r["Dense_0/kernel"] = P["Conv_12"].T @ m["Dense_0/kernel"] @ P["Dense_0"]
-  r["Dense_0/bias"] = m["Dense_0/bias"].T @ P["Dense_0"]
+  r["Dense_0/kernel"] = P["P_Conv_12"].T @ m["Dense_0/kernel"] @ P["P_Dense_0"]
+  r["Dense_0/bias"] = m["Dense_0/bias"].T @ P["P_Dense_0"]
 
-  r["Dense_1/kernel"] = P["Dense_0"].T @ m["Dense_1/kernel"] @ P["Dense_1"]
-  r["Dense_1/bias"] = m["Dense_1/bias"].T @ P["Dense_1"]
+  r["Dense_1/kernel"] = P["P_Dense_0"].T @ m["Dense_1/kernel"] @ P["P_Dense_1"]
+  r["Dense_1/bias"] = m["Dense_1/bias"].T @ P["P_Dense_1"]
 
   # The output of Dense_1 has a fixed order so we don't need to the bias.
-  r["Dense_2/kernel"] = P["Dense_0"].T @ m["Dense_2/kernel"]
+  r["Dense_2/kernel"] = P["P_Dense_0"].T @ m["Dense_2/kernel"]
   r["Dense_2/bias"] = m["Dense_2/bias"]
 
   return unflatten_params(r)
+
+class PermutationSpec(NamedTuple):
+  perm_to_axes: dict
+  axes_to_perm: dict
+
+def permutation_spec_from_axes_to_perm(axes_to_perm: dict) -> PermutationSpec:
+  perm_to_axes = defaultdict(list)
+  for wk, axis_perms in axes_to_perm.items():
+    for axis, perm in enumerate(axis_perms):
+      if perm is not None:
+        perm_to_axes[perm].append((wk, axis))
+  return PermutationSpec(perm_to_axes=dict(perm_to_axes), axes_to_perm=axes_to_perm)
+
+def vgg16_permutation_spec() -> PermutationSpec:
+  return permutation_spec_from_axes_to_perm({
+      "Conv_0/kernel": (None, None, None, "P_Conv_0"),
+      **{f"Conv_{i}/kernel": (None, None, f"P_Conv_{i-1}", f"P_Conv_{i}")
+         for i in range(1, 13)},
+      **{f"Conv_{i}/bias": (f"P_Conv_{i}", )
+         for i in range(13)},
+      **{f"LayerNorm_{i}/scale": (f"P_Conv_{i}", )
+         for i in range(13)},
+      **{f"LayerNorm_{i}/bias": (f"P_Conv_{i}", )
+         for i in range(13)},
+      "Dense_0/kernel": ("P_Conv_12", "P_Dense_0"),
+      "Dense_0/bias": ("P_Dense_0", ),
+      "Dense_1/kernel": ("P_Dense_0", "P_Dense_1"),
+      "Dense_1/bias": ("P_Dense_1", ),
+      "Dense_2/kernel": ("P_Dense_1", None),
+      "Dense_2/bias": (None, ),
+  })
+
+def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=None):
+  """Get parameter `k` from `params`, with the permutations applied."""
+  w = params[k]
+  for axis, p in enumerate(ps.axes_to_perm[k]):
+    # Skip the axis we're trying to permute.
+    if axis == except_axis:
+      continue
+
+    # None indicates that there is no permutation relevant to that axis.
+    if p is not None:
+      w = jnp.take(w, perm[p], axis=axis)
+
+  return w
+
+def apply_permutation(ps: PermutationSpec, perm, params):
+  """Apply a `perm` to `params`."""
+  return {k: get_permuted_param(ps, perm, k, params) for k in params.keys()}
+
+def weight_matching(rng, ps: PermutationSpec, params_a, params_b, max_iter=100, init_perm=None):
+  """Find a permutation of `params_b` to make them match `params_a`."""
+  perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
+
+  perm = {p: jnp.arange(n) for p, n in perm_sizes.items()} if init_perm is None else init_perm
+  perm_names = list(perm.keys())
+
+  for iteration in range(max_iter):
+    progress = False
+    for p_ix in random.permutation(rngmix(rng, iteration), len(perm_names)):
+      p = perm_names[p_ix]
+      n = perm_sizes[p]
+      A = jnp.zeros((n, n))
+      for wk, axis in ps.perm_to_axes[p]:
+        w_a = params_a[wk]
+        w_b = get_permuted_param(ps, perm, wk, params_b, except_axis=axis)
+        w_a = jnp.moveaxis(w_a, axis, 0).reshape((n, -1))
+        w_b = jnp.moveaxis(w_b, axis, 0).reshape((n, -1))
+        A += w_a @ w_b.T
+
+      ri, ci = linear_sum_assignment(A, maximize=True)
+      assert (ri == jnp.arange(len(ri))).all()
+
+      oldL = jnp.vdot(A, jnp.eye(n)[perm[p]])
+      newL = jnp.vdot(A, jnp.eye(n)[ci, :])
+      print(f"{iteration}/{p}: {newL - oldL}")
+      progress = progress or newL > oldL + 1e-12
+
+      perm[p] = jnp.array(ci)
+
+    if not progress:
+      break
+
+  return perm
 
 def main():
   parser = argparse.ArgumentParser()
@@ -232,6 +322,7 @@ def main():
   parser.add_argument("--model-b", type=str, required=True)
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
+  parser.add_argument("--width-multiplier", type=int, required=True)
   args = parser.parse_args()
 
   with wandb.init(
@@ -248,13 +339,15 @@ def main():
     config.model_b = args.model_b
     config.test = args.test
     config.seed = args.seed
-    config.num_epochs = 10
+    config.width_multiplier = args.width_multiplier
+    config.num_epochs = 100
     config.batch_size = 500
-    config.learning_rate = 1e-2
+    config.learning_rate = 1e-3
     # This is the epoch that we pull the model A/B params from.
     config.load_epoch = 99
 
-    model = VGG16Wide()
+    # model = VGG16Wide()
+    model = make_vgg_width_ablation(config.width_multiplier)
 
     def load_model(filepath):
       with open(filepath, "rb") as fh:
@@ -334,17 +427,26 @@ def main():
       train_state = train_state.apply_gradients(grads=g)
 
       # Project onto Birkhoff polytope.
-      train_state = train_state.replace(
-          params=tree_map(sinkhorn_knopp_projection, train_state.params))
+      # train_state = train_state.replace(
+      #     params=tree_map(sinkhorn_knopp_projection, train_state.params))
 
       return train_state, {**metrics, "loss": l}
 
     rng = random.PRNGKey(args.seed)
 
     tx = optax.sgd(learning_rate=config.learning_rate, momentum=0.9)
-    train_state = TrainState.create(apply_fn=None,
-                                    params=permute_params_init(rngmix(rng, "init")),
-                                    tx=tx)
+    # tx = optax.radam(learning_rate=config.learning_rate)
+
+    permutation_spec = vgg16_permutation_spec()
+    init_perm = weight_matching(rngmix(rng, "weight_matching"), permutation_spec,
+                                flatten_params(model_a.params), flatten_params(model_b.params))
+    init_pp = {k: permutation_matrix(v) for k, v in init_perm.items()}
+    init_pp = tree_map(lambda x, y: x.T + 0.01 * y, init_pp,
+                       permute_params_init(rngmix(rng, "init"), model_a.params))
+
+    # init_pp = permute_params_init(rngmix(rng, "init"), model_a.params)
+
+    train_state = TrainState.create(apply_fn=None, params=init_pp, tx=tx)
 
     artifact = wandb.Artifact("model_b_permutation",
                               type="permutation",
@@ -356,7 +458,12 @@ def main():
       train_data_perm = random.permutation(rngmix(rng, f"epoch-{epoch}"),
                                            num_train_examples).reshape((-1, config.batch_size))
       for i in tqdm(range(num_train_examples // config.batch_size)):
+        # STE projection
         hardened_pp = {k: permutation_matrix(lsa(v)) for k, v in train_state.params.items()}
+
+        # No STE projection
+        # hardened_pp = train_state.params
+
         train_state, metrics = step(train_state, hardened_pp,
                                     train_ds["images_u8"][train_data_perm[i]],
                                     train_ds["labels"][train_data_perm[i]])
