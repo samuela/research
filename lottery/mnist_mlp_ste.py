@@ -263,7 +263,7 @@ def main():
 
       return train_state, {**metrics, "loss": l}
 
-    rng = random.PRNGKey(args.seed)
+    rng = random.PRNGKey(config.seed)
 
     tx = optax.sgd(learning_rate=config.learning_rate, momentum=0.9)
     train_state = TrainState.create(apply_fn=None,
