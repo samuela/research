@@ -1,6 +1,7 @@
 *.mp4
 *.pdf
 *.png
+*.eps
 
 # Nix build results
 result*
