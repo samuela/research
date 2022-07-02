@@ -10,13 +10,13 @@ import numpy as np
 import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import wandb
 from flax import linen as nn
 from flax.training.train_state import TrainState
-from jax import jit, random, value_and_grad, vmap
+from jax import jit, random, tree_map, value_and_grad, vmap
 from tqdm import tqdm
 
-import wandb
-from utils import ec2_get_instance_type, rngmix, timeblock
+from utils import ec2_get_instance_type, flatten_params, rngmix, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
 
@@ -93,21 +93,18 @@ def load_datasets():
   test_ds = {"images_u8": test_ds_images_u8, "labels": test_ds_labels}
   return train_ds, test_ds
 
-def init_train_state(rng, learning_rate, model):
-  tx = optax.adam(learning_rate)
-  vars = model.init(rng, jnp.zeros((1, 28, 28, 1)))
-  return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
-
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
+  parser.add_argument("--optimizer", choices=["sgd", "adam", "adamw"], required=True)
+  parser.add_argument("--learning-rate", type=float, required=True)
   args = parser.parse_args()
 
   with wandb.init(
       project="playing-the-lottery",
       entity="skainswo",
-      tags=["mnist", "mlp"],
+      tags=["mnist", "mlp", "training"],
       mode="disabled" if args.test else "online",
       job_type="train",
   ) as wandb_run:
@@ -117,8 +114,9 @@ def main():
     config.ec2_instance_type = ec2_get_instance_type()
     config.test = args.test
     config.seed = args.seed
-    config.learning_rate = 0.001
-    config.num_epochs = 50
+    config.optimizer = args.optimizer
+    config.learning_rate = args.learning_rate
+    config.num_epochs = 100
     config.batch_size = 500
 
     rng = random.PRNGKey(config.seed)
@@ -137,7 +135,36 @@ def main():
       print("num_train_examples", num_train_examples)
       print("num_test_examples", num_test_examples)
 
-    train_state = init_train_state(rngmix(rng, "init"), config.learning_rate, model)
+    if config.optimizer == "sgd":
+      # See runs:
+      # * https://wandb.ai/skainswo/playing-the-lottery/runs/3blb4uhm
+      # * https://wandb.ai/skainswo/playing-the-lottery/runs/174j7umt
+      # * https://wandb.ai/skainswo/playing-the-lottery/runs/td02y8gg
+      lr_schedule = optax.warmup_cosine_decay_schedule(
+          init_value=1e-6,
+          peak_value=config.learning_rate,
+          warmup_steps=10,
+          # Confusingly, `decay_steps` is actually the total number of steps,
+          # including the warmup.
+          decay_steps=config.num_epochs * (num_train_examples // config.batch_size),
+      )
+      tx = optax.sgd(lr_schedule, momentum=0.9)
+    elif config.optimizer == "adam":
+      # See runs:
+      # - https://wandb.ai/skainswo/playing-the-lottery/runs/1b1gztfx (trim-fire-575)
+      # - https://wandb.ai/skainswo/playing-the-lottery/runs/1hrmw7wr (wild-dream-576)
+      tx = optax.adam(config.learning_rate)
+    else:
+      # See runs:
+      # - https://wandb.ai/skainswo/playing-the-lottery/runs/k4luj7er (faithful-spaceship-579)
+      # - https://wandb.ai/skainswo/playing-the-lottery/runs/3ru7xy8c (sage-forest-580)
+      tx = optax.adamw(config.learning_rate, weight_decay=1e-4)
+
+    train_state = TrainState.create(
+        apply_fn=model.apply,
+        params=model.init(rngmix(rng, "init"), jnp.zeros((1, 28, 28, 1)))["params"],
+        tx=tx,
+    )
 
     for epoch in tqdm(range(config.num_epochs)):
       infos = []
@@ -159,6 +186,9 @@ def main():
         test_loss, test_accuracy = stuff["dataset_loss_and_accuracy"](train_state.params, test_ds,
                                                                       10_000)
 
+      params_l2 = tree_map(lambda x: jnp.sqrt(jnp.sum(x**2)),
+                           flatten_params({"params_l2": train_state.params}))
+
       # See https://github.com/wandb/client/issues/3690.
       wandb_run.log({
           "epoch": epoch,
@@ -166,12 +196,13 @@ def main():
           "test_loss": test_loss,
           "train_accuracy": train_accuracy,
           "test_accuracy": test_accuracy,
+          **params_l2
       })
 
-      # With layer width 512, the MLP is 11.2MB per checkpoint.
+      # With layer width 512, the MLP is 3.7MB per checkpoint.
       with timeblock("model serialization"):
         with artifact.new_file(f"checkpoint{epoch}", mode="wb") as f:
-          f.write(flax.serialization.to_bytes(train_state))
+          f.write(flax.serialization.to_bytes(train_state.params))
 
     # This will be a no-op when config.test is enabled anyhow, since wandb will
     # be initialized with mode="disabled".
