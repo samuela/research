@@ -1,6 +1,7 @@
 # Run with nixGL, eg `nixGLNvidia-510.47.03 python cifar10_convnet_run.py --test`
 
 # To prevent JAX from allocating all GPU memory: XLA_PYTHON_CLIENT_PREALLOCATE=false
+# To push build to cachix: nix-store -qR --include-outputs $(nix-instantiate shell.nix) | cachix push ploop
 
 let
   # pkgs = import (/home/skainswo/dev/nixpkgs) { };
@@ -31,6 +32,7 @@ pkgs.mkShell {
     # python3Packages.pandas
     python3Packages.plotly
     # python3Packages.scikit-learn
+    python3Packages.seaborn
     (python3Packages.tensorflow-bin.override {
       cudaSupport = false;
     })
@@ -42,4 +44,8 @@ pkgs.mkShell {
     python3Packages.wandb
     yapf
   ];
+
+  # Don't clog EFS with wandb results. Wandb will create and use /tmp/wandb.
+  WANDB_DIR = "/tmp";
+  WANDB_CACHE_DIR = "/tmp";
 }
