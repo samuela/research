@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax
 import tensorflow as tf
+import wandb
 from einops import reduce
 from flax.serialization import from_bytes
 from flax.training.train_state import TrainState
@@ -16,11 +17,11 @@ from jax.lax import stop_gradient
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
-import wandb
-from cifar10_vgg_run import (VGG16Wide, init_train_state, load_datasets, make_stuff,
+from cifar10_vgg_run import (VGG16Wide, init_train_state, make_stuff,
                              make_vgg_width_ablation)
-from utils import (RngPooper, ec2_get_instance_type, flatten_params, rngmix, timeblock,
-                   unflatten_params)
+from datasets import load_cifar10
+from utils import (RngPooper, ec2_get_instance_type, flatten_params, rngmix,
+                   timeblock, unflatten_params)
 
 # See https://github.com/google/jax/issues/9454.
 tf.config.set_visible_devices([], "GPU")
@@ -159,7 +160,7 @@ def vgg16_permutify(permutation, params):
 
   return unflatten_params(params_flat_new)
 
-def sinkhorn_knopp_projection(A, num_iter=10):
+def sinkhorn_knopp_projection(A, num_iter=1):
   # We clip to be positive before calling this function.
   A = jnp.maximum(A, 0)
   for _ in range(num_iter):
@@ -365,7 +366,7 @@ def main():
     model_b = load_model(artifact_b / f"checkpoint{config.load_epoch}")
 
     stuff = make_stuff(model)
-    train_ds, test_ds = load_datasets()
+    train_ds, test_ds = load_cifar10()
     num_train_examples = train_ds["images_u8"].shape[0]
     num_test_examples = test_ds["images_u8"].shape[0]
     assert num_train_examples % config.batch_size == 0
@@ -427,8 +428,8 @@ def main():
       train_state = train_state.apply_gradients(grads=g)
 
       # Project onto Birkhoff polytope.
-      # train_state = train_state.replace(
-      #     params=tree_map(sinkhorn_knopp_projection, train_state.params))
+      train_state = train_state.replace(
+          params=tree_map(sinkhorn_knopp_projection, train_state.params))
 
       return train_state, {**metrics, "loss": l}
 
@@ -437,14 +438,16 @@ def main():
     tx = optax.sgd(learning_rate=config.learning_rate, momentum=0.9)
     # tx = optax.radam(learning_rate=config.learning_rate)
 
-    permutation_spec = vgg16_permutation_spec()
-    init_perm = weight_matching(rngmix(rng, "weight_matching"), permutation_spec,
-                                flatten_params(model_a.params), flatten_params(model_b.params))
-    init_pp = {k: permutation_matrix(v) for k, v in init_perm.items()}
-    init_pp = tree_map(lambda x, y: x.T + 0.01 * y, init_pp,
-                       permute_params_init(rngmix(rng, "init"), model_a.params))
+    # Start from the weight matching solution
+    # permutation_spec = vgg16_permutation_spec()
+    # init_perm = weight_matching(rngmix(rng, "weight_matching"), permutation_spec,
+    #                             flatten_params(model_a.params), flatten_params(model_b.params))
+    # init_pp = {k: permutation_matrix(v) for k, v in init_perm.items()}
+    # init_pp = tree_map(lambda x, y: x.T + 0.01 * y, init_pp,
+    #                    permute_params_init(rngmix(rng, "init"), model_a.params))
 
-    # init_pp = permute_params_init(rngmix(rng, "init"), model_a.params)
+    # Start randomly
+    init_pp = permute_params_init(rngmix(rng, "init"), model_a.params)
 
     train_state = TrainState.create(apply_fn=None, params=init_pp, tx=tx)
 
@@ -459,10 +462,10 @@ def main():
                                            num_train_examples).reshape((-1, config.batch_size))
       for i in tqdm(range(num_train_examples // config.batch_size)):
         # STE projection
-        hardened_pp = {k: permutation_matrix(lsa(v)) for k, v in train_state.params.items()}
+        # hardened_pp = {k: permutation_matrix(lsa(v)) for k, v in train_state.params.items()}
 
         # No STE projection
-        # hardened_pp = train_state.params
+        hardened_pp = train_state.params
 
         train_state, metrics = step(train_state, hardened_pp,
                                     train_ds["images_u8"][train_data_perm[i]],

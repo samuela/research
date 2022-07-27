@@ -1,3 +1,4 @@
+import operator
 import re
 import time
 from contextlib import contextmanager
@@ -5,7 +6,8 @@ from contextlib import contextmanager
 import jax.numpy as jnp
 from flax import traverse_util
 from flax.core import freeze, unfreeze
-from jax import random
+from jax import random, tree_map
+from jax.tree_util import tree_reduce
 
 rngmix = lambda rng, x: random.fold_in(rng, hash(x))
 
@@ -93,3 +95,21 @@ assert kmatch("abc/**/jkl", "abc/def/ghi/jkl").group(1) == "def/ghi"
 assert kmatch("abc/*/jkl", "abc/def/ghi/jkl") is None
 assert kmatch("**/*", "abc/def/ghi/jkl").group(1) == "abc/def/ghi"
 assert kmatch("**/*", "abc/def/ghi/jkl").group(2) == "jkl"
+
+def lerp(lam, t1, t2):
+  return tree_map(lambda a, b: (1 - lam) * a + lam * b, t1, t2)
+
+def tree_norm(t):
+  return jnp.sqrt(tree_reduce(operator.add, tree_map(lambda x: jnp.sum(x**2), t)))
+
+def slerp(lam, t1, t2):
+  # See https://en.wikipedia.org/wiki/Slerp
+  om = jnp.arccos(
+      tree_reduce(operator.add, tree_map(lambda x, y: jnp.sum(x * y), t1, t2)) /
+      (tree_norm(t1) * tree_norm(t2)))
+  sinom = jnp.sin(om)
+  return tree_map(
+      lambda x, y: jnp.sin((1 - lam) * om) / sinom * x + jnp.sin(lam * om) / sinom * y,
+      t1,
+      t2,
+  )

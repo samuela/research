@@ -2,10 +2,7 @@
 from typing import NamedTuple
 
 import jax.numpy as jnp
-import numpy as np
-from jax import random
 
-from utils import RngPooper
 
 class OnlineMean(NamedTuple):
   sum: jnp.ndarray
@@ -68,6 +65,9 @@ class OnlineCovariance(NamedTuple):
   def b_stddev(self):
     return jnp.sqrt(self.b_variance())
 
+  def E_ab(self):
+    return self.covariance() + jnp.outer(self.a_mean, self.b_mean)
+
   def pearson_correlation(self):
     # Note that the 1/(n-1) normalization terms cancel out nicely here.
     # TODO: clip?
@@ -76,6 +76,17 @@ class OnlineCovariance(NamedTuple):
     # zeros with nan_to_num.
     return jnp.nan_to_num(self.cov / (jnp.sqrt(self.var_a[:, jnp.newaxis]) + eps) /
                           (jnp.sqrt(self.var_b) + eps))
+
+class OnlineInnerProduct(NamedTuple):
+  val: jnp.ndarray  # (d, d)
+
+  @staticmethod
+  def init(d: int):
+    return OnlineInnerProduct(val=jnp.zeros((d, d)))
+
+  def update(self, a_batch, b_batch):
+    assert a_batch.shape == b_batch.shape
+    return OnlineInnerProduct(val=self.val + a_batch.T @ b_batch)
 
 # def online_pearson_init_state(n):
 #   return {

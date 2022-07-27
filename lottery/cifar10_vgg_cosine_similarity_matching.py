@@ -10,7 +10,8 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-from cifar10_vgg_run import (TestVGG, VGG16Wide, init_train_state, load_datasets, make_stuff)
+from cifar10_vgg_run import TestVGG, VGG16Wide, init_train_state, make_stuff
+from datasets import load_cifar10
 from utils import RngPooper, flatten_params, timeblock, unflatten_params
 
 # See https://github.com/google/jax/issues/9454.
@@ -247,7 +248,7 @@ if __name__ == "__main__":
   train_acc_interp_naive = []
   test_acc_interp_naive = []
 
-  train_ds, test_ds = load_datasets(smoke_test_mode=False)
+  train_ds, test_ds = load_cifar10()
   stuff = make_stuff(model, train_ds, train_batch_size=128)
   b2 = permutify({"params": model_a.params}, {"params": model_b.params})
   for lam in tqdm(lambdas):

@@ -1,109 +1,17 @@
 import argparse
 import pickle
 from pathlib import Path
-from typing import NamedTuple
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import wandb
 from flax.serialization import from_bytes
-from jax import random, tree_map
-from scipy.optimize import linear_sum_assignment
+from jax import random
 from tqdm import tqdm
 
-import wandb
-from mnist_mlp_run import MLPModel, init_train_state, load_datasets, make_stuff
-from utils import (ec2_get_instance_type, flatten_params, rngmix, unflatten_params)
-
-class PermutationSpec(NamedTuple):
-  perm_to_axes: dict
-  axes_to_perm: dict
-
-def mlp_permutation_spec(num_hidden_layers: int) -> PermutationSpec:
-  """We assume that one permutation cannot appear in two axes of the same weight array."""
-  assert num_hidden_layers >= 1
-  return PermutationSpec(
-      perm_to_axes={
-          f"P_{i}": [(f"Dense_{i}/kernel", 1), (f"Dense_{i}/bias", 0), (f"Dense_{i+1}/kernel", 0)]
-          for i in range(num_hidden_layers)
-      },
-      axes_to_perm={
-          "Dense_0/kernel": (None, "P_0"),
-          **{f"Dense_{i}/kernel": (f"P_{i-1}", f"P_{i}")
-             for i in range(1, num_hidden_layers)},
-          **{f"Dense_{i}/bias": (f"P_{i}", )
-             for i in range(num_hidden_layers)},
-          f"Dense_{num_hidden_layers}/kernel": (f"P_{num_hidden_layers-1}", None),
-          f"Dense_{num_hidden_layers}/bias": (None, ),
-      })
-
-def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=None):
-  """Get parameter `k` from `params`, with the permutations applied."""
-  w = params[k]
-  for axis, p in enumerate(ps.axes_to_perm[k]):
-    # Skip the axis we're trying to permute.
-    if axis == except_axis:
-      continue
-
-    # None indicates that there is no permutation relevant to that axis.
-    if p is not None:
-      w = jnp.take(w, perm[p], axis=axis)
-
-  return w
-
-def apply_permutation(ps: PermutationSpec, perm, params):
-  """Apply a `perm` to `params`."""
-  return {k: get_permuted_param(ps, perm, k, params) for k in params.keys()}
-
-def weight_matching(rng, ps: PermutationSpec, params_a, params_b):
-  """Find a permutation of `params_b` to make them match `params_a`."""
-  perm_sizes = {p: params_a[axes[0][0]].shape[axes[0][1]] for p, axes in ps.perm_to_axes.items()}
-
-  perm = {p: jnp.arange(n) for p, n in perm_sizes.items()}
-  perm_names = list(perm.keys())
-
-  for iteration in range(100):
-    progress = False
-    for p_ix in random.permutation(rngmix(rng, iteration), len(perm_names)):
-      p = perm_names[p_ix]
-      n = perm_sizes[p]
-      A = jnp.zeros((n, n))
-      for wk, axis in ps.perm_to_axes[p]:
-        w_a = params_a[wk]
-        w_b = get_permuted_param(ps, perm, wk, params_b, except_axis=axis)
-        w_a = jnp.moveaxis(w_a, axis, 0).reshape((n, -1))
-        w_b = jnp.moveaxis(w_b, axis, 0).reshape((n, -1))
-        A += w_a @ w_b.T
-
-      ri, ci = linear_sum_assignment(A, maximize=True)
-      assert (ri == jnp.arange(len(ri))).all()
-
-      oldL = jnp.vdot(A, jnp.eye(n)[perm[p]])
-      newL = jnp.vdot(A, jnp.eye(n)[ci, :])
-      print(f"{iteration}/{p}: {newL - oldL}")
-      progress = progress or newL > oldL + 1e-12
-
-      perm[p] = jnp.array(ci)
-
-    if not progress:
-      break
-
-  return perm
-
-def test_weight_matching():
-  """If we just have a single hidden layer then it should converge after just one step."""
-  ps = mlp_permutation_spec(num_hidden_layers=1)
-  rng = random.PRNGKey(123)
-  num_hidden = 10
-  shapes = {
-      "Dense_0/kernel": (2, num_hidden),
-      "Dense_0/bias": (num_hidden, ),
-      "Dense_1/kernel": (num_hidden, 3),
-      "Dense_1/bias": (3, )
-  }
-  params_a = {k: random.normal(rngmix(rng, f"a-{k}"), shape) for k, shape in shapes.items()}
-  params_b = {k: random.normal(rngmix(rng, f"b-{k}"), shape) for k, shape in shapes.items()}
-  perm = weight_matching(rng, ps, params_a, params_b)
-  print(perm)
+from mnist_mlp_train import MLPModel, load_datasets, make_stuff
+from utils import ec2_get_instance_type, flatten_params, lerp, unflatten_params
+from weight_matching import (apply_permutation, mlp_permutation_spec, weight_matching)
 
 def plot_interp_loss(epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
                      train_loss_interp_clever, test_loss_interp_clever):
@@ -203,33 +111,39 @@ def main():
     config.model_a = args.model_a
     config.model_b = args.model_b
     config.seed = args.seed
-    config.epoch = 49
+    config.load_epoch = 99
 
     model = MLPModel()
+    stuff = make_stuff(model)
 
     def load_model(filepath):
       with open(filepath, "rb") as fh:
-        return from_bytes(init_train_state(random.PRNGKey(0), -1, model), fh.read())
+        return from_bytes(
+            model.init(random.PRNGKey(0), jnp.zeros((1, 28, 28, 1)))["params"], fh.read())
 
-    artifact_a = Path(wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_a}").download())
-    artifact_b = Path(wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_b}").download())
-    model_a = load_model(artifact_a / f"checkpoint{config.epoch}")
-    model_b = load_model(artifact_b / f"checkpoint{config.epoch}")
+    filename = f"checkpoint{config.load_epoch}"
+    model_a = load_model(
+        Path(
+            wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_a}").get_path(
+                filename).download()))
+    model_b = load_model(
+        Path(
+            wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_b}").get_path(
+                filename).download()))
 
-    stuff = make_stuff(model)
     train_ds, test_ds = load_datasets()
 
     permutation_spec = mlp_permutation_spec(3)
     final_permutation = weight_matching(random.PRNGKey(config.seed), permutation_spec,
-                                        flatten_params(model_a.params),
-                                        flatten_params(model_b.params))
+                                        flatten_params(model_a), flatten_params(model_b))
 
     # Save final_permutation as an Artifact
-    artifact = wandb.Artifact("model_b_permutation",
+    artifact = wandb.Artifact("mnist_mlp_weight_matching",
                               type="permutation",
                               metadata={
                                   "dataset": "mnist",
-                                  "model": "mlp"
+                                  "model": "mlp",
+                                  "analysis": "weight-matching"
                               })
     with artifact.new_file("permutation.pkl", mode="wb") as f:
       pickle.dump(final_permutation, f)
@@ -241,7 +155,7 @@ def main():
     train_acc_interp_naive = []
     test_acc_interp_naive = []
     for lam in tqdm(lambdas):
-      naive_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b.params)
+      naive_p = lerp(lam, model_a, model_b)
       train_loss, train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 10_000)
       test_loss, test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 10_000)
       train_loss_interp_naive.append(train_loss)
@@ -250,14 +164,14 @@ def main():
       test_acc_interp_naive.append(test_acc)
 
     model_b_clever = unflatten_params(
-        apply_permutation(permutation_spec, final_permutation, flatten_params(model_b.params)))
+        apply_permutation(permutation_spec, final_permutation, flatten_params(model_b)))
 
     train_loss_interp_clever = []
     test_loss_interp_clever = []
     train_acc_interp_clever = []
     test_acc_interp_clever = []
     for lam in tqdm(lambdas):
-      clever_p = tree_map(lambda a, b: (1 - lam) * a + lam * b, model_a.params, model_b_clever)
+      clever_p = lerp(lam, model_a, model_b_clever)
       train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 10_000)
       test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 10_000)
       train_loss_interp_clever.append(train_loss)
@@ -275,16 +189,17 @@ def main():
     assert len(lambdas) == len(test_acc_interp_clever)
 
     print("Plotting...")
-    fig = plot_interp_loss(config.epoch, lambdas, train_loss_interp_naive, test_loss_interp_naive,
-                           train_loss_interp_clever, test_loss_interp_clever)
-    plt.savefig(f"mnist_mlp_weight_matching_interp_loss_epoch{config.epoch}.png", dpi=300)
-    wandb.log({"interp_loss_fig": wandb.Image(fig)}, commit=False)
+    fig = plot_interp_loss(config.load_epoch, lambdas, train_loss_interp_naive,
+                           test_loss_interp_naive, train_loss_interp_clever,
+                           test_loss_interp_clever)
+    plt.savefig(f"mnist_mlp_weight_matching_interp_loss_epoch{config.load_epoch}.png", dpi=300)
+    wandb.log({"interp_loss_fig": wandb.Image(fig)})
     plt.close(fig)
 
-    fig = plot_interp_acc(config.epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
+    fig = plot_interp_acc(config.load_epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
                           train_acc_interp_clever, test_acc_interp_clever)
-    plt.savefig(f"mnist_mlp_weight_matching_interp_accuracy_epoch{config.epoch}.png", dpi=300)
-    wandb.log({"interp_acc_fig": wandb.Image(fig)}, commit=False)
+    plt.savefig(f"mnist_mlp_weight_matching_interp_accuracy_epoch{config.load_epoch}.png", dpi=300)
+    wandb.log({"interp_acc_fig": wandb.Image(fig)})
     plt.close(fig)
 
     wandb.log({

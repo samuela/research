@@ -1,15 +1,11 @@
 import jax.numpy as jnp
-import matplotlib
 import matplotlib.pyplot as plt
-import numpy as np
 from flax import linen as nn
 from jax import random, tree_map
 from matplotlib.colors import ListedColormap
 
+import matplotlib_style as _
 from utils import unflatten_params
-
-matplotlib.rcParams["font.family"] = "serif"
-matplotlib.rcParams["font.size"] = 12
 
 rng = random.PRNGKey(0)
 
@@ -99,28 +95,25 @@ def plot_interp_loss():
   fig = plt.figure()
   ax = fig.add_subplot(1, 1, 1)
   # We make losses start at 0, since that intuitively makes more sense.
-  ax.plot(lambdas, -interp1 + 1, linewidth=2, marker="o", label="identity permutation")
-  ax.plot(lambdas, -interp2 + 1, linewidth=2, marker=".", label="swap first layer")
-  ax.plot(lambdas, -interp3 + 1, linewidth=2, marker="x", label="swap second layer")
-  ax.plot(lambdas, -interp4 + 1, linewidth=2, marker="*", label="swap both layers")
-  ax.plot([-1, 2], [0, 0],
-          linestyle="dashed",
-          color="tab:grey",
-          alpha=0.5,
-          label="Optimal performance")
+  ax.plot(lambdas, -interp1 + 1, linewidth=2, marker="o", label="Identity")
+  ax.plot(lambdas, -interp2 + 1, linewidth=2, marker=".", label="Swap layer 1")
+  ax.plot(lambdas, -interp3 + 1, linewidth=2, marker="x", label="Swap layer 2")
+  ax.plot(lambdas, -interp4 + 1, linewidth=2, marker="*", label="Swap both")
+  ax.plot([-1, 2], [0, 0], linestyle=":", color="tab:grey", alpha=0.5, label="Perfect performance")
   ax.set_xlabel("$\lambda$")
   ax.set_xticks([0, 1])
   ax.set_xticklabels(["Model $A$", "Model $B$"])
   ax.set_xlim(-0.05, 1.05)
   ax.set_ylabel("Loss")
-  ax.set_title("All possible permutations between two optimal models")
+  ax.set_title("All possible permutations")
   ax.legend(framealpha=0.5)
   fig.tight_layout()
   return fig
 
 fig = plot_interp_loss()
-plt.savefig(f"sgd_is_special_loss_interp.png", dpi=300)
-plt.savefig(f"sgd_is_special_loss_interp.eps")
+plt.savefig(f"figs/sgd_is_special_loss_interp.png", dpi=300)
+plt.savefig(f"figs/sgd_is_special_loss_interp.eps")
+plt.savefig(f"figs/sgd_is_special_loss_interp.pdf")
 plt.close(fig)
 
 def plot_interp_loss_zoom(max_lambda):
@@ -133,15 +126,15 @@ def plot_interp_loss_zoom(max_lambda):
   fig = plt.figure()
   ax = fig.add_subplot(1, 1, 1)
   # We make losses start at 0, since that intuitively makes more sense.
-  ax.plot(lambdas, -interp1 + 1, linewidth=2, marker="o", label="identity permutation")
-  ax.plot(lambdas, -interp2 + 1, linewidth=2, marker=".", label="swap first layer")
-  ax.plot(lambdas, -interp3 + 1, linewidth=2, marker="x", label="swap second layer")
-  ax.plot(lambdas, -interp4 + 1, linewidth=2, marker="*", label="swap both layers")
+  ax.plot(lambdas, -interp1 + 1, linewidth=2, marker="o", label="Identity")
+  ax.plot(lambdas, -interp2 + 1, linewidth=2, marker=".", label="Swap layer 1")
+  ax.plot(lambdas, -interp3 + 1, linewidth=2, marker="x", label="Swap layer 2")
+  ax.plot(lambdas, -interp4 + 1, linewidth=2, marker="*", label="Swap both")
   ax.plot([-1, 2], [0, 0],
           linestyle="dashed",
           color="tab:grey",
           alpha=0.5,
-          label="Optimal performance")
+          label="Perfect performance")
 
   # ax.set_xscale("log")
   # ax.set_yscale("log")
@@ -155,8 +148,8 @@ def plot_interp_loss_zoom(max_lambda):
   return fig
 
 fig = plot_interp_loss_zoom(max_lambda=1e-6)
-plt.savefig(f"sgd_is_special_loss_interp_zoom.png", dpi=300)
-# plt.savefig(f"sgd_is_special_loss_interp.pdf")
+plt.savefig(f"figs/sgd_is_special_loss_interp_zoom.png", dpi=300)
+# plt.savefig(f"figs/sgd_is_special_loss_interp.pdf")
 plt.close(fig)
 
 def plot_data():
@@ -179,8 +172,9 @@ def plot_data():
   return fig
 
 fig = plot_data()
-plt.savefig(f"sgd_is_special_data.png", dpi=300)
-plt.savefig(f"sgd_is_special_data.eps")
+plt.savefig(f"figs/sgd_is_special_data.png", dpi=300)
+plt.savefig(f"figs/sgd_is_special_data.eps")
+plt.savefig(f"figs/sgd_is_special_data.pdf")
 plt.close()
 
 extrema = model.apply({"params": unflatten_params(paramsA)},
@@ -224,15 +218,16 @@ def plot_detailed_view():
   ax[0, -1].set_title("Model B", fontweight="bold")
   ax[0, 4].set_title("⟵ $\\lambda$ ⟶")
 
-  ax[0, 0].set_ylabel("identity permutation", fontweight="bold")
-  ax[1, 0].set_ylabel("swap first layer", fontweight="bold")
-  ax[2, 0].set_ylabel("swap second layer", fontweight="bold")
-  ax[3, 0].set_ylabel("swap both layers", fontweight="bold")
+  ax[0, 0].set_ylabel("Identity")
+  ax[1, 0].set_ylabel("Swap layer 1")
+  ax[2, 0].set_ylabel("Swap layer 2")
+  ax[3, 0].set_ylabel("Swap both")
 
   fig.tight_layout()
   return fig
 
 fig = plot_detailed_view()
-plt.savefig(f"sgd_is_special_detailed_view.png", dpi=300)
-plt.savefig(f"sgd_is_special_detailed_view.eps")
+plt.savefig(f"figs/sgd_is_special_detailed_view.png", dpi=300)
+plt.savefig(f"figs/sgd_is_special_detailed_view.eps")
+plt.savefig(f"figs/sgd_is_special_detailed_view.pdf")
 plt.close(fig)

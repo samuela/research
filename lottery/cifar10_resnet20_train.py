@@ -1,14 +1,8 @@
-"""Train a convnet on CIFAR-10 on one random seed. Serialize the model for
-interpolation downstream.
+"""
 
-Notes:
-* flax example code used to have a CIFAR-10 example but it seems to have gone missing: https://github.com/google/flax/issues/122#issuecomment-1032108906
-* Example VGG/CIFAR-10 model in flax: https://github.com/rolandgvc/flaxvision/blob/master/flaxvision/models/vgg.py
-* A good reference in PyTorch is https://github.com/kuangliu/pytorch-cifar
-
-Things to try:
-* try adding noise to parameters
-* resnet18
+See
+* https://github.com/hushon/JAX-ResNet-CIFAR10/blob/main/resnet_cifar.py
+* https://github.com/akamaster/pytorch_resnet_cifar10/blob/master/resnet.py
 """
 import argparse
 
@@ -19,14 +13,14 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import tensorflow as tf
-import tensorflow_datasets as tfds
 import wandb
-from flax import linen as nn
 from flax.training.train_state import TrainState
 from jax import jit, random, value_and_grad, vmap
 from tqdm import tqdm
 
-from datasets import load_cifar10
+from cifar100_resnet20_train import NUM_CLASSES
+from datasets import load_cifar10, load_cifar10_split
+from resnet20 import BLOCKS_PER_GROUP, ResNet
 from utils import ec2_get_instance_type, rngmix, timeblock
 
 # See https://github.com/tensorflow/tensorflow/issues/53831.
@@ -34,84 +28,7 @@ from utils import ec2_get_instance_type, rngmix, timeblock
 # See https://github.com/google/jax/issues/9454.
 tf.config.set_visible_devices([], "GPU")
 
-def make_vgg(backbone_layers, classifier_width: int, norm):
-
-  class VGG(nn.Module):
-
-    @nn.compact
-    def __call__(self, x):
-      for l in backbone_layers:
-        if isinstance(l, int):
-          x = nn.Conv(features=l, kernel_size=(3, 3))(x)
-          x = norm()(x)
-          x = nn.relu(x)
-        elif l == "m":
-          x = nn.max_pool(x, (2, 2), strides=(2, 2))
-        else:
-          raise
-
-      # Classifier
-      # Note: everyone seems to do a different thing here.
-      # * https://github.com/davisyoshida/vgg16-haiku/blob/4ef0bd001bf9daa4cfb2fa83ea3956ec01add3a8/vgg/vgg.py#L56
-      #     does average pooling with a kernel size of (7, 7)
-      # * https://github.com/kuangliu/pytorch-cifar/blob/49b7aa97b0c12fe0d4054e670403a16b6b834ddd/models/vgg.py#L37
-      #     does average pooling with a kernel size of (1, 1) which doesn't seem
-      #     to accomplish anything. See https://github.com/kuangliu/pytorch-cifar/issues/110.
-      #     But this paper also doesn't really do the dense layers the same as in
-      #     the paper either...
-      # * The paper itself doesn't mention any kind of pooling...
-      #
-      # I'll stick to replicating the paper as closely as possible for now.
-      (_b, w, h, _c) = x.shape
-      assert w == h == 1
-      x = jnp.reshape(x, (x.shape[0], -1))
-      x = nn.Dense(classifier_width)(x)
-      x = nn.relu(x)
-      x = nn.Dense(classifier_width)(x)
-      x = nn.relu(x)
-      x = nn.Dense(10)(x)
-      x = nn.log_softmax(x)
-      return x
-
-  return VGG
-
-TestVGG = make_vgg(
-    [64, 64, "m", 64, 64, "m", 64, 64, 64, "m", 64, 64, 64, "m", 64, 64, 64, "m"],
-    classifier_width=8,
-    #  norm=lambda: lambda x: x,
-    norm=nn.LayerNorm)
-
-VGG16 = make_vgg(
-    [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
-    classifier_width=4096,
-    norm=nn.LayerNorm)
-
-VGG16ThinClassifier = make_vgg(
-    [64, 64, "m", 128, 128, "m", 256, 256, 256, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
-    classifier_width=512,
-    norm=nn.LayerNorm)
-
-def make_vgg_width_ablation(width_multiplier: int):
-  m = width_multiplier
-  return make_vgg([
-      m * 1, m * 1, "m", m * 2, m * 2, "m", m * 4, m * 4, m * 4, "m", m * 8, m * 8, m * 8, "m",
-      m * 8, m * 8, m * 8, "m"
-  ],
-                  classifier_width=m * 8,
-                  norm=nn.LayerNorm)()
-
-# 378.2MB
-VGG16Wide = make_vgg(
-    [512, 512, "m", 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m", 512, 512, 512, "m"],
-    classifier_width=4096,
-    norm=nn.LayerNorm)
-
-VGG19 = make_vgg([
-    64, 64, "m", 128, 128, "m", 256, 256, 256, 256, "m", 512, 512, 512, 512, "m", 512, 512, 512,
-    512, "m"
-],
-                 classifier_width=4096,
-                 norm=nn.LayerNorm)
+NUM_CLASSES = 10
 
 def make_stuff(model):
   train_transform = augmax.Chain(
@@ -126,7 +43,7 @@ def make_stuff(model):
   @jit
   def batch_eval(params, images_u8, labels):
     images_f32 = vmap(normalize_transform)(None, images_u8)
-    y_onehot = jax.nn.one_hot(labels, 10)
+    y_onehot = jax.nn.one_hot(labels, NUM_CLASSES)
     logits = model.apply({"params": params}, images_f32)
     l = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=y_onehot))
     num_correct = jnp.sum(jnp.argmax(logits, axis=-1) == labels)
@@ -165,9 +82,10 @@ def make_stuff(model):
       "dataset_loss_and_accuracy": dataset_loss_and_accuracy,
   }
 
-def init_train_state(rng, model, learning_rate, num_epochs, batch_size, num_train_examples):
+def init_train_state(rng, model, learning_rate, num_epochs, batch_size, num_train_examples,
+                     weight_decay: float):
   # See https://github.com/kuangliu/pytorch-cifar.
-  warmup_epochs = 1
+  warmup_epochs = 5
   steps_per_epoch = num_train_examples // batch_size
   lr_schedule = optax.warmup_cosine_decay_schedule(
       init_value=1e-6,
@@ -177,7 +95,7 @@ def init_train_state(rng, model, learning_rate, num_epochs, batch_size, num_trai
       # including the warmup.
       decay_steps=num_epochs * steps_per_epoch,
   )
-  tx = optax.chain(optax.add_decayed_weights(5e-4), optax.sgd(lr_schedule, momentum=0.9))
+  tx = optax.chain(optax.add_decayed_weights(weight_decay), optax.sgd(lr_schedule, momentum=0.9))
   # tx = optax.adamw(learning_rate=lr_schedule, weight_decay=5e-4)
   vars = model.init(rng, jnp.zeros((1, 32, 32, 3)))
   return TrainState.create(apply_fn=model.apply, params=vars["params"], tx=tx)
@@ -186,33 +104,44 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--test", action="store_true", help="Run in smoke-test mode")
   parser.add_argument("--seed", type=int, default=0, help="Random seed")
-  parser.add_argument("--width-multiplier", type=int, default=64)
+  parser.add_argument("--data-split", choices=["split1", "split2", "both"], required=True)
+  parser.add_argument("--width-multiplier", type=int, default=1)
+  parser.add_argument("--weight-decay", type=float, default=1e-4)
   args = parser.parse_args()
 
   with wandb.init(
       project="playing-the-lottery",
       entity="skainswo",
-      tags=["cifar10", "vgg16"],
+      tags=["cifar10", "resnet", "training"],
       mode="disabled" if args.test else "online",
       job_type="train",
   ) as wandb_run:
-    artifact = wandb.Artifact("cifar10-vgg-weights", type="model-weights")
+    artifact = wandb.Artifact("cifar10-resnet-weights", type="model-weights")
 
     config = wandb.config
     config.ec2_instance_type = ec2_get_instance_type()
     config.test = args.test
     config.seed = args.seed
+    config.data_split = args.data_split
     config.learning_rate = 0.1
-    config.num_epochs = 10 if args.test else 100
-    config.width_multiplier = args.width_multiplier
+    config.num_epochs = 10 if args.test else 250
     config.batch_size = 100
+    config.width_multiplier = args.width_multiplier
+    config.weight_decay = args.weight_decay
 
     rng = random.PRNGKey(config.seed)
 
-    # model = TestVGG() if config.test else VGG16ThinClassifier()
-    model = make_vgg_width_ablation(config.width_multiplier)
+    model = ResNet(blocks_per_group=BLOCKS_PER_GROUP["resnet20"],
+                   num_classes=NUM_CLASSES,
+                   width_multiplier=config.width_multiplier)
+
     with timeblock("load datasets"):
-      train_ds, test_ds = load_cifar10()
+      if config.data_split == "both":
+        train_ds, test_ds = load_cifar10()
+      else:
+        split1, split2, test_ds = load_cifar10_split()
+        train_ds = split1 if config.data_split == "split1" else split2
+
       print("train_ds labels hash", hash(np.array(train_ds["labels"]).tobytes()))
       print("test_ds labels hash", hash(np.array(test_ds["labels"]).tobytes()))
 
@@ -228,7 +157,8 @@ if __name__ == "__main__":
                                    learning_rate=config.learning_rate,
                                    num_epochs=config.num_epochs,
                                    batch_size=config.batch_size,
-                                   num_train_examples=train_ds["images_u8"].shape[0])
+                                   num_train_examples=train_ds["images_u8"].shape[0],
+                                   weight_decay=config.weight_decay)
 
     for epoch in tqdm(range(config.num_epochs)):
       infos = []
@@ -266,7 +196,7 @@ if __name__ == "__main__":
           # See https://github.com/wandb/client/issues/3823
           filename = f"/tmp/checkpoint{epoch}"
           with open(filename, mode="wb") as f:
-            f.write(flax.serialization.to_bytes(train_state))
+            f.write(flax.serialization.to_bytes(train_state.params))
           artifact.add_file(filename)
 
     # This will be a no-op when config.test is enabled anyhow, since wandb will

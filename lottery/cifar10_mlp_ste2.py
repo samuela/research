@@ -1,5 +1,5 @@
-"""STEv2 on MLP, MNIST. Params represent the B endpoint and projection is inner
-product matching."""
+"""STEv2 on MLP, CIFAR10. Params represent the B endpoint and projection is
+inner product matching."""
 import argparse
 import pickle
 from pathlib import Path
@@ -16,7 +16,8 @@ from jax import jit, random, tree_map, value_and_grad
 from jax.lax import stop_gradient
 from tqdm import tqdm
 
-from mnist_mlp_train import MLPModel, load_datasets, make_stuff
+from cifar10_mlp_train import MLPModel, make_stuff
+from datasets import load_cifar10
 from utils import (ec2_get_instance_type, flatten_params, lerp, rngmix, unflatten_params)
 from weight_matching import (apply_permutation, mlp_permutation_spec, weight_matching)
 
@@ -114,7 +115,7 @@ if __name__ == "__main__":
   with wandb.init(
       project="playing-the-lottery",
       entity="skainswo",
-      tags=["mnist", "mlp", "ste2"],
+      tags=["cifar10", "mlp", "ste2"],
       # See https://github.com/wandb/client/issues/3672.
       mode="online",
       job_type="analysis",
@@ -136,19 +137,19 @@ if __name__ == "__main__":
     def load_model(filepath):
       with open(filepath, "rb") as fh:
         return from_bytes(
-            model.init(random.PRNGKey(0), jnp.zeros((1, 28, 28, 1)))["params"], fh.read())
+            model.init(random.PRNGKey(0), jnp.zeros((1, 32, 32, 3)))["params"], fh.read())
 
     filename = f"checkpoint{config.load_epoch}"
     model_a = load_model(
         Path(
-            wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_a}").get_path(
+            wandb_run.use_artifact(f"cifar10-mlp-weights:{config.model_a}").get_path(
                 filename).download()))
     model_b = load_model(
         Path(
-            wandb_run.use_artifact(f"mnist-mlp-weights:{config.model_b}").get_path(
+            wandb_run.use_artifact(f"cifar10-mlp-weights:{config.model_b}").get_path(
                 filename).download()))
 
-    train_ds, test_ds = load_datasets()
+    train_ds, test_ds = load_cifar10()
     num_train_examples = train_ds["images_u8"].shape[0]
     num_test_examples = test_ds["images_u8"].shape[0]
     assert num_train_examples % config.batch_size == 0
@@ -250,7 +251,7 @@ if __name__ == "__main__":
     artifact = wandb.Artifact("model_b_permutation",
                               type="permutation",
                               metadata={
-                                  "dataset": "mnist",
+                                  "dataset": "cifar10",
                                   "model": "mlp",
                                   "analysis": "ste2"
                               })
@@ -303,15 +304,17 @@ if __name__ == "__main__":
     fig = plot_interp_loss(config.load_epoch, lambdas, train_loss_interp_naive,
                            test_loss_interp_naive, train_loss_interp_clever,
                            test_loss_interp_clever)
-    plt.savefig(f"mnist_mlp_ste2_interp_loss_epoch{config.load_epoch}.png", dpi=300)
-    plt.savefig(f"mnist_mlp_ste2_interp_loss_epoch{config.load_epoch}.eps")
+    plt.savefig(f"cifar10_mlp_ste2_interp_loss_epoch{config.load_epoch}.png", dpi=300)
+    plt.savefig(f"cifar10_mlp_ste2_interp_loss_epoch{config.load_epoch}.pdf")
+    plt.savefig(f"cifar10_mlp_ste2_interp_loss_epoch{config.load_epoch}.eps")
     wandb_run.log({"interp_loss_fig": wandb.Image(fig)})
     plt.close(fig)
 
     fig = plot_interp_acc(config.load_epoch, lambdas, train_acc_interp_naive, test_acc_interp_naive,
                           train_acc_interp_clever, test_acc_interp_clever)
-    plt.savefig(f"mnist_mlp_ste2_interp_accuracy_epoch{config.load_epoch}.png", dpi=300)
-    plt.savefig(f"mnist_mlp_ste2_interp_accuracy_epoch{config.load_epoch}.eps")
+    plt.savefig(f"cifar10_mlp_ste2_interp_accuracy_epoch{config.load_epoch}.png", dpi=300)
+    plt.savefig(f"cifar10_mlp_ste2_interp_accuracy_epoch{config.load_epoch}.pdf")
+    plt.savefig(f"cifar10_mlp_ste2_interp_accuracy_epoch{config.load_epoch}.eps")
     wandb_run.log({"interp_accuracy_fig": wandb.Image(fig)})
     plt.close(fig)
 

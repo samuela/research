@@ -21,7 +21,8 @@ from jax import jit, random, tree_map, vmap
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
-from cifar10_vgg_run import (VGG16Wide, init_train_state, load_datasets, make_stuff)
+from cifar10_vgg_run import VGG16Wide, init_train_state, make_stuff
+from datasets import load_cifar10
 from online_stats import OnlineCovariance, OnlineMean
 from utils import flatten_params, unflatten_params
 
@@ -196,7 +197,7 @@ if __name__ == "__main__":
   model_a = load_checkpoint("skainswo/playing-the-lottery/3467b9pk", epoch)
   model_b = load_checkpoint("skainswo/playing-the-lottery/s622wdyh", epoch)
 
-  train_ds, test_ds = load_datasets()
+  train_ds, test_ds = load_cifar10()
 
   # TODO use config.test once we switch to wandb
   if args.test:
