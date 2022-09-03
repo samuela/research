@@ -107,7 +107,7 @@ if __name__ == "__main__":
   ax.set_xticklabels([f"{x}×" for x in wm_glyphs])
   ax.set_ylabel("Loss barrier")
   ax.set_title(f"VGG-16")
-  ax.legend(loc="upper right", framealpha=0.5)
+#   ax.legend(loc="upper right", framealpha=0.5)
   fig.tight_layout()
 
   plt.savefig("figs/cifar10_vgg_width_ablation_line_plot.png", dpi=300)

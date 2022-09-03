@@ -65,7 +65,7 @@ loss_barrier_is_nonnegative(ax)
 ax.set_xlabel("Epoch")
 ax.set_ylabel("Loss barrier")
 ax.set_title(f"MNIST")
-ax.legend(loc="upper right", framealpha=0.5)
+# ax.legend(loc="upper right", framealpha=0.5)
 fig.tight_layout()
 
 plt.savefig("figs/mnist_mlp_barrier_vs_epoch.png", dpi=300)

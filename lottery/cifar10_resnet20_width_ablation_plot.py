@@ -101,6 +101,13 @@ if __name__ == "__main__":
       label=f"Test",
   )
 
+  ax.arrow(5, 0, -0.75, 0.5, alpha=0.25)
+  ins2 = ax.inset_axes((0.7, 0.3, 0.25, 0.25))
+  ins2.plot(all_runs[-1].summary["train_loss_interp_clever"])
+  ins2.plot(all_runs[-1].summary["test_loss_interp_clever"], linestyle="dashed")
+  ins2.set_xticks([])
+  ins2.set_yticks([])
+
   loss_barrier_is_nonnegative(ax)
 
   ax.set_xlabel("Width multiplier")
