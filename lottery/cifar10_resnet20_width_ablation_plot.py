@@ -1,7 +1,5 @@
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import wandb
 
 import matplotlib_style as _
@@ -91,14 +89,14 @@ if __name__ == "__main__":
       train_barriers,
       marker="o",
       linewidth=2,
-      label=f"Train",
+      label="Train",
   )
   ax.plot(
       test_barriers,
       marker="^",
       linestyle="dashed",
       linewidth=2,
-      label=f"Test",
+      label="Test",
   )
 
   ax.arrow(5, 0, -0.75, 0.5, alpha=0.25)
