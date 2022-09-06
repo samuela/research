@@ -106,7 +106,7 @@ if __name__ == "__main__":
   ins2.set_xticks([])
   ins2.set_yticks([])
   ymin, ymax = ins2.get_ylim()
-  ins2.set_ylim((ymin - 0.05, ymax + 0.05))
+  ins2.set_ylim((ymin - 0.2 * (ymax - ymin), ymax + 0.2 * (ymax - ymin)))
 
   loss_barrier_is_nonnegative(ax)
 

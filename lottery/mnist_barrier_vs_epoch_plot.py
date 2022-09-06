@@ -43,6 +43,8 @@ ins2.plot(train_loss_interp[25, :])
 ins2.plot(test_loss_interp[25, :], linestyle="dashed")
 ins2.set_xticks([])
 ins2.set_yticks([])
+ymin, ymax = ins2.get_ylim()
+ins2.set_ylim((ymin - 0.2 * (ymax - ymin), ymax + 0.2 * (ymax - ymin)))
 
 ax.plot(
     1 + np.arange(max_epoch),
