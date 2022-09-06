@@ -107,6 +107,8 @@ if __name__ == "__main__":
   ins2.plot(all_runs[-1].summary["test_loss_interp_clever"], linestyle="dashed")
   ins2.set_xticks([])
   ins2.set_yticks([])
+  ymin, ymax = ins2.get_ylim()
+  ins2.set_ylim((ymin - 0.05, ymax + 0.05))
 
   loss_barrier_is_nonnegative(ax)
 
