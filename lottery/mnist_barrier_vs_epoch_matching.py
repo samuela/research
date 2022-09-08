@@ -8,7 +8,7 @@ from jax import random
 from tqdm import tqdm
 
 from mnist_mlp_train import MLPModel, load_datasets, make_stuff
-from utils import flatten_params, lerp, unflatten_params
+from utils import ec2_get_instance_type, flatten_params, lerp, unflatten_params
 from weight_matching import (apply_permutation, mlp_permutation_spec, weight_matching)
 
 with wandb.init(
@@ -22,6 +22,7 @@ with wandb.init(
   # seed1_run = api.run("skainswo/playing-the-lottery/1hrmw7wr")
 
   config = wandb.config
+  config.ec2_instance_type = ec2_get_instance_type()
   config.total_epochs = 100
   config.seed = 123
 
@@ -73,24 +74,41 @@ with wandb.init(
     model_b_perm = unflatten_params(
         apply_permutation(permutation_spec, permutation, flatten_params(model_b)))
 
-    train_loss_interp = []
-    test_loss_interp = []
-    train_acc_interp = []
-    test_acc_interp = []
+    naive_train_loss_interp = []
+    naive_test_loss_interp = []
+    naive_train_acc_interp = []
+    naive_test_acc_interp = []
+    for lam in lambdas:
+      naive_p = lerp(lam, model_a, model_b)
+      train_loss, train_acc = stuff["dataset_loss_and_accuracy"](naive_p, train_ds, 10_000)
+      test_loss, test_acc = stuff["dataset_loss_and_accuracy"](naive_p, test_ds, 10_000)
+      naive_train_loss_interp.append(train_loss)
+      naive_test_loss_interp.append(test_loss)
+      naive_train_acc_interp.append(train_acc)
+      naive_test_acc_interp.append(test_acc)
+
+    clever_train_loss_interp = []
+    clever_test_loss_interp = []
+    clever_train_acc_interp = []
+    clever_test_acc_interp = []
     for lam in lambdas:
       clever_p = lerp(lam, model_a, model_b_perm)
       train_loss, train_acc = stuff["dataset_loss_and_accuracy"](clever_p, train_ds, 10_000)
       test_loss, test_acc = stuff["dataset_loss_and_accuracy"](clever_p, test_ds, 10_000)
-      train_loss_interp.append(train_loss)
-      test_loss_interp.append(test_loss)
-      train_acc_interp.append(train_acc)
-      test_acc_interp.append(test_acc)
+      clever_train_loss_interp.append(train_loss)
+      clever_test_loss_interp.append(test_loss)
+      clever_train_acc_interp.append(train_acc)
+      clever_test_acc_interp.append(test_acc)
 
     return {
-        "train_loss_interp": train_loss_interp,
-        "test_loss_interp": test_loss_interp,
-        "train_acc_interp": train_acc_interp,
-        "test_acc_interp": test_acc_interp,
+        "naive_train_loss_interp": naive_train_loss_interp,
+        "naive_test_loss_interp": naive_test_loss_interp,
+        "naive_train_acc_interp": naive_train_acc_interp,
+        "naive_test_acc_interp": naive_test_acc_interp,
+        "clever_train_loss_interp": clever_train_loss_interp,
+        "clever_test_loss_interp": clever_test_loss_interp,
+        "clever_train_acc_interp": clever_train_acc_interp,
+        "clever_test_acc_interp": clever_test_acc_interp,
     }
 
   interp_eval_vs_epoch = [eval_one(i, p) for i, p in tqdm(enumerate(permutation_vs_epoch))]
